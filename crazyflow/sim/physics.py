@@ -42,7 +42,7 @@ def identified_dynamics(cmd: Array, pos: Array, quat: Array, vel: Array, ang_vel
     """
     collective_thrust, attitude = cmd[0], cmd[1:]
     thrust = R.from_quat(quat).apply(jnp.array([0, 0, collective_thrust]))
-    acc = thrust * SYS_ID_PARAMS["acc_k1"] + jnp.array([0, 0, SYS_ID_PARAMS["acc_k2"]])
+    acc = thrust * SYS_ID_PARAMS["acc_k1"] - jnp.array([0, 0, GRAVITY])
     # TODO: Include acceleration dynamics from Haocheng's thesis
     roll_cmd, pitch_cmd, yaw_cmd = attitude
     roll_rate = SYS_ID_PARAMS["roll_alpha"] * quat[0] + SYS_ID_PARAMS["roll_beta"] * roll_cmd

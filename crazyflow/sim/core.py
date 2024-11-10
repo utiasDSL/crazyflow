@@ -17,8 +17,6 @@ class Sim:
         self.physics = physics
         self.device = jax.devices(device)[0]
         self.freq = freq
-        self._dt = jnp.ones((n_worlds, n_drones, 1), dtype=jnp.float32, device=self.device) / freq
-        # self._dt = 1 / freq
 
         self._n_worlds = n_worlds
         self._n_drones = n_drones
@@ -45,7 +43,15 @@ class Sim:
 
     def step(self):
         """Simulate all drones in all worlds for one time step."""
-        self._step(self.physics)
+        match self.physics:
+            case Physics.MUJOCO:
+                raise NotImplementedError
+            case Physics.ANALYTICAL:
+                raise NotImplementedError
+            case Physics.SYS_ID:
+                self._step_sys_id()
+            case _:
+                raise ValueError(f"Physics mode {self.physics} not implemented")
 
     def attitude_control(self, cmd: Array):
         raise NotImplementedError
@@ -56,22 +62,14 @@ class Sim:
     def thrust_control(self, cmd: Array):
         raise NotImplementedError
 
-    def _step(self, physics: Physics):
-        match physics:
-            case Physics.MUJOCO:
-                raise NotImplementedError
-            case Physics.ANALYTICAL:
-                raise NotImplementedError
-            case Physics.SYS_ID:
-                pos, quat, vel, ang_vel = batched_identified_dynamics(
-                    self._controls["attitude"], *self._states.values(), self._dt
-                )
-                self._states["pos"] = pos
-                self._states["quat"] = quat
-                self._states["vel"] = vel
-                self._states["ang_vel"] = ang_vel
-            case _:
-                raise ValueError(f"Physics mode {physics} not implemented")
+    def _step_sys_id(self):
+        pos, quat, vel, ang_vel = batched_identified_dynamics(
+            self._controls["attitude"], *self._states.values(), 1 / self.freq
+        )
+        self._states["pos"] = pos
+        self._states["quat"] = quat
+        self._states["vel"] = vel
+        self._states["ang_vel"] = ang_vel
 
 
 in_axes1 = (0, 0, 0, 0, 0, None)
