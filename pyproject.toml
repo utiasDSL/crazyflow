@@ -1,0 +1,83 @@
+[build-system]
+requires = ["setuptools>=61.0.0", "wheel", "numpy"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "crazyflow"
+version = "0.0.1"
+description = "Fast, parallelizable simulations of Crazyflies with JAX and MuJoCo."
+readme = "README.md"
+license = { file = "LICENSE" }
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Education",
+    "Intended Audience :: Science/Research",
+]
+
+dependencies = []
+
+[project.optional-dependencies]
+test = ["pytest>=8.0.0"]
+
+[tool.setuptools.packages]
+find = {}
+
+[tool.setuptools.package-data]
+crazyflow = []
+
+[tool.pytest.ini_options]
+markers = ["unit", "integration"]
+
+[tool.ruff]
+# Exclude a variety of commonly ignored directories.
+exclude = [
+    ".git",
+    ".git-rewrite",
+    ".ipynb_checkpoints",
+    ".pyenv",
+    ".pytest_cache",
+    ".pytype",
+    ".ruff_cache",
+    ".venv",
+    ".vscode",
+    "__pypackages__",
+    "_build",
+    "build",
+    "dist",
+    "site-packages",
+    "venv",
+    "docs/conf.py",
+]
+
+line-length = 100
+indent-width = 4
+target-version = "py38"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "D", "TCH", "ANN"]
+ignore = ["ANN101", "ANN401"]
+fixable = ["ALL"]
+unfixable = []
+
+[tool.ruff.lint.per-file-ignores]
+"benchmarks/*" = ["D100", "D103"]
+"tests/*" = ["D100", "D103", "D104"]
+
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.flake8-annotations]
+suppress-dummy-args = true
+suppress-none-returning = true
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = true
+line-ending = "auto"
+docstring-code-format = true
+docstring-code-line-length = "dynamic"

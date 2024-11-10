@@ -1,0 +1,13 @@
+.vscode/
+**.egg-info/
+**/__pycache__/
+submission.csv
+logs
+secrets
+**/*.secret
+saves
+.pytest_cache
+**/*.json
+**/*.csv
+plots/
+c_generated_code/
