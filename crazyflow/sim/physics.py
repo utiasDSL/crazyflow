@@ -5,7 +5,6 @@ import jax.numpy as jnp
 from jax import Array
 from jax.scipy.spatial.transform import Rotation as R
 
-
 GRAVITY = 9.81
 SYS_ID_PARAMS = {
     "acc_k1": 20.91,
@@ -19,11 +18,13 @@ SYS_ID_PARAMS = {
 }
 
 
-class Physics(Enum):
-    DEFAULT = "mujoco"
-    MUJOCO = "mujoco"
-    ANALYTICAL = "analytical"
-    SYS_ID = "sys_id"
+class Physics(str, Enum):
+    """Physics mode for the simulation."""
+
+    mujoco = "mujoco"
+    analytical = "analytical"
+    sys_id = "sys_id"
+    default = mujoco
 
 
 def identified_dynamics(cmd: Array, pos: Array, quat: Array, vel: Array, ang_vel: Array, dt: float):
@@ -41,9 +42,11 @@ def identified_dynamics(cmd: Array, pos: Array, quat: Array, vel: Array, ang_vel
         cmd: The 4D control input consisting of the desired collective thrust and attitude.
     """
     collective_thrust, attitude = cmd[0], cmd[1:]
-    thrust = R.from_quat(quat).apply(jnp.array([0, 0, collective_thrust]))
-    acc = thrust * SYS_ID_PARAMS["acc_k1"] - jnp.array([0, 0, GRAVITY])
-    # TODO: Include acceleration dynamics from Haocheng's thesis
+    rot = R.from_quat(quat)
+    thrust = rot.apply(jnp.array([0, 0, collective_thrust]))
+    drift = rot.apply(jnp.array([0, 0, 1]))
+    a1, a2 = SYS_ID_PARAMS["acc_k1"], SYS_ID_PARAMS["acc_k2"]
+    acc = thrust * a1 + drift * a2 - jnp.array([0, 0, GRAVITY])
     roll_cmd, pitch_cmd, yaw_cmd = attitude
     roll_rate = SYS_ID_PARAMS["roll_alpha"] * quat[0] + SYS_ID_PARAMS["roll_beta"] * roll_cmd
     pitch_rate = SYS_ID_PARAMS["pitch_alpha"] * quat[1] + SYS_ID_PARAMS["pitch_beta"] * pitch_cmd

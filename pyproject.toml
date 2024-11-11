@@ -17,10 +17,11 @@ classifiers = [
     "Intended Audience :: Science/Research",
 ]
 
-dependencies = []
+dependencies = ["jax"]
 
 [project.optional-dependencies]
 test = ["pytest>=8.0.0"]
+gpu = ["jax[cuda12]"]
 
 [tool.setuptools.packages]
 find = {}

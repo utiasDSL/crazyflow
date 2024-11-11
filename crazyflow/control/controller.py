@@ -9,10 +9,29 @@ a functional implementation to avoid storing any state in the class. Doing so wo
 us from easily scaling across batches and drones with JAX's `vmap`, or require us to support batches
 and multiple drones explicitly in the controller.
 """
+from enum import Enum
 
 import jax.numpy as jnp
+from jax import Array
 from jax.scipy.spatial.transform import Rotation as R
-from jax.typing import Array
+
+
+class Control(Enum):
+    """Control type of the simulated onboard controller."""
+
+    state = "state"
+    attitude = "attitude"
+    thrust = "thrust"
+    default = attitude
+
+
+class Controller(Enum):
+    """Controller type of the simulated onboard controller."""
+
+    pycffirmware = "pycffirmware"
+    emulatefirmware = "emulatefirmware"
+    default = emulatefirmware
+
 
 GRAVITY = 9.81
 KF: float = 3.16e-10
