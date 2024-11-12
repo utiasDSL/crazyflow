@@ -13,6 +13,7 @@ from mujoco.mjx import Data, Model
 from crazyflow.control.controller import Control, Controller
 from crazyflow.exception import ConfigError
 from crazyflow.sim.physics import Physics, identified_dynamics
+from crazyflow.utils import clone_body
 
 
 class Sim:
@@ -67,6 +68,9 @@ class Sim:
     def setup(self) -> tuple[Any, Any, Any, Model, Data]:
         assert self._xml_path.exists(), f"Model file {self._xml_path} does not exist"
         spec = mujoco.MjSpec.from_file(str(self._xml_path))
+        # Add additional drones to the world
+        for i in range(1, self.n_drones):
+            clone_body(spec.worldbody, spec.find_body("drone"), f"drone_{i}")
         mj_model = spec.compile()
         mj_data = mujoco.MjData(mj_model)
         mjx_model = mjx.put_model(mj_model, device=self.device)
