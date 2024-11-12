@@ -18,7 +18,7 @@ def profile_step(sim: Sim, n_steps: int, device: str):
         tstart = time.perf_counter()
         sim.attitude_control(cmd)
         sim.step()
-        jax.block_until_ready(sim._states["pos"])
+        jax.block_until_ready(sim.states["pos"])
         times.append(time.perf_counter() - tstart)
     n_frames = n_steps * sim.n_worlds  # Number of frames simulated
     total_time = np.sum(times)

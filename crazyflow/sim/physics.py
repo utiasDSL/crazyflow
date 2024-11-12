@@ -1,6 +1,5 @@
 from enum import Enum
 
-import jax
 import jax.numpy as jnp
 from jax import Array
 from jax.scipy.spatial.transform import Rotation as R
@@ -27,7 +26,9 @@ class Physics(str, Enum):
     default = mujoco
 
 
-def identified_dynamics(cmd: Array, pos: Array, quat: Array, vel: Array, ang_vel: Array, dt: float):
+def identified_dynamics(
+    cmd: Array, pos: Array, quat: Array, vel: Array, ang_vel: Array, dt: float
+) -> tuple[Array, Array, Array, Array]:
     """Dynamics model identified from data collected on the real drone.
 
     Contrary to the other physics implementations, this function is not based on a physical model.

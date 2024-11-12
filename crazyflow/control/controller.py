@@ -9,6 +9,7 @@ a functional implementation to avoid storing any state in the class. Doing so wo
 us from easily scaling across batches and drones with JAX's `vmap`, or require us to support batches
 and multiple drones explicitly in the controller.
 """
+
 from enum import Enum
 
 import jax.numpy as jnp
@@ -80,7 +81,4 @@ def state2attitude(
 
 def attitude2torques(thrust: Array, attitude: Array, quat: Array) -> Array:
     """Compute the torques given a desired collective thrust and attitude of the drone."""
-    rot_now = R.from_quat(quat)
-    des_rot = R.from_euler("xyz", attitude)
-    rot_err = rot_now.inv() * des_rot
     raise NotImplementedError
