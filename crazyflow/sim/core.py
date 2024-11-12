@@ -135,13 +135,16 @@ class Sim:
         self.states["quat"] = quat
         self.states["vel"] = vel
         self.states["ang_vel"] = ang_vel
+        self._sync_sys_id(pos, quat, vel, ang_vel, self._mjx_model, self._mjx_data)
+
+    @staticmethod
+    @jax.jit
+    def _sync_sys_id(pos: Array, quat: Array, vel: Array, ang_vel: Array, mjx_model, mjx_data):
         quat = quat[..., [-1, 0, 1, 2]]  # MuJoCo quat is [w, x, y, z], ours is [x, y, z, w]
         qpos = rearrange(jnp.concat([pos, quat], axis=-1), "w d qpos -> w (d qpos)")
         qvel = rearrange(jnp.concat([vel, ang_vel], axis=-1), "w d qvel -> w (d qvel)")
-        assert self._mjx_data.qpos.shape == qpos.shape, f"Shape mismatch: {qpos.shape}"
-        assert self._mjx_data.qvel.shape == qvel.shape
-        self._mjx_data = self._mjx_data.replace(qpos=qpos, qvel=qvel)
-        self._mjx_data = batched_mjx_forward(self._mjx_model, self._mjx_data)
+        mjx_data = mjx_data.replace(qpos=qpos, qvel=qvel)
+        batched_mjx_forward(mjx_model, mjx_data)
 
 
 in_axes1 = (0, 0, 0, 0, 0, None)

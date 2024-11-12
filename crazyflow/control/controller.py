@@ -17,7 +17,7 @@ from jax import Array
 from jax.scipy.spatial.transform import Rotation as R
 
 
-class Control(Enum):
+class Control(str, Enum):
     """Control type of the simulated onboard controller."""
 
     state = "state"
