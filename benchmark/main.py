@@ -35,7 +35,7 @@ def main():
         n_worlds=1_000,
         n_drones=1,
         physics="sys_id",
-        control="state",
+        control="attitude",
         controller="emulatefirmware",
         device=device,
     )

@@ -13,6 +13,7 @@ from mujoco.mjx import Data, Model
 from crazyflow.control.controller import Control, Controller
 from crazyflow.exception import ConfigError
 from crazyflow.sim.physics import Physics, identified_dynamics
+from crazyflow.utils import clone_body
 
 
 class Sim:
@@ -67,6 +68,9 @@ class Sim:
     def setup(self) -> tuple[Any, Any, Any, Model, Data]:
         assert self._xml_path.exists(), f"Model file {self._xml_path} does not exist"
         spec = mujoco.MjSpec.from_file(str(self._xml_path))
+        # Add additional drones to the world
+        for i in range(1, self.n_drones):
+            clone_body(spec.worldbody, spec.find_body("drone"), f"drone_{i}")
         mj_model = spec.compile()
         mj_data = mujoco.MjData(mj_model)
         mjx_model = mjx.put_model(mj_model, device=self.device)
@@ -131,13 +135,16 @@ class Sim:
         self.states["quat"] = quat
         self.states["vel"] = vel
         self.states["ang_vel"] = ang_vel
+        self._sync_sys_id(pos, quat, vel, ang_vel, self._mjx_model, self._mjx_data)
+
+    @staticmethod
+    @jax.jit
+    def _sync_sys_id(pos: Array, quat: Array, vel: Array, ang_vel: Array, mjx_model, mjx_data):
         quat = quat[..., [-1, 0, 1, 2]]  # MuJoCo quat is [w, x, y, z], ours is [x, y, z, w]
         qpos = rearrange(jnp.concat([pos, quat], axis=-1), "w d qpos -> w (d qpos)")
         qvel = rearrange(jnp.concat([vel, ang_vel], axis=-1), "w d qvel -> w (d qvel)")
-        assert self._mjx_data.qpos.shape == qpos.shape, f"Shape mismatch: {qpos.shape}"
-        assert self._mjx_data.qvel.shape == qvel.shape
-        self._mjx_data = self._mjx_data.replace(qpos=qpos, qvel=qvel)
-        self._mjx_data = batched_mjx_forward(self._mjx_model, self._mjx_data)
+        mjx_data = mjx_data.replace(qpos=qpos, qvel=qvel)
+        batched_mjx_forward(mjx_model, mjx_data)
 
 
 in_axes1 = (0, 0, 0, 0, 0, None)
