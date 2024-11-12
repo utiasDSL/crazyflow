@@ -22,6 +22,11 @@ def profile_step(sim: Sim, n_steps: int, device: str):
         sim.step()
         jax.block_until_ready(sim._mjx_data)
         times.append(time.perf_counter() - tstart)
+    if max(times) / min(times) > 5:
+        tmin, idx_tmin = np.min(times), np.argmin(times)
+        tmax, idx_tmax = np.max(times), np.argmax(times)
+        print("Warning: step time varies by more than 5x. Is JIT compiling during the benchmark?")
+        print(f"Times: max {tmax:.2e}@{idx_tmax}, min {tmin:.2e}@{idx_tmin}")
     n_frames = n_steps * sim.n_worlds  # Number of frames simulated
     total_time = np.sum(times)
     real_time_factor = (n_steps / sim.freq) * sim.n_worlds / total_time
@@ -34,7 +39,7 @@ def profile_step(sim: Sim, n_steps: int, device: str):
 def main():
     device = "cpu"
     sim = Sim(
-        n_worlds=1_000,
+        n_worlds=1,
         n_drones=1,
         physics="sys_id",
         control="attitude",

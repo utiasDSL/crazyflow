@@ -10,9 +10,9 @@ from gymnasium.envs.mujoco.mujoco_rendering import MujocoRenderer
 from jax import Array
 from mujoco.mjx import Data, Model
 
-from crazyflow.control.controller import Control, Controller
+from crazyflow.control.controller import J_INV, Control, Controller, J, attitude2rpm
 from crazyflow.exception import ConfigError
-from crazyflow.sim.physics import Physics, identified_dynamics
+from crazyflow.sim.physics import Physics, analytical_dynamics, identified_dynamics
 from crazyflow.utils import clone_body
 
 
@@ -27,6 +27,7 @@ class Sim:
         control: Control = Control.default,
         controller: Controller = Controller.default,
         freq: int = 500,
+        control_freq: int = 500,
         device: str = "cpu",
         xml_path: Path | None = None,
     ):
@@ -35,6 +36,7 @@ class Sim:
         self.controller = controller
         self.device = jax.devices(device)[0]
         self.freq = freq
+        self.control_freq = control_freq
         self._dt = jnp.array(1 / freq, device=self.device)
         # pycffirmware uses global states which make it impossible to simulate multiple drones at
         # the same time. We raise if the user tries a combination of pycffirmware and drones > 1.
@@ -57,8 +59,13 @@ class Sim:
             "state": jnp.zeros((n_worlds, n_drones, 13), device=self.device),
             "attitude": jnp.zeros((n_worlds, n_drones, 4), device=self.device),
             "thrust": jnp.zeros((n_worlds, n_drones, 4), device=self.device),
+            "rpms": jnp.zeros((n_worlds, n_drones, 4), device=self.device),
         }
-        self._params = {"mass": jnp.ones((n_worlds, n_drones, 1), device=self.device) * 0.025}
+        self._params = {
+            "mass": jnp.ones((n_worlds, n_drones, 1), device=self.device) * 0.025,
+            "J": jnp.tile(J, n_worlds * n_drones).reshape(n_worlds, n_drones, 3, 3),
+            "J_INV": jnp.tile(J_INV, n_worlds * n_drones).reshape(n_worlds, n_drones, 3, 3),
+        }
         self._step = 0
         # Initialize MuJoCo world and data
         self._xml_path = xml_path or self.default_path
@@ -89,7 +96,7 @@ class Sim:
             case Physics.mujoco:
                 raise NotImplementedError
             case Physics.analytical:
-                raise NotImplementedError
+                self._step_analytical()
             case Physics.sys_id:
                 self._step_sys_id()
             case _:
@@ -98,10 +105,15 @@ class Sim:
     def attitude_control(self, cmd: Array):
         assert cmd.shape == (self.n_worlds, self.n_drones, 4), "Command shape mismatch"
         assert self.control == Control.attitude, "Attitude control is not enabled by the sim config"
-        if self.physics == Physics.sys_id:  # No controller is used for sys_id physics
-            self._controls["attitude"] = cmd
+        # sys_id physics uses the controller input to compute the physics step, so changes in the
+        # control input are always visible. To simulate the controller at a lower frequency, we only
+        # update the attitude buffer at the control frequency. This does not apply to other
+        # physics / controller combinations.
+        if self.physics == Physics.sys_id:
+            if self._step * self.control_freq % self.freq < self.control_freq:
+                self._controls["attitude"] = cmd
             return
-        raise NotImplementedError
+        self._controls["attitude"] = cmd
 
     def state_control(self, cmd: Array):
         assert cmd.shape == (self.n_worlds, self.n_drones, 13), "Command shape mismatch"
@@ -136,7 +148,33 @@ class Sim:
         self.states["vel"] = vel
         self.states["ang_vel"] = ang_vel
         # Sync states with MuJoCo
-        self._mjx_data = self._sync_sys_id(pos, quat, vel, ang_vel, self._mjx_model, self._mjx_data)
+        self._mjx_data = self._sync_states(pos, quat, vel, ang_vel, self._mjx_model, self._mjx_data)
+
+    def _step_analytical(self):
+        # Only update the RPMs at the control frequency
+        if self._step * self.control_freq % self.freq < self.control_freq:
+            match self.controller:
+                case Controller.emulatefirmware:
+                    rpms = attitude2rpm(self._controls["attitude"], self.states["quat"])
+                case Controller.pycffirmware:
+                    raise NotImplementedError
+                case _:
+                    raise ValueError(f"Controller {self.controller} not implemented")
+            self._controls["rpms"] = rpms
+        pos, quat, vel, ang_vel = batched_analytical_dynamics(
+            self._controls["rpms"],
+            *self.states.values(),
+            self._params["mass"],
+            self._params["J"],
+            self._params["J_INV"],
+            self._dt,
+        )
+        self.states["pos"] = pos
+        self.states["quat"] = quat
+        self.states["vel"] = vel
+        self.states["ang_vel"] = ang_vel
+        # Sync states with MuJoCo
+        self._mjx_data = self._sync_states(pos, quat, vel, ang_vel, self._mjx_model, self._mjx_data)
 
     def contacts(self, body: str | None = None) -> Array:
         """Get contact information from the simulation.
@@ -165,7 +203,7 @@ class Sim:
 
     @staticmethod
     @jax.jit
-    def _sync_sys_id(
+    def _sync_states(
         pos: Array, quat: Array, vel: Array, ang_vel: Array, mjx_model, mjx_data
     ) -> Data:
         quat = quat[..., [-1, 0, 1, 2]]  # MuJoCo quat is [w, x, y, z], ours is [x, y, z, w]
@@ -179,6 +217,11 @@ in_axes1 = (0, 0, 0, 0, 0, None)
 in_axes2 = (1, 1, 1, 1, 1, None)
 batched_identified_dynamics = jax.jit(
     jax.vmap(jax.vmap(identified_dynamics, in_axes1, 0), in_axes2, 1)
+)
+in_axes1 = (0, 0, 0, 0, 0, 0, 0, 0, None)
+in_axes2 = (1, 1, 1, 1, 1, 1, 1, 1, None)
+batched_analytical_dynamics = jax.jit(
+    jax.vmap(jax.vmap(analytical_dynamics, in_axes1, 0), in_axes2, 1)
 )
 
 batched_mjx_forward = jax.jit(jax.vmap(mjx.forward, in_axes=(None, 0)))

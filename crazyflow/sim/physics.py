@@ -4,7 +4,10 @@ import jax.numpy as jnp
 from jax import Array
 from jax.scipy.spatial.transform import Rotation as R
 
+from crazyflow.control.controller import ARM_LEN, KF, KM
+
 GRAVITY = 9.81
+MASS = 0.027
 SYS_ID_PARAMS = {
     "acc_k1": 20.91,
     "acc_k2": 3.65,
@@ -57,4 +60,40 @@ def identified_dynamics(
     next_quat = R.from_euler("xyz", R.from_quat(quat).as_euler("xyz") + ang_vel * dt).as_quat()
     next_vel = vel + acc * dt
     next_ang_vel = ang_vel + rpy_rates * dt
+    return next_pos, next_quat, next_vel, next_ang_vel
+
+
+def analytical_dynamics(
+    rpms: Array,
+    pos: Array,
+    quat: Array,
+    vel: Array,
+    ang_vel: Array,
+    mass: Array,
+    J: Array,
+    J_INV: Array,
+    dt: float,
+) -> tuple[Array, Array, Array, Array]:
+    """Analytical dynamics model."""
+    rot = R.from_quat(quat)
+    rpy_rates = rot.apply(ang_vel, inverse=True)  # Now in body frame
+    # Compute forces and torques.
+    forces = jnp.array(rpms**2) * KF
+    thrust = jnp.array([0, 0, jnp.sum(forces)])
+    thrust_world_frame = rot.apply(thrust)
+    force_world_frame = thrust_world_frame - jnp.array([0, 0, GRAVITY * mass[0]])
+    z_torques = jnp.array(rpms**2) * KM
+    z_torque = z_torques[0] - z_torques[1] + z_torques[2] - z_torques[3]
+    x_torque = (forces[0] + forces[1] - forces[2] - forces[3]) * (ARM_LEN / jnp.sqrt(2))
+    y_torque = (-forces[0] + forces[1] + forces[2] - forces[3]) * (ARM_LEN / jnp.sqrt(2))
+    torques = jnp.array([x_torque, y_torque, z_torque])
+    torques = torques - jnp.cross(rpy_rates, jnp.dot(J, rpy_rates))
+    rpy_rates_deriv = jnp.dot(J_INV, torques)
+    acc = force_world_frame / mass
+    # Update state.
+    next_pos = pos + vel * dt
+    next_vel = vel + acc * dt
+    rpy_rates = rpy_rates + rpy_rates_deriv * dt
+    next_quat = R.from_euler("xyz", R.from_quat(quat).as_euler("xyz") + ang_vel * dt).as_quat()
+    next_ang_vel = rot.apply(rpy_rates)
     return next_pos, next_quat, next_vel, next_ang_vel
