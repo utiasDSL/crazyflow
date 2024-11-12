@@ -8,6 +8,9 @@
       <default class="visual">
         <geom group="2" type="mesh" contype="0" conaffinity="0"/>
       </default>
+      <default class="collision">
+        <geom group="3"/>
+      </default>
       <site group="5"/>
     </default>
   </default>
@@ -15,16 +18,16 @@
   <include file="assets.xml"/>
 
   <worldbody>
-    <body name="drone" pos="0 0 0.05" childclass="cf2">
+    <body name="drone0" pos="0 0 0.05" childclass="cf2">
       <joint name="free_joint" type="free" stiffness="0" damping="0" frictionloss="0" armature="0"/>
       <inertial pos="0.0 0.0 0.0" mass="0.027" diaginertia="2.3951e-5 2.3951e-5 3.2347e-5"/>
       <camera name="track" pos="-1 0 .5" xyaxes="0 -1 0 1 0 2" mode="trackcom"/>
       <!-- Virtual bodies for the drone motors and the drone CoM -->
-      <body name="drone:0" pos="0.325 0.325 0.0"/>
-      <body name="drone:1" pos="-0.325 0.325 0.0"/>
-      <body name="drone:2" pos="-0.325 -0.325 0.0"/>
-      <body name="drone:3" pos="0.325 -0.325 0.0"/>
-      <body name="drone:4" pos="0.0 0.0 0.0"/>
+      <body name="drone0:0" pos="0.325 0.325 0.0"/>
+      <body name="drone0:1" pos="-0.325 0.325 0.0"/>
+      <body name="drone0:2" pos="-0.325 -0.325 0.0"/>
+      <body name="drone0:3" pos="0.325 -0.325 0.0"/>
+      <body name="drone0:4" pos="0.0 0.0 0.0"/>
       <geom mesh="cf2_0" material="propeller_plastic" class="visual"/>
       <geom mesh="cf2_1" material="medium_gloss_plastic" class="visual"/>
       <geom mesh="cf2_2" material="polished_gold" class="visual"/>
@@ -33,7 +36,7 @@
       <geom mesh="cf2_5" material="body_frame_plastic" class="visual"/>
       <geom mesh="cf2_6" material="white" class="visual"/>
       <!-- Collision geometry is estimated based on the visual mesh -->
-      <geom type="cylinder" size="0.075 0.012" group="3"/>
+      <geom type="cylinder" size="0.075 0.012" class="collision" name="drone0:col"/>
       <site name="imu"/>
       <site name="CoM"/>
       <site name="motor_0" pos="0.0325 0.0325 0.0"/>

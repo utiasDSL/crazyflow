@@ -10,15 +10,17 @@ from crazyflow.sim.core import Sim
 def profile_step(sim: Sim, n_steps: int, device: str):
     times = []
     device = jax.devices(device)[0]
-    sim.attitude_control(jnp.zeros((sim.n_worlds, sim.n_drones, 4), device=device))
-    sim.step()  # Ensure JIT compiled dynamics
     cmd = jnp.zeros((sim.n_worlds, sim.n_drones, 4), device=device)
     cmd = cmd.at[0, 0, 0].set(1)
+    sim.attitude_control(cmd)
+    sim.step()
+    jax.block_until_ready(sim._mjx_data)  # Ensure JIT compiled dynamics
+
     for _ in range(n_steps):
         tstart = time.perf_counter()
         sim.attitude_control(cmd)
         sim.step()
-        jax.block_until_ready(sim.states["pos"])
+        jax.block_until_ready(sim._mjx_data)
         times.append(time.perf_counter() - tstart)
     n_frames = n_steps * sim.n_worlds  # Number of frames simulated
     total_time = np.sum(times)

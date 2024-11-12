@@ -70,7 +70,7 @@ class Sim:
         spec = mujoco.MjSpec.from_file(str(self._xml_path))
         # Add additional drones to the world
         for i in range(1, self.n_drones):
-            clone_body(spec.worldbody, spec.find_body("drone"), f"drone_{i}")
+            clone_body(spec.worldbody, spec.find_body("drone0"), f"drone{i}")
         mj_model = spec.compile()
         mj_data = mujoco.MjData(mj_model)
         mjx_model = mjx.put_model(mj_model, device=self.device)
@@ -135,16 +135,44 @@ class Sim:
         self.states["quat"] = quat
         self.states["vel"] = vel
         self.states["ang_vel"] = ang_vel
-        self._sync_sys_id(pos, quat, vel, ang_vel, self._mjx_model, self._mjx_data)
+        # Sync states with MuJoCo
+        self._mjx_data = self._sync_sys_id(pos, quat, vel, ang_vel, self._mjx_model, self._mjx_data)
+
+    def contacts(self, body: str | None = None) -> Array:
+        """Get contact information from the simulation.
+
+        Args:
+            body: Optional body name to filter contacts for. If None, returns flags for all bodies.
+
+        Returns:
+            An boolean array of shape (n_worlds,) that is True if any contact is present.
+        """
+        if body is None:
+            return self._mjx_data.contact.dist < 0
+        body_id = self._mj_model.body(body).id
+        geom_start = self._mj_model.body_geomadr[body_id]
+        geom_count = self._mj_model.body_geomnum[body_id]
+        return self._contacts(geom_start, geom_count, self._mjx_data)
 
     @staticmethod
     @jax.jit
-    def _sync_sys_id(pos: Array, quat: Array, vel: Array, ang_vel: Array, mjx_model, mjx_data):
+    def _contacts(geom_start: int, geom_count: int, data: Data) -> Array:
+        geom1_valid = data.contact.geom1 >= geom_start
+        geom1_valid &= data.contact.geom1 < geom_start + geom_count
+        geom2_valid = data.contact.geom2 >= geom_start
+        geom2_valid &= data.contact.geom2 < geom_start + geom_count
+        return data.contact.dist < 0 & (geom1_valid | geom2_valid)
+
+    @staticmethod
+    @jax.jit
+    def _sync_sys_id(
+        pos: Array, quat: Array, vel: Array, ang_vel: Array, mjx_model, mjx_data
+    ) -> Data:
         quat = quat[..., [-1, 0, 1, 2]]  # MuJoCo quat is [w, x, y, z], ours is [x, y, z, w]
         qpos = rearrange(jnp.concat([pos, quat], axis=-1), "w d qpos -> w (d qpos)")
         qvel = rearrange(jnp.concat([vel, ang_vel], axis=-1), "w d qvel -> w (d qvel)")
         mjx_data = mjx_data.replace(qpos=qpos, qvel=qvel)
-        batched_mjx_forward(mjx_model, mjx_data)
+        return batched_mjx_forward(mjx_model, mjx_data)
 
 
 in_axes1 = (0, 0, 0, 0, 0, None)

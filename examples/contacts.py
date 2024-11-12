@@ -4,8 +4,8 @@ from crazyflow.sim import Physics, Sim
 
 
 def main():
-    """Spawn 5 drones in one world and render it."""
-    n_worlds, n_drones = 1, 5
+    """Spawn multiple drones in multiple worlds and check for contacts."""
+    n_worlds, n_drones = 2, 3
     sim = Sim(n_worlds=n_worlds, n_drones=n_drones, physics=Physics.sys_id, device="cpu")
     fps = 60
     x = np.arange(n_drones) / 3
@@ -17,6 +17,7 @@ def main():
         while sim.time - start < 1.0 / fps:
             sim.attitude_control(cmd)
             sim.step()
+        print(f"Contacts: {sim.contacts().any()}")
         sim.render()
     sim.close()
 
