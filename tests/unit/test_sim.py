@@ -69,3 +69,24 @@ def test_render(device: str):
     sim = Sim(device=device)
     sim.render()
     sim.viewer.close()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("device", ["gpu", "cpu"])
+def test_device(device: str):
+    sim = Sim(n_worlds=2, physics=Physics.sys_id, device=device)
+    sim.step()
+    assert sim.states["pos"].device == jax.devices(device)[0]
+    assert sim._mjx_data.qpos.device == jax.devices(device)[0]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("device", ["gpu", "cpu"])
+@pytest.mark.parametrize("n_worlds", [1, 2])
+@pytest.mark.parametrize("n_drones", [1, 3])
+def test_shape_consistency(device: str, n_drones: int, n_worlds: int):
+    sim = Sim(n_worlds=n_worlds, n_drones=n_drones, physics=Physics.sys_id, device=device)
+    qpos_shape, qvel_shape = sim._mjx_data.qpos.shape, sim._mjx_data.qvel.shape
+    sim.step()
+    assert sim._mjx_data.qpos.shape == qpos_shape, "step() should not change qpos shape"
+    assert sim._mjx_data.qvel.shape == qvel_shape, "step() should not change qvel shape"

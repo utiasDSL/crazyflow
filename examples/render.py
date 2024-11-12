@@ -1,16 +1,20 @@
-import mujoco as mj
+import numpy as np
 
 from crazyflow.sim import Physics, Sim
 
 
 def main():
     """Spawn a single drone in one world and render it."""
-    sim = Sim(physics=Physics.sys_id, device="gpu")
+    n_worlds, n_drones = 1, 1
+    sim = Sim(n_worlds=n_worlds, n_drones=n_drones, physics=Physics.sys_id, device="cpu")
     fps = 60
-    for _ in range(int(10 * fps)):
-        start = sim._data.time
-        while sim._data.time - start < 1.0 / fps:
-            mj.mj_step(sim._model, sim._data)
+
+    cmd = np.array([[[0.3, 0, 0, 0] for _ in range(n_drones)] for _ in range(n_worlds)])
+    for _ in range(int(5 * fps)):
+        start = sim.time
+        while sim.time - start < 1.0 / fps:
+            sim.attitude_control(cmd)
+            sim.step()
         sim.render()
     sim.close()
 

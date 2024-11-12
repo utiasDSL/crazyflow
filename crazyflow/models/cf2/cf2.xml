@@ -44,26 +44,6 @@
 
   </worldbody>
 
-  <!-- Body-level thrust and moments -->
-  <actuator>
-    <motor class="cf2" ctrlrange="0 0.35" gear="0 0 1 0 0 0" site="CoM" name="body_thrust"/>
-    <motor class="cf2" ctrlrange="-1 1" gear="0 0 0 1 0 0" site="CoM" name="x_moment"/>
-    <motor class="cf2" ctrlrange="-1 1" gear="0 0 0 0 1 0" site="CoM" name="y_moment"/>
-    <motor class="cf2" ctrlrange="-1 1" gear="0 0 0 0 0 1" site="CoM" name="z_moment"/>
-  </actuator>
-
-  <!-- Individual motors. TODO: Add correct limits to the control range -->
-  <actuator>
-    <motor class="cf2" ctrlrange="0 1" gear="0 0 1 0 0 0" site="motor_0" name="motor_0_thrust"/>
-    <motor class="cf2" ctrlrange="0 1" gear="0 0 1 0 0 0" site="motor_1" name="motor_1_thrust"/>
-    <motor class="cf2" ctrlrange="0 1" gear="0 0 1 0 0 0" site="motor_2" name="motor_2_thrust"/>
-    <motor class="cf2" ctrlrange="0 1" gear="0 0 1 0 0 0" site="motor_3" name="motor_3_thrust"/>
-    <motor class="cf2" ctrlrange="-1 1" gear="0 0 0 0 0 1" site="motor_0" name="motor_0_moment"/>
-    <motor class="cf2" ctrlrange="-1 1" gear="0 0 0 0 0 1" site="motor_1" name="motor_1_moment"/>
-    <motor class="cf2" ctrlrange="-1 1" gear="0 0 0 0 0 1" site="motor_2" name="motor_2_moment"/>
-    <motor class="cf2" ctrlrange="-1 1" gear="0 0 0 0 0 1" site="motor_3" name="motor_3_moment"/>
-  </actuator>
-
   <sensor>
     <gyro name="body_gyro" site="imu"/>
     <accelerometer name="body_linacc" site="imu"/>

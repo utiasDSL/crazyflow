@@ -5,6 +5,7 @@ import jax
 import jax.numpy as jnp
 import mujoco
 import mujoco.mjx as mjx
+from einops import rearrange
 from gymnasium.envs.mujoco.mujoco_rendering import MujocoRenderer
 from jax import Array
 from mujoco.mjx import Data, Model
@@ -57,28 +58,29 @@ class Sim:
             "thrust": jnp.zeros((n_worlds, n_drones, 4), device=self.device),
         }
         self._params = {"mass": jnp.ones((n_worlds, n_drones, 1), device=self.device) * 0.025}
+        self._step = 0
         # Initialize MuJoCo world and data
         self._xml_path = xml_path or self.default_path
-        self._spec, self._model, self._data, self._mjx_model, self._mjx_data = self.setup()
+        self._spec, self._mj_model, self._mj_data, self._mjx_model, self._mjx_data = self.setup()
         self.viewer: MujocoRenderer | None = None
 
     def setup(self) -> tuple[Any, Any, Any, Model, Data]:
         assert self._xml_path.exists(), f"Model file {self._xml_path} does not exist"
-        spec = mujoco.MjSpec()
-        spec.from_file(str(self._xml_path))
-        model = spec.compile()
-        # TODO: Spec compiled model is not working at the moment.
-        model = mujoco.MjModel.from_xml_path(str(self._xml_path))
-        data = mujoco.MjData(model)
-        mjx_model = mjx.put_model(model)
-        mjx_data = mjx.put_data(model, data)
-        return spec, model, data, mjx_model, mjx_data
+        spec = mujoco.MjSpec.from_file(str(self._xml_path))
+        mj_model = spec.compile()
+        mj_data = mujoco.MjData(mj_model)
+        mjx_model = mjx.put_model(mj_model, device=self.device)
+        mjx_data = mjx.put_data(mj_model, mj_data, device=self.device)
+        mjx_data = jax.vmap(lambda _: mjx_data)(jnp.arange(self.n_worlds))
+        return None, mj_model, mj_data, mjx_model, mjx_data
 
     def reset(self):
+        self._step = 0
         raise NotImplementedError
 
     def step(self):
         """Simulate all drones in all worlds for one time step."""
+        self._step += 1
         match self.physics:
             case Physics.mujoco:
                 raise NotImplementedError
@@ -108,12 +110,18 @@ class Sim:
 
     def render(self):
         if self.viewer is None:
-            self.viewer = MujocoRenderer(self._model, self._data)
+            self.viewer = MujocoRenderer(self._mj_model, self._mj_data)
+        self._mj_data.qpos[:] = mjx.get_data(m=self._mj_model, d=self._mjx_data)[0].qpos
+        mujoco.mj_forward(self._mj_model, self._mj_data)
         self.viewer.render("human")
 
     def close(self):
         if self.viewer is not None:
             self.viewer.close()
+
+    @property
+    def time(self) -> float:
+        return self._step / self.freq
 
     def _step_sys_id(self):
         pos, quat, vel, ang_vel = batched_identified_dynamics(
@@ -123,6 +131,13 @@ class Sim:
         self.states["quat"] = quat
         self.states["vel"] = vel
         self.states["ang_vel"] = ang_vel
+        quat = quat[..., [-1, 0, 1, 2]]  # MuJoCo quat is [w, x, y, z], ours is [x, y, z, w]
+        qpos = rearrange(jnp.concat([pos, quat], axis=-1), "w d qpos -> w (d qpos)")
+        qvel = rearrange(jnp.concat([vel, ang_vel], axis=-1), "w d qvel -> w (d qvel)")
+        assert self._mjx_data.qpos.shape == qpos.shape, f"Shape mismatch: {qpos.shape}"
+        assert self._mjx_data.qvel.shape == qvel.shape
+        self._mjx_data = self._mjx_data.replace(qpos=qpos, qvel=qvel)
+        self._mjx_data = batched_mjx_forward(self._mjx_model, self._mjx_data)
 
 
 in_axes1 = (0, 0, 0, 0, 0, None)
@@ -130,3 +145,5 @@ in_axes2 = (1, 1, 1, 1, 1, None)
 batched_identified_dynamics = jax.jit(
     jax.vmap(jax.vmap(identified_dynamics, in_axes1, 0), in_axes2, 1)
 )
+
+batched_mjx_forward = jax.jit(jax.vmap(mjx.forward, in_axes=(None, 0)))
