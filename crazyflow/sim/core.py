@@ -111,6 +111,10 @@ class Sim:
             self.viewer = MujocoRenderer(self._model, self._data)
         self.viewer.render("human")
 
+    def close(self):
+        if self.viewer is not None:
+            self.viewer.close()
+
     def _step_sys_id(self):
         pos, quat, vel, ang_vel = batched_identified_dynamics(
             self._controls["attitude"], *self.states.values(), self._dt
