@@ -37,7 +37,7 @@ class Sim:
         self.device = jax.devices(device)[0]
         self.freq = freq
         self.control_freq = control_freq
-        self._dt = jnp.array(1 / freq, device=self.device)
+        self.dt = jnp.array(1 / freq, device=self.device)
         # pycffirmware uses global states which make it impossible to simulate multiple drones at
         # the same time. We raise if the user tries a combination of pycffirmware and drones > 1.
         if controller == Controller.pycffirmware and n_worlds != n_drones != 1:
@@ -60,12 +60,14 @@ class Sim:
             "attitude": jnp.zeros((n_worlds, n_drones, 4), device=self.device),
             "thrust": jnp.zeros((n_worlds, n_drones, 4), device=self.device),
             "rpms": jnp.zeros((n_worlds, n_drones, 4), device=self.device),
+            "rpy_err_i": jnp.zeros((n_worlds, n_drones, 3), device=self.device),
         }
         self._params = {
             "mass": jnp.ones((n_worlds, n_drones, 1), device=self.device) * 0.025,
             "J": jnp.tile(J, n_worlds * n_drones).reshape(n_worlds, n_drones, 3, 3),
             "J_INV": jnp.tile(J_INV, n_worlds * n_drones).reshape(n_worlds, n_drones, 3, 3),
         }
+        self._default_params = self._params.copy()
         self._step = 0
         # Initialize MuJoCo world and data
         self._xml_path = xml_path or self.default_path
@@ -86,8 +88,13 @@ class Sim:
         return None, mj_model, mj_data, mjx_model, mjx_data
 
     def reset(self):
+        """Reset the simulation to the initial state.
+
+        TODO: Reset all models, control variables, params, states etc.
+        """
         self._step = 0
-        raise NotImplementedError
+        for key in self._params:
+            self._params[key] = self._default_params[key]
 
     def step(self):
         """Simulate all drones in all worlds for one time step."""
@@ -139,9 +146,14 @@ class Sim:
     def time(self) -> float:
         return self._step / self.freq
 
+    @property
+    def controllable(self) -> bool:
+        """True if the controller can update the control input this step, else False."""
+        return self._step * self.control_freq % self.freq < self.control_freq
+
     def _step_sys_id(self):
         pos, quat, vel, ang_vel = batched_identified_dynamics(
-            self._controls["attitude"], *self.states.values(), self._dt
+            self._controls["attitude"], *self.states.values(), self.dt
         )
         self.states["pos"] = pos
         self.states["quat"] = quat
@@ -155,7 +167,14 @@ class Sim:
         if self._step * self.control_freq % self.freq < self.control_freq:
             match self.controller:
                 case Controller.emulatefirmware:
-                    rpms = attitude2rpm(self._controls["attitude"], self.states["quat"])
+                    rpms, rpy_err_i = batched_attitude2rpm(
+                        self._controls["attitude"],
+                        self.states["quat"],
+                        self.states["ang_vel"],
+                        self._controls["rpy_err_i"],
+                        self.dt,
+                    )
+                    self._controls["rpy_err_i"] = rpy_err_i
                 case Controller.pycffirmware:
                     raise NotImplementedError
                 case _:
@@ -167,7 +186,7 @@ class Sim:
             self._params["mass"],
             self._params["J"],
             self._params["J_INV"],
-            self._dt,
+            self.dt,
         )
         self.states["pos"] = pos
         self.states["quat"] = quat
@@ -213,15 +232,23 @@ class Sim:
         return batched_mjx_forward(mjx_model, mjx_data)
 
 
-in_axes1 = (0, 0, 0, 0, 0, None)
-in_axes2 = (1, 1, 1, 1, 1, None)
+in_axes1 = (0,) * 5 + (None,)
+in_axes2 = (1,) * 5 + (None,)
 batched_identified_dynamics = jax.jit(
     jax.vmap(jax.vmap(identified_dynamics, in_axes1, 0), in_axes2, 1)
 )
-in_axes1 = (0, 0, 0, 0, 0, 0, 0, 0, None)
-in_axes2 = (1, 1, 1, 1, 1, 1, 1, 1, None)
+
+
+in_axes1 = (0,) * 8 + (None,)
+in_axes2 = (1,) * 8 + (None,)
 batched_analytical_dynamics = jax.jit(
     jax.vmap(jax.vmap(analytical_dynamics, in_axes1, 0), in_axes2, 1)
 )
 
+
 batched_mjx_forward = jax.jit(jax.vmap(mjx.forward, in_axes=(None, 0)))
+
+
+in_axes1 = (0,) * 4 + (None,)
+in_axes2 = (1,) * 4 + (None,)
+batched_attitude2rpm = jax.jit(jax.vmap(jax.vmap(attitude2rpm, in_axes1, 0), in_axes2, 1))

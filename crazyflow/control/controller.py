@@ -88,7 +88,7 @@ def state2attitude(
 
 
 def attitude2rpm(
-    cmd: Array, quat: Array, last_rpy: Array, rpy_err_i: Array, dt: float
+    cmd: Array, quat: Array, ang_vel: Array, rpy_err_i: Array, dt: float
 ) -> tuple[Array, Array]:
     """Convert the desired attitude and quaternion into motor RPMs."""
     rot = R.from_quat(quat)
@@ -98,11 +98,11 @@ def attitude2rpm(
         rot.as_matrix().transpose(), target_rot.as_matrix()
     )
     rot_e = jnp.array([rot_matrix_e[2, 1], rot_matrix_e[0, 2], rot_matrix_e[1, 0]])
-    # We assume zero rpy rates target
-    rpy_rates_e = -(cur_rpy - last_rpy) / dt
+    # We assume zero rpy rates target. Otherwise: rpy_rates_target -(cur_rpy - last_rpy) / dt
+    rpy_rates_e = -rot.apply(ang_vel, inverse=True)  # Now in body frame
     rpy_err_i = rpy_err_i - rot_e * dt
     rpy_err_i = jnp.clip(rpy_err_i, -1500.0, 1500.0)
-    rpy_err_i[:2] = jnp.clip(rpy_err_i[:2], -1.0, 1.0)
+    rpy_err_i = rpy_err_i.at[:2].set(jnp.clip(rpy_err_i[:2], -1.0, 1.0))
     # PID target torques.
     target_torques = -P_T * rot_e + D_T * rpy_rates_e + I_T * rpy_err_i
     target_torques = jnp.clip(target_torques, -3200, 3200)
