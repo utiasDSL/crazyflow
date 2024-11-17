@@ -75,6 +75,7 @@ def analytical_dynamics(
     dt: float,
 ) -> tuple[Array, Array, Array, Array]:
     """Analytical dynamics model."""
+    # TODO: Remove rpms, use forces and torques directly.
     rot = R.from_quat(quat)
     rpy_rates = rot.apply(ang_vel, inverse=True)  # Now in body frame
     # Compute forces and torques.

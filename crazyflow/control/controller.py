@@ -92,35 +92,45 @@ def attitude2rpm(
 ) -> tuple[Array, Array]:
     """Convert the desired attitude and quaternion into motor RPMs."""
     rot = R.from_quat(quat)
-    target_rot = R.from_euler("xyz", cmd[..., 1:], degrees=False)  # Or XYZ ?
-    cur_rpy = rot.as_euler("xyz")
+    target_rot = R.from_euler("xyz", cmd[..., 1:])  # Or XYZ ?
     rot_matrix_e = jnp.dot((target_rot.as_matrix().transpose()), rot.as_matrix()) - jnp.dot(
         rot.as_matrix().transpose(), target_rot.as_matrix()
     )
     rot_e = jnp.array([rot_matrix_e[2, 1], rot_matrix_e[0, 2], rot_matrix_e[1, 0]])
     # We assume zero rpy rates target. Otherwise: rpy_rates_target -(cur_rpy - last_rpy) / dt
-    rpy_rates_e = -rot.apply(ang_vel, inverse=True)  # Now in body frame
+    # TODO: Check angular velocity conversion correctness
+    rpy_rates_e = -ang_vel2rpy_rates(rot.apply(ang_vel, inverse=True), rot)
     rpy_err_i = rpy_err_i - rot_e * dt
     rpy_err_i = jnp.clip(rpy_err_i, -1500.0, 1500.0)
     rpy_err_i = rpy_err_i.at[:2].set(jnp.clip(rpy_err_i[:2], -1.0, 1.0))
     # PID target torques.
     target_torques = -P_T * rot_e + D_T * rpy_rates_e + I_T * rpy_err_i
     target_torques = jnp.clip(target_torques, -3200, 3200)
-    pwm = cmd[..., 0] + jnp.dot(MIX_MATRIX, target_torques)
-    pwm = jnp.clip(pwm, MIN_PWM, MAX_PWM)
+    pwm = thrust2pwm(cmd[0] + jnp.dot(MIX_MATRIX, target_torques))
     return PWM2RPM_CONST + PWM2RPM_SCALE * pwm, rpy_err_i
 
 
-def thrust2rpm(thrust: Array) -> Array:
-    """Convert the desired thrust into motor RPMs.
+def thrust2pwm(thrust: Array) -> Array:
+    """Convert the desired thrust into motor PWMs.
 
     Args:
-        thrust: The desired thrust per motor. Shape (..., 4).
+        thrust: The desired thrust per motor.
 
     Returns:
-        The motors' RPMs to apply to the quadrotor.
+        The motors' PWMs to apply to the quadrotor.
     """
-    assert thrust.shape[-1] == 4, "Thrust must have 4 motors in the last dimension"
     thrust = jnp.clip(thrust, min=MIN_THRUST, max=MAX_THRUST)
-    pwms = jnp.clip((jnp.sqrt(thrust / KF) - PWM2RPM_CONST) / PWM2RPM_SCALE, MIN_PWM, MAX_PWM)
-    return PWM2RPM_CONST + PWM2RPM_SCALE * pwms
+    return jnp.clip((jnp.sqrt(thrust / (KF * 4)) - PWM2RPM_CONST) / PWM2RPM_SCALE, MIN_PWM, MAX_PWM)
+
+
+def ang_vel2rpy_rates(ang_vel: Array, rot: R) -> Array:
+    """Convert the angular velocity into RPY rates.
+
+    This function assumes the order of rotations is 'xyz'.
+    """
+    rpy = rot.as_euler("xyz")
+    cs_r, sn_r, cs_p = jnp.cos(rpy[0]), jnp.sin(rpy[0]), jnp.cos(rpy[1])
+    r_dot = ang_vel[0] + jnp.tan(rpy[1]) * (sn_r * ang_vel[1] + cs_r * ang_vel[2])
+    p_dot = sn_r * ang_vel[1] + cs_r * ang_vel[2]
+    y_dot = -sn_r / cs_p * ang_vel[1] + cs_r / cs_p * ang_vel[2]
+    return jnp.array([r_dot, p_dot, y_dot])
