@@ -17,7 +17,7 @@ classifiers = [
     "Intended Audience :: Science/Research",
 ]
 
-dependencies = ["jax", "mujoco", "gymnasium", "imageio", "mujoco-mjx"]
+dependencies = ["jax", "mujoco", "gymnasium", "imageio", "mujoco-mjx", "einops"]
 
 [project.optional-dependencies]
 test = ["pytest>=8.0.0"]

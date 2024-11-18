@@ -4,10 +4,9 @@ import jax.numpy as jnp
 from jax import Array
 from jax.scipy.spatial.transform import Rotation as R
 
-from crazyflow.control.controller import ARM_LEN, KF, KM
+from crazyflow.constants import ARM_LEN, GRAVITY, SIGN_MIX_MATRIX
+from crazyflow.control.controller import KF, KM
 
-GRAVITY = 9.81
-MASS = 0.027
 SYS_ID_PARAMS = {
     "acc_k1": 20.91,
     "acc_k2": 3.65,
@@ -68,7 +67,7 @@ def analytical_dynamics(
     pos: Array,
     quat: Array,
     vel: Array,
-    ang_vel: Array,
+    rpy_rates: Array,
     mass: Array,
     J: Array,
     J_INV: Array,
@@ -77,16 +76,16 @@ def analytical_dynamics(
     """Analytical dynamics model."""
     # TODO: Remove rpms, use forces and torques directly.
     rot = R.from_quat(quat)
-    rpy_rates = rot.apply(ang_vel, inverse=True)  # Now in body frame
+    rpy_rates = rot.apply(rpy_rates, inverse=True)  # Now in body frame
     # Compute forces and torques.
     forces = jnp.array(rpms**2) * KF
     thrust = jnp.array([0, 0, jnp.sum(forces)])
     thrust_world_frame = rot.apply(thrust)
     force_world_frame = thrust_world_frame - jnp.array([0, 0, GRAVITY * mass[0]])
     z_torques = jnp.array(rpms**2) * KM
-    z_torque = z_torques[0] - z_torques[1] + z_torques[2] - z_torques[3]
-    x_torque = (forces[0] + forces[1] - forces[2] - forces[3]) * (ARM_LEN / jnp.sqrt(2))
-    y_torque = (-forces[0] + forces[1] + forces[2] - forces[3]) * (ARM_LEN / jnp.sqrt(2))
+    z_torque = jnp.dot(SIGN_MIX_MATRIX[..., 3], z_torques)
+    x_torque = jnp.dot(SIGN_MIX_MATRIX[..., 0], forces) * (ARM_LEN / jnp.sqrt(2))
+    y_torque = jnp.dot(SIGN_MIX_MATRIX[..., 1], forces) * (ARM_LEN / jnp.sqrt(2))
     torques = jnp.array([x_torque, y_torque, z_torque])
     torques = torques - jnp.cross(rpy_rates, jnp.dot(J, rpy_rates))
     rpy_rates_deriv = jnp.dot(J_INV, torques)
@@ -95,6 +94,7 @@ def analytical_dynamics(
     next_pos = pos + vel * dt
     next_vel = vel + acc * dt
     rpy_rates = rpy_rates + rpy_rates_deriv * dt
-    next_quat = R.from_euler("xyz", R.from_quat(quat).as_euler("xyz") + ang_vel * dt).as_quat()
-    next_ang_vel = rot.apply(rpy_rates)
-    return next_pos, next_quat, next_vel, next_ang_vel
+    next_rot = R.from_euler("xyz", R.from_quat(quat).as_euler("xyz") + rpy_rates * dt)
+    next_quat = next_rot.as_quat()
+    next_rpy_rates = next_rot.apply(rpy_rates)  # Always give rpy rates in world frame
+    return next_pos, next_quat, next_vel, next_rpy_rates

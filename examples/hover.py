@@ -23,11 +23,12 @@ def main():
 
     for i in range(int(duration * sim.freq)):
         if sim.controllable:
-            # Emulate firmware state cmd is [x, y, z, qx, qy, qz, qw, vx, vy, vz]
-            cmd = np.array([[[0.0, 0.0, 0.2, 0, 0, 0, 1, 0, 0, 0]]])
+            # State cmd is [x, y, z, vx, vy, vz, ax, ay, az, yaw, roll_rate, pitch_rate, yaw_rate]
+            cmd = np.zeros((sim.n_worlds, sim.n_drones, 13))
+            cmd[..., 2] = 0.1
             sim.state_control(cmd)
         sim.step()
-        if i * fps % sim.freq < fps:
+        if ((i * fps) % sim.freq) < fps:
             sim.render()
     sim.close()
 

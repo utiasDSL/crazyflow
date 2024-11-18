@@ -16,6 +16,8 @@ import jax.numpy as jnp
 from jax import Array
 from jax.scipy.spatial.transform import Rotation as R
 
+from crazyflow.constants import GRAVITY, MASS, MIX_MATRIX
+
 
 class Control(str, Enum):
     """Control type of the simulated onboard controller."""
@@ -34,14 +36,12 @@ class Controller(Enum):
     default = emulatefirmware
 
 
-GRAVITY = 9.81
 KF: float = 3.16e-10
 KM: float = 7.94e-12
-ARM_LEN: float = 0.46
-MASS: float = 0.027
 P_F: Array = jnp.array([0.4, 0.4, 1.25])
 I_F: Array = jnp.array([0.05, 0.05, 0.05])
 D_F: Array = jnp.array([0.2, 0.2, 0.5])
+I_F_RANGE: Array = jnp.array([2.0, 2.0, 0.4])
 P_T: Array = jnp.array([70000.0, 70000.0, 60000.0])
 I_T: Array = jnp.array([0.0, 0.0, 500.0])
 D_T: Array = jnp.array([20000.0, 20000.0, 12000.0])
@@ -55,7 +55,6 @@ MIN_RPM: float = PWM2RPM_SCALE * MIN_PWM + PWM2RPM_CONST
 MAX_RPM: float = PWM2RPM_SCALE * MAX_PWM + PWM2RPM_CONST
 MIN_THRUST: float = KF * MIN_RPM**2
 MAX_THRUST: float = KF * MAX_RPM**2
-MIX_MATRIX: Array = jnp.array([[0.5, -0.5, -1], [0.5, 0.5, 1], [-0.5, 0.5, -1], [-0.5, -0.5, 1]])
 
 
 def state2attitude(
@@ -63,56 +62,55 @@ def state2attitude(
     vel: Array,
     quat: Array,
     des_pos: Array,
-    des_quat: Array,
     des_vel: Array,
-    pos_err_i: Array,
-    t: float,
+    des_yaw: Array,
+    i_error: Array,
+    dt: float,
 ) -> tuple[Array, Array]:
-    """Compute the desired collective thrust and attitude for a reference trajectory."""
-    rot_now = R.from_quat(quat)
-    pos_err = des_pos - pos
-    vel_err = des_vel - vel
-    pos_err_i = jnp.clip(pos_err_i + pos_err * t, -2.0, 2.0)
-    pos_err_i = jnp.clip(pos_err_i[2], -0.15, 0.15)
-    # PID target thrust.
-    des_acc = P_F * pos_err + I_F * pos_err_i + D_F * vel_err + jnp.array([0, 0, GRAVITY])
-    des_thrust = des_acc * MASS
-    collective_thrust = jnp.maximum(0.0, jnp.dot(des_thrust, rot_now.as_matrix()[:, 2]))
-    collective_thrust = jnp.atleast_1d(collective_thrust)
-    # PID attitude
-    rpy = R.from_quat(des_quat).as_euler("xyz")
-    z_axis = des_thrust / jnp.linalg.norm(des_thrust)
-    helper_axis = jnp.array([jnp.cos(rpy[2]), jnp.sin(rpy[2]), 0])
-    y_axis = (y_axis := jnp.cross(z_axis, helper_axis)) / jnp.linalg.norm(y_axis)
+    """Compute the next desired collective thrust and roll/pitch/yaw of the drone."""
+    pos_error, vel_error = des_pos - pos, des_vel - vel
+    # Update integral error
+    i_error = jnp.clip(i_error + pos_error * dt, -I_F_RANGE, I_F_RANGE)
+    # Compute target thrust
+    thrust = P_F * pos_error + I_F * i_error + D_F * vel_error
+    thrust = thrust.at[2].add(MASS * GRAVITY)
+    # Update z_axis to the current orientation of the drone
+    z_axis = R.from_quat(quat).as_matrix()[:, 2]
+    # Project the thrust onto the z-axis
+    thrust_desired = jnp.clip(jnp.dot(thrust, z_axis), 0.3 * MASS * GRAVITY, 1.8 * MASS * GRAVITY)
+    # Update the desired z-axis
+    z_axis = thrust / jnp.linalg.norm(thrust)
+    yaw_axis = jnp.concatenate([jnp.cos(des_yaw), jnp.sin(des_yaw), jnp.array([0.0])])
+    y_axis = jnp.cross(z_axis, yaw_axis)
+    y_axis = y_axis / jnp.linalg.norm(y_axis)
     x_axis = jnp.cross(y_axis, z_axis)
-    attitude = R.from_matrix(jnp.stack([x_axis, y_axis, z_axis])).as_euler("xyz")
-    return jnp.concatenate([collective_thrust, attitude]), pos_err_i
+    euler_desired = R.from_matrix(jnp.vstack([x_axis, y_axis, z_axis]).T).as_euler("xyz")
+    return jnp.concatenate([jnp.atleast_1d(thrust_desired), euler_desired]), i_error
 
 
 def attitude2rpm(
-    cmd: Array, quat: Array, ang_vel: Array, rpy_err_i: Array, dt: float
+    cmd: Array, quat: Array, last_rpy: Array, rpy_err_i: Array, dt: float
 ) -> tuple[Array, Array]:
     """Convert the desired attitude and quaternion into motor RPMs."""
     rot = R.from_quat(quat)
-    target_rot = R.from_euler("xyz", cmd[..., 1:])  # Or XYZ ?
+    target_rot = R.from_euler("xyz", cmd[..., 1:])
     drot = (target_rot.inv() * rot).as_matrix()
+
     # Extract the anti-symmetric part of the relative rotation matrix.
     rot_e = jnp.array([drot[2, 1] - drot[1, 2], drot[0, 2] - drot[2, 0], drot[1, 0] - drot[0, 1]])
-    # We assume zero rpy rates target. Otherwise: rpy_rates_target -(cur_rpy - last_rpy) / dt
-    # TODO: Check angular velocity conversion correctness
-    rpy_rates_e = -ang_vel2rpy_rates(rot.apply(ang_vel, inverse=True), rot)
+    rpy_rates_e = -(rot.as_euler("xyz") - last_rpy) / dt  # Assuming zero rpy_rates target
     rpy_err_i = rpy_err_i - rot_e * dt
     rpy_err_i = jnp.clip(rpy_err_i, -1500.0, 1500.0)
     rpy_err_i = rpy_err_i.at[:2].set(jnp.clip(rpy_err_i[:2], -1.0, 1.0))
     # PID target torques.
     target_torques = -P_T * rot_e + D_T * rpy_rates_e + I_T * rpy_err_i
     target_torques = jnp.clip(target_torques, -3200, 3200)
-    pwm = jnp.clip(thrust2pwm(cmd[0]) + MIX_MATRIX @ target_torques, MIN_PWM, MAX_PWM)
+    pwm = jnp.clip(collective_thrust2pwm(cmd[0]) + MIX_MATRIX @ target_torques, MIN_PWM, MAX_PWM)
     return PWM2RPM_CONST + PWM2RPM_SCALE * pwm, rpy_err_i
 
 
-def thrust2pwm(thrust: Array) -> Array:
-    """Convert the desired thrust into motor PWMs.
+def collective_thrust2pwm(thrust: Array) -> Array:
+    """Convert the desired collective thrust into motor PWMs.
 
     Args:
         thrust: The desired thrust per motor.
@@ -121,16 +119,3 @@ def thrust2pwm(thrust: Array) -> Array:
         The motors' PWMs to apply to the quadrotor.
     """
     return jnp.clip((jnp.sqrt(thrust / (KF * 4)) - PWM2RPM_CONST) / PWM2RPM_SCALE, MIN_PWM, MAX_PWM)
-
-
-def ang_vel2rpy_rates(ang_vel: Array, rot: R) -> Array:
-    """Convert the angular velocity into RPY rates.
-
-    This function assumes the order of rotations is 'xyz'.
-    """
-    rpy = rot.as_euler("xyz")
-    cs_r, sn_r, cs_p = jnp.cos(rpy[0]), jnp.sin(rpy[0]), jnp.cos(rpy[1])
-    r_dot = ang_vel[0] + jnp.tan(rpy[1]) * (sn_r * ang_vel[1] + cs_r * ang_vel[2])
-    p_dot = sn_r * ang_vel[1] + cs_r * ang_vel[2]
-    y_dot = -sn_r / cs_p * ang_vel[1] + cs_r / cs_p * ang_vel[2]
-    return jnp.array([r_dot, p_dot, y_dot])
