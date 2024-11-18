@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +19,7 @@ from crazyflow.utils import clone_body
 
 
 class Sim:
-    default_path = Path(__file__).parents[1] / "models/cf2/scene.xml"
+    default_path = Path(os.getcwd()) / "crazyflow" / "models" / "cf2" / "scene.xml"
 
     def __init__(
         self,
