@@ -1,7 +1,7 @@
 import jax
 import pytest
 
-from crazyflow.control.controller import Control
+from crazyflow.control.controller import Control, Controller
 from crazyflow.exception import ConfigError
 from crazyflow.sim.core import Sim
 from crazyflow.sim.physics import Physics
@@ -11,28 +11,48 @@ from crazyflow.sim.physics import Physics
 @pytest.mark.parametrize("physics", Physics)
 @pytest.mark.parametrize("device", ["gpu", "cpu"])
 @pytest.mark.parametrize("control", Control)
-def test_sim_creation(physics: Physics, device: str, control: Control):
-    if physics == Physics.sys_id and control != Control.attitude:
+@pytest.mark.parametrize("controller", Controller)
+@pytest.mark.parametrize("n_worlds", [1, 2])
+def test_sim_creation(
+    physics: Physics, device: str, control: Control, controller: Controller, n_worlds: int
+):
+    n_drones = 1
+
+    def create_sim():
+        return Sim(
+            n_worlds=n_worlds,
+            n_drones=n_drones,
+            physics=physics,
+            device=device,
+            control=control,
+            controller=controller,
+        )
+
+    if n_drones * n_worlds > 1 and controller == Controller.pycffirmware:
         with pytest.raises(ConfigError):
-            Sim(n_worlds=2, n_drones=3, physics=physics, device=device, control=control)
+            create_sim()
         return
-    sim = Sim(n_worlds=2, n_drones=3, physics=physics, device=device, control=control)
-    assert sim.n_worlds == 2
-    assert sim.n_drones == 3
+    if physics == Physics.sys_id and control == Control.state:
+        with pytest.raises(ConfigError):
+            create_sim()
+        return
+    sim = create_sim()
+    assert sim.n_worlds == n_worlds
+    assert sim.n_drones == n_drones
     assert sim.device == jax.devices(device)[0]
     assert sim.physics == physics
 
     # Test state buffer shapes
-    assert sim.states["pos"].shape == (2, 3, 3)
+    assert sim.states["pos"].shape == (n_worlds, n_drones, 3)
     assert sim.states["pos"].device == jax.devices(device)[0]
-    assert sim.states["quat"].shape == (2, 3, 4)
-    assert sim.states["vel"].shape == (2, 3, 3)
-    assert sim.states["ang_vel"].shape == (2, 3, 3)
+    assert sim.states["quat"].shape == (n_worlds, n_drones, 4)
+    assert sim.states["vel"].shape == (n_worlds, n_drones, 3)
+    assert sim.states["ang_vel"].shape == (n_worlds, n_drones, 3)
 
     # Test control buffer shapes
-    assert sim._controls["attitude"].shape == (2, 3, 4)
-    assert sim._controls["thrust"].shape == (2, 3, 4)
-    assert sim._controls["state"].shape == (2, 3, 13)
+    assert sim._controls["attitude"].shape == (n_worlds, n_drones, 4)
+    assert sim._controls["thrust"].shape == (n_worlds, n_drones, 4)
+    assert sim._controls["state"].shape == (n_worlds, n_drones, 13)
     assert sim._controls["state"].device == jax.devices(device)[0]
 
 

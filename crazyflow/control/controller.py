@@ -11,7 +11,9 @@ and multiple drones explicitly in the controller.
 """
 
 from enum import Enum
+from functools import partial
 
+import jax
 import jax.numpy as jnp
 from jax import Array
 from jax.scipy.spatial.transform import Rotation as R
@@ -28,7 +30,7 @@ class Control(str, Enum):
     default = attitude
 
 
-class Controller(Enum):
+class Controller(str, Enum):
     """Controller type of the simulated onboard controller."""
 
     pycffirmware = "pycffirmware"
@@ -57,6 +59,8 @@ MIN_THRUST: float = KF * MIN_RPM**2
 MAX_THRUST: float = KF * MAX_RPM**2
 
 
+@jax.jit
+@partial(jnp.vectorize, signature="(3),(3),(4),(3),(3),(1),(3)->(4),(3)", excluded=[7])
 def state2attitude(
     pos: Array,
     vel: Array,
@@ -88,6 +92,8 @@ def state2attitude(
     return jnp.concatenate([jnp.atleast_1d(thrust_desired), euler_desired]), i_error
 
 
+@jax.jit
+@partial(jnp.vectorize, signature="(4),(4),(3),(3)->(4),(3)", excluded=[4])
 def attitude2rpm(
     cmd: Array, quat: Array, last_rpy: Array, rpy_err_i: Array, dt: float
 ) -> tuple[Array, Array]:

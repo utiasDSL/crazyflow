@@ -1,5 +1,7 @@
 from enum import Enum
+from functools import partial
 
+import jax
 import jax.numpy as jnp
 from jax import Array
 from jax.scipy.spatial.transform import Rotation as R
@@ -28,6 +30,8 @@ class Physics(str, Enum):
     default = mujoco
 
 
+@jax.jit
+@partial(jnp.vectorize, signature="(4),(3),(4),(3),(3)->(3),(4),(3),(3)", excluded=[5])
 def identified_dynamics(
     cmd: Array, pos: Array, quat: Array, vel: Array, ang_vel: Array, dt: float
 ) -> tuple[Array, Array, Array, Array]:
@@ -43,6 +47,11 @@ def identified_dynamics(
 
     Args:
         cmd: The 4D control input consisting of the desired collective thrust and attitude.
+        pos: The current position.
+        quat: The current orientation.
+        vel: The current velocity.
+        ang_vel: The current angular velocity.
+        dt: The simulation time step.
     """
     collective_thrust, attitude = cmd[0], cmd[1:]
     rot = R.from_quat(quat)
@@ -62,6 +71,10 @@ def identified_dynamics(
     return next_pos, next_quat, next_vel, next_ang_vel
 
 
+@jax.jit
+@partial(
+    jnp.vectorize, signature="(4),(3),(4),(3),(3),(1),(3,3),(3,3)->(3),(4),(3),(3)", excluded=[8]
+)
 def analytical_dynamics(
     rpms: Array,
     pos: Array,

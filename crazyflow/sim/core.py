@@ -1,3 +1,4 @@
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -35,6 +36,8 @@ class Sim:
         assert Physics(physics) in Physics, f"Physics mode {physics} not implemented"
         assert Control(control) in Control, f"Control mode {control} not implemented"
         assert Controller(controller) in Controller, f"Controller {controller} not implemented"
+        if physics == Physics.sys_id and control == Control.state:
+            raise ConfigError("sys_id physics does not support state control")
         self.physics = physics
         self.control = control
         self.controller = controller
@@ -44,7 +47,7 @@ class Sim:
         self.dt = jnp.array(1 / freq, device=self.device)
         # pycffirmware uses global states which make it impossible to simulate multiple drones at
         # the same time. We raise if the user tries a combination of pycffirmware and drones > 1.
-        if controller == Controller.pycffirmware and n_worlds != n_drones != 1:
+        if controller == Controller.pycffirmware and n_worlds * n_drones != 1:
             raise ConfigError("pycffirmware controller is only supported for single drone sims")
         # Allocate internal states and controls for analytical and sys_id physics.
         self.n_worlds = n_worlds
@@ -90,6 +93,16 @@ class Sim:
         mjx_model = mjx.put_model(mj_model, device=self.device)
         mjx_data = mjx.put_data(mj_model, mj_data, device=self.device)
         mjx_data = jax.vmap(lambda _: mjx_data)(jnp.arange(self.n_worlds))
+        if self.n_drones > 1:  # If multiple drones, arrange them in a grid
+            N = int(jnp.ceil(jnp.sqrt(self.n_drones)))
+            points = jnp.linspace(-0.5 * (N - 1), 0.5 * (N - 1), N)
+            x, y = jnp.meshgrid(points, points)
+            grid = jnp.stack((x.flatten(), y.flatten()), axis=-1)
+            grid = grid[: self.n_drones]
+            self.states["pos"] = self.states["pos"].at[..., :2].set(grid)
+            pos, quat = self.states["pos"], self.states["quat"]
+            vel, ang_vel = self.states["vel"], self.states["ang_vel"]
+            self._mjx_data = self._sync_mjx(pos, quat, vel, ang_vel, mjx_model, mjx_data)
         return None, mj_model, mj_data, mjx_model, mjx_data
 
     def reset(self):
@@ -157,20 +170,7 @@ class Sim:
         return self._step * self.control_freq % self.freq < self.control_freq
 
     def _step_sys_id(self):
-        if self.control == Control.state:  # TODO: Also support pycffirmware here?
-            attitude_cmd, pos_err_i = batched_state2attitude(
-                self.states["pos"],
-                self.states["vel"],
-                self.states["quat"],
-                self._controls["state"][..., :3],
-                self._controls["state"][..., 3:6],
-                self._controls["state"][..., 9:10],
-                self._controls["pos_err_i"],
-                self.dt,
-            )
-            self._controls["attitude"] = attitude_cmd
-            self._controls["pos_err_i"] = pos_err_i
-        pos, quat, vel, ang_vel = batched_identified_dynamics(
+        pos, quat, vel, ang_vel = identified_dynamics(
             self._controls["attitude"],
             self.states["pos"],
             self.states["quat"],
@@ -193,8 +193,8 @@ class Sim:
                     raise ValueError(f"Controller {self.controller} not implemented")
             self._controls["rpms"] = rpms
 
-        self._controls["last_rpy"] = batched_quat2rpy(self.states["quat"])
-        pos, quat, vel, rpy_rates = batched_analytical_dynamics(
+        self._controls["last_rpy"] = quat2rpy(self.states["quat"])
+        pos, quat, vel, rpy_rates = analytical_dynamics(
             self._controls["rpms"],
             self.states["pos"],
             self.states["quat"],
@@ -227,7 +227,7 @@ class Sim:
 
     def _step_emulate_firmware(self) -> Array:
         if self.control == Control.state:
-            attitude_cmd, pos_err_i = batched_state2attitude(
+            attitude_cmd, pos_err_i = state2attitude(
                 self.states["pos"],
                 self.states["vel"],
                 self.states["quat"],
@@ -239,7 +239,7 @@ class Sim:
             )
             self._controls["attitude"] = attitude_cmd
             self._controls["pos_err_i"] = pos_err_i
-        rpms, rpy_err_i = batched_attitude2rpm(
+        rpms, rpy_err_i = attitude2rpm(
             self._controls["attitude"],
             self.states["quat"],
             self._controls["last_rpy"],
@@ -284,31 +284,9 @@ def contacts(geom_start: int, geom_count: int, data: Data) -> Array:
     return data.contact.dist < 0 & (geom1_valid | geom2_valid)
 
 
-in_axes1 = (0,) * 5 + (None,)
-in_axes2 = (1,) * 5 + (None,)
-batched_identified_dynamics = jax.jit(
-    jax.vmap(jax.vmap(identified_dynamics, in_axes1, 0), in_axes2, 1)
-)
-
-
-in_axes1 = (0,) * 8 + (None,)
-in_axes2 = (1,) * 8 + (None,)
-batched_analytical_dynamics = jax.jit(
-    jax.vmap(jax.vmap(analytical_dynamics, in_axes1, 0), in_axes2, 1)
-)
-
-
 batched_mjx_forward = jax.jit(jax.vmap(mjx.forward, in_axes=(None, 0)))
 
 
-in_axes1 = (0,) * 4 + (None,)
-in_axes2 = (1,) * 4 + (None,)
-batched_attitude2rpm = jax.jit(jax.vmap(jax.vmap(attitude2rpm, in_axes1, 0), in_axes2, 1))
-
-
-in_axes1 = (0,) * 7 + (None,)
-in_axes2 = (1,) * 7 + (None,)
-batched_state2attitude = jax.jit(jax.vmap(jax.vmap(state2attitude, in_axes1, 0), in_axes2, 1))
-
-
-batched_quat2rpy = jax.jit(jax.vmap(jax.vmap(lambda x: R.from_quat(x).as_euler("xyz"), 0, 0), 1, 1))
+quat2rpy = jax.jit(
+    partial(jnp.vectorize, signature="(4)->(3)")(lambda x: R.from_quat(x).as_euler("xyz"))
+)
