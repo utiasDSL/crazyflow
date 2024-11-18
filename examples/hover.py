@@ -16,14 +16,15 @@ def main():
         control_freq=500,
         device="cpu",
     )
+
     sim.reset()
     duration = 5.0
     fps = 60
 
     for i in range(int(duration * sim.freq)):
         if sim.controllable:
-            des_pos = np.array([np.cos(i * 0.1), np.sin(i * 0.1), i * 0.1]) * i / sim.freq
-            cmd = np.array([[[*des_pos, 0, 0, 0, 1, 0, 0, 0]]])
+            # Emulate firmware state cmd is [x, y, z, qx, qy, qz, qw, vx, vy, vz]
+            cmd = np.array([[[0.0, 0.0, 0.2, 0, 0, 0, 1, 0, 0, 0]]])
             sim.state_control(cmd)
         sim.step()
         if i * fps % sim.freq < fps:

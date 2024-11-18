@@ -10,7 +10,7 @@ from gymnasium.envs.mujoco.mujoco_rendering import MujocoRenderer
 from jax import Array
 from mujoco.mjx import Data, Model
 
-from crazyflow.control.controller import J_INV, Control, Controller, J, attitude2rpm
+from crazyflow.control.controller import J_INV, Control, Controller, J, attitude2rpm, state2attitude
 from crazyflow.exception import ConfigError
 from crazyflow.sim.physics import Physics, analytical_dynamics, identified_dynamics
 from crazyflow.utils import clone_body
@@ -55,12 +55,17 @@ class Sim:
         }
         self.states["quat"] = self.states["quat"].at[:, :, 3].set(1.0)
         # Allocate internal control variables and physics parameters.
+        state_dim = 13 if controller == Controller.pycffirmware else 10
+        # TODO: Unify pycffirmware and emulatefirmware state control.
+        # pycffirmware uses [x, y, z, vx, vy, vz, ax, ay, az, yaw, roll_dot, pitch_dot, yaw_dot]
+        # while emulatefirmware uses [x, y, z, qx, qy, qz, qw, vx, vy, vz].
         self._controls = {
-            "state": jnp.zeros((n_worlds, n_drones, 13), device=self.device),
+            "state": jnp.zeros((n_worlds, n_drones, state_dim), device=self.device),
             "attitude": jnp.zeros((n_worlds, n_drones, 4), device=self.device),
             "thrust": jnp.zeros((n_worlds, n_drones, 4), device=self.device),
             "rpms": jnp.zeros((n_worlds, n_drones, 4), device=self.device),
             "rpy_err_i": jnp.zeros((n_worlds, n_drones, 3), device=self.device),
+            "pos_err_i": jnp.zeros((n_worlds, n_drones, 3), device=self.device),
         }
         self._params = {
             "mass": jnp.ones((n_worlds, n_drones, 1), device=self.device) * 0.025,
@@ -123,7 +128,8 @@ class Sim:
         self._controls["attitude"] = cmd
 
     def state_control(self, cmd: Array):
-        assert cmd.shape == (self.n_worlds, self.n_drones, 13), "Command shape mismatch"
+        """Set the desired state for all drones in all worlds."""
+        assert cmd.shape == self._controls["state"].shape, f"Command shape mismatch {cmd.shape}"
         assert self.control == Control.state, "State control is not enabled by the sim config"
         assert self.physics != Physics.sys_id, "State control is not supported for sys_id physics"
         self._controls["state"] = cmd
@@ -167,31 +173,13 @@ class Sim:
         if self._step * self.control_freq % self.freq < self.control_freq:
             match self.controller:
                 case Controller.emulatefirmware:
-                    rpms, rpy_err_i = batched_attitude2rpm(
-                        self._controls["attitude"],
-                        self.states["quat"],
-                        self.states["ang_vel"],
-                        self._controls["rpy_err_i"],
-                        self.dt,
-                    )
-                    self._controls["rpy_err_i"] = rpy_err_i
+                    rpms = self._step_emulate_firmware()
                 case Controller.pycffirmware:
                     raise NotImplementedError
                 case _:
                     raise ValueError(f"Controller {self.controller} not implemented")
             self._controls["rpms"] = rpms
-        pos, quat, vel, ang_vel = batched_analytical_dynamics(
-            self._controls["rpms"],
-            *self.states.values(),
-            self._params["mass"],
-            self._params["J"],
-            self._params["J_INV"],
-            self.dt,
-        )
-        self.states["pos"] = pos
-        self.states["quat"] = quat
-        self.states["vel"] = vel
-        self.states["ang_vel"] = ang_vel
+        pos, quat, vel, ang_vel = self._analytical_dynamics()
         # Sync states with MuJoCo
         self._mjx_data = self._sync_states(pos, quat, vel, ang_vel, self._mjx_model, self._mjx_data)
 
@@ -209,16 +197,44 @@ class Sim:
         body_id = self._mj_model.body(body).id
         geom_start = self._mj_model.body_geomadr[body_id]
         geom_count = self._mj_model.body_geomnum[body_id]
-        return self._contacts(geom_start, geom_count, self._mjx_data)
+        return contacts(geom_start, geom_count, self._mjx_data)
 
-    @staticmethod
-    @jax.jit
-    def _contacts(geom_start: int, geom_count: int, data: Data) -> Array:
-        geom1_valid = data.contact.geom1 >= geom_start
-        geom1_valid &= data.contact.geom1 < geom_start + geom_count
-        geom2_valid = data.contact.geom2 >= geom_start
-        geom2_valid &= data.contact.geom2 < geom_start + geom_count
-        return data.contact.dist < 0 & (geom1_valid | geom2_valid)
+    def _analytical_dynamics(self) -> tuple[Array, Array, Array, Array]:
+        pos, quat, vel, ang_vel = batched_analytical_dynamics(
+            self._controls["rpms"],
+            *self.states.values(),
+            self._params["mass"],
+            self._params["J"],
+            self._params["J_INV"],
+            self.dt,
+        )
+        self.states["pos"], self.states["quat"] = pos, quat
+        self.states["vel"], self.states["ang_vel"] = vel, ang_vel
+        return pos, quat, vel, ang_vel
+
+    def _step_emulate_firmware(self) -> Array:
+        if self.control == Control.state:
+            attitude_cmd, pos_err_i = batched_state2attitude(
+                self.states["pos"],
+                self.states["vel"],
+                self.states["quat"],
+                self._controls["state"][..., :3],
+                self._controls["state"][..., 3:7],
+                self._controls["state"][..., 7:10],
+                self._controls["pos_err_i"],
+                self.dt,
+            )
+            self._controls["attitude"] = attitude_cmd
+            self._controls["pos_err_i"] = pos_err_i
+        rpms, rpy_err_i = batched_attitude2rpm(
+            self._controls["attitude"],
+            self.states["quat"],
+            self.states["ang_vel"],
+            self._controls["rpy_err_i"],
+            self.dt,
+        )
+        self._controls["rpy_err_i"] = rpy_err_i
+        return rpms
 
     @staticmethod
     @jax.jit
@@ -230,6 +246,16 @@ class Sim:
         qvel = rearrange(jnp.concat([vel, ang_vel], axis=-1), "w d qvel -> w (d qvel)")
         mjx_data = mjx_data.replace(qpos=qpos, qvel=qvel)
         return batched_mjx_forward(mjx_model, mjx_data)
+
+
+@jax.jit
+def contacts(geom_start: int, geom_count: int, data: Data) -> Array:
+    """Filter contacts from MuJoCo data."""
+    geom1_valid = data.contact.geom1 >= geom_start
+    geom1_valid &= data.contact.geom1 < geom_start + geom_count
+    geom2_valid = data.contact.geom2 >= geom_start
+    geom2_valid &= data.contact.geom2 < geom_start + geom_count
+    return data.contact.dist < 0 & (geom1_valid | geom2_valid)
 
 
 in_axes1 = (0,) * 5 + (None,)
@@ -252,3 +278,7 @@ batched_mjx_forward = jax.jit(jax.vmap(mjx.forward, in_axes=(None, 0)))
 in_axes1 = (0,) * 4 + (None,)
 in_axes2 = (1,) * 4 + (None,)
 batched_attitude2rpm = jax.jit(jax.vmap(jax.vmap(attitude2rpm, in_axes1, 0), in_axes2, 1))
+
+in_axes1 = (0,) * 7 + (None,)
+in_axes2 = (1,) * 7 + (None,)
+batched_state2attitude = jax.jit(jax.vmap(jax.vmap(state2attitude, in_axes1, 0), in_axes2, 1))
