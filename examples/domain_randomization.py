@@ -7,7 +7,7 @@ def main():
     n_worlds, n_drones = 1, 1
     sim = Sim(n_worlds=n_worlds, n_drones=n_drones, physics=Physics.sys_id, device="cpu")
 
-    # Randomize friciton
+    # Randomize friction
     env_num = 10
     domain_randomizer = DomainRandomizer(env_num=env_num, seed=0)
     batched_sys = domain_randomizer.randomize_friction_from_distribution(
