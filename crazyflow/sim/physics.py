@@ -73,36 +73,25 @@ def identified_dynamics(
 
 @jax.jit
 @partial(
-    jnp.vectorize, signature="(4),(3),(4),(3),(3),(1),(3,3),(3,3)->(3),(4),(3),(3)", excluded=[8]
+    jnp.vectorize, signature="(3),(3),(3),(4),(3),(3),(1),(3,3)->(3),(4),(3),(3)", excluded=[8]
 )
 def analytical_dynamics(
-    rpms: Array,
+    forces: Array,
+    torques: Array,
     pos: Array,
     quat: Array,
     vel: Array,
     rpy_rates: Array,
     mass: Array,
-    J: Array,
     J_INV: Array,
     dt: float,
 ) -> tuple[Array, Array, Array, Array]:
     """Analytical dynamics model."""
-    # TODO: Remove rpms, use forces and torques directly.
     rot = R.from_quat(quat)
-    rpy_rates = rot.apply(rpy_rates, inverse=True)  # Now in body frame
-    # Compute forces and torques.
-    forces = jnp.array(rpms**2) * KF
-    thrust = jnp.array([0, 0, jnp.sum(forces)])
-    thrust_world_frame = rot.apply(thrust)
-    force_world_frame = thrust_world_frame - jnp.array([0, 0, GRAVITY * mass[0]])
-    z_torques = jnp.array(rpms**2) * KM
-    z_torque = jnp.dot(SIGN_MIX_MATRIX[..., 3], z_torques)
-    x_torque = jnp.dot(SIGN_MIX_MATRIX[..., 0], forces) * (ARM_LEN / jnp.sqrt(2))
-    y_torque = jnp.dot(SIGN_MIX_MATRIX[..., 1], forces) * (ARM_LEN / jnp.sqrt(2))
-    torques = jnp.array([x_torque, y_torque, z_torque])
-    torques = torques - jnp.cross(rpy_rates, jnp.dot(J, rpy_rates))
-    rpy_rates_deriv = jnp.dot(J_INV, torques)
-    acc = force_world_frame / mass
+    rpy_rates = rot.apply(rpy_rates, inverse=True)
+    forces = forces - jnp.array([0, 0, GRAVITY * mass[0]])
+    rpy_rates_deriv = J_INV @ torques
+    acc = forces / mass
     # Update state.
     next_pos = pos + vel * dt
     next_vel = vel + acc * dt
@@ -111,3 +100,24 @@ def analytical_dynamics(
     next_quat = next_rot.as_quat()
     next_rpy_rates = next_rot.apply(rpy_rates)  # Always give rpy rates in world frame
     return next_pos, next_quat, next_vel, next_rpy_rates
+
+
+@jax.jit
+@partial(jnp.vectorize, signature="(4),(4),(3),(3,3)->(3),(3)")
+def rpms2collective_wrench(
+    rpms: Array, quat: Array, rpy_rates: Array, J: Array
+) -> tuple[Array, Array]:
+    """Convert RPMs to forces and torques in the global frame."""
+    rot = R.from_quat(quat)
+    # Forces
+    forces = rpms**2 * KF
+    force = jnp.array([0, 0, jnp.sum(forces)])
+    # Torques
+    rpy_rates = rot.apply(rpy_rates, inverse=True)  # Now in body frame
+    z_torques = jnp.array(rpms**2) * KM
+    z_torque = SIGN_MIX_MATRIX[..., 3] @ z_torques
+    x_torque = SIGN_MIX_MATRIX[..., 0] @ forces * (ARM_LEN / jnp.sqrt(2))
+    y_torque = SIGN_MIX_MATRIX[..., 1] @ forces * (ARM_LEN / jnp.sqrt(2))
+    torques = jnp.array([x_torque, y_torque, z_torque])
+    torques = torques - jnp.cross(rpy_rates, J @ rpy_rates)
+    return rot.apply(force), rot.apply(torques)

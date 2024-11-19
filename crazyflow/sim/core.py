@@ -14,7 +14,12 @@ from mujoco.mjx import Data, Model
 
 from crazyflow.control.controller import J_INV, Control, Controller, J, attitude2rpm, state2attitude
 from crazyflow.exception import ConfigError
-from crazyflow.sim.physics import Physics, analytical_dynamics, identified_dynamics
+from crazyflow.sim.physics import (
+    Physics,
+    analytical_dynamics,
+    identified_dynamics,
+    rpms2collective_wrench,
+)
 from crazyflow.utils import clone_body
 
 
@@ -113,6 +118,8 @@ class Sim:
         self._step = 0
         for key in self._params:
             self._params[key] = self._default_params[key]
+        for key in self._controls:
+            self._controls[key] = jnp.zeros_like(self._controls[key])
 
     def step(self):
         """Simulate all drones in all worlds for one time step."""
@@ -194,14 +201,17 @@ class Sim:
             self._controls["rpms"] = rpms
 
         self._controls["last_rpy"] = quat2rpy(self.states["quat"])
+        forces, torques = rpms2collective_wrench(
+            self._controls["rpms"], self.states["quat"], self.states["rpy_rates"], self._params["J"]
+        )
         pos, quat, vel, rpy_rates = analytical_dynamics(
-            self._controls["rpms"],
+            forces,
+            torques,
             self.states["pos"],
             self.states["quat"],
             self.states["vel"],
             self.states["rpy_rates"],
             self._params["mass"],
-            self._params["J"],
             self._params["J_INV"],
             self.dt,
         )
