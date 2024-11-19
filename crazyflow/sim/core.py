@@ -271,7 +271,9 @@ class Sim:
         qpos = rearrange(jnp.concat([pos, quat], axis=-1), "w d qpos -> w (d qpos)")
         qvel = rearrange(jnp.concat([vel, ang_vel], axis=-1), "w d qvel -> w (d qvel)")
         mjx_data = mjx_data.replace(qpos=qpos, qvel=qvel)
-        return batched_mjx_forward(mjx_model, mjx_data)
+        mjx_data = mjx_kinematics(mjx_model, mjx_data)
+        mjx_data = mjx_collision(mjx_model, mjx_data)
+        return mjx_data
 
 
 @jax.jit
@@ -284,7 +286,9 @@ def contacts(geom_start: int, geom_count: int, data: Data) -> Array:
     return data.contact.dist < 0 & (geom1_valid | geom2_valid)
 
 
-batched_mjx_forward = jax.vmap(mjx.forward, in_axes=(None, 0))
+mjx_forward = jax.vmap(mjx.forward, in_axes=(None, 0))
+mjx_kinematics = jax.vmap(mjx.kinematics, in_axes=(None, 0))
+mjx_collision = jax.vmap(mjx.collision, in_axes=(None, 0))
 
 
 quat2rpy = jax.jit(
