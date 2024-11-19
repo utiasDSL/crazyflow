@@ -8,3 +8,4 @@ saves
 .pytest_cache
 **/*.json
 **/*.csv
+build
