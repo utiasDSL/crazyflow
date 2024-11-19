@@ -72,8 +72,8 @@ class Sim:
         }
         self._params = {
             "mass": jnp.ones((n_worlds, n_drones, 1), device=self.device) * 0.025,
-            "J": jnp.tile(J, n_worlds * n_drones).reshape(n_worlds, n_drones, 3, 3),
-            "J_INV": jnp.tile(J_INV, n_worlds * n_drones).reshape(n_worlds, n_drones, 3, 3),
+            "J": jnp.tile(J[None, None, :, :], (n_worlds, n_drones, 1, 1)),
+            "J_INV": jnp.tile(J_INV[None, None, :, :], (n_worlds, n_drones, 1, 1)),
         }
         self._default_params = self._params.copy()
         self._step = 0
@@ -116,7 +116,6 @@ class Sim:
 
     def step(self):
         """Simulate all drones in all worlds for one time step."""
-        self._step += 1
         match self.physics:
             case Physics.mujoco:
                 raise NotImplementedError
@@ -126,6 +125,7 @@ class Sim:
                 self._step_sys_id()
             case _:
                 raise ValueError(f"Physics mode {self.physics} not implemented")
+        self._step += 1
 
     def attitude_control(self, cmd: Array):
         assert cmd.shape == (self.n_worlds, self.n_drones, 4), "Command shape mismatch"
@@ -284,7 +284,7 @@ def contacts(geom_start: int, geom_count: int, data: Data) -> Array:
     return data.contact.dist < 0 & (geom1_valid | geom2_valid)
 
 
-batched_mjx_forward = jax.jit(jax.vmap(mjx.forward, in_axes=(None, 0)))
+batched_mjx_forward = jax.vmap(mjx.forward, in_axes=(None, 0))
 
 
 quat2rpy = jax.jit(
