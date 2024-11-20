@@ -88,6 +88,7 @@ class CrazyflowVectorEnv(VectorEnv):
         self.sim.reset(mask=self.prev_done)
 
         # Compute the new states without in-place mutation
+        # TODO: check if this is the most performance way to do this
         self.steps = jax.lax.select(self.prev_done, jnp.zeros_like(self.steps), self.steps + 1)
         reward = jax.lax.select(self.prev_done, jnp.zeros_like(reward), reward)
         terminated = jax.lax.select(self.prev_done, jnp.full_like(terminated, False), terminated)
