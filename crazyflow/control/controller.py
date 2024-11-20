@@ -81,7 +81,7 @@ def state2attitude(
     # Update z_axis to the current orientation of the drone
     z_axis = R.from_quat(quat).as_matrix()[:, 2]
     # Project the thrust onto the z-axis
-    thrust_desired = jnp.clip(jnp.dot(thrust, z_axis), 0.3 * MASS * GRAVITY, 1.8 * MASS * GRAVITY)
+    thrust_desired = jnp.clip(thrust @ z_axis, 0.3 * MASS * GRAVITY, 1.8 * MASS * GRAVITY)
     # Update the desired z-axis
     z_axis = thrust / jnp.linalg.norm(thrust)
     yaw_axis = jnp.concatenate([jnp.cos(des_yaw), jnp.sin(des_yaw), jnp.array([0.0])])
