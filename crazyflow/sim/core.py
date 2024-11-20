@@ -71,7 +71,7 @@ class Sim:
         )
         self.states = self.states.replace(quat=self.states.quat.at[..., -1].set(1.0))
         # Allocate internal control variables and physics parameters.
-        self._controls = SimControls(
+        self.controls = SimControls(
             state=jnp.zeros((n_worlds, n_drones, 13), device=self.device),
             attitude=jnp.zeros((n_worlds, n_drones, 4), device=self.device),
             thrust=jnp.zeros((n_worlds, n_drones, 4), device=self.device),
@@ -83,7 +83,7 @@ class Sim:
         )
         # Allocate physics parameter buffers.
         j, j_inv = jnp.array(J, device=self.device), jnp.array(J_INV, device=self.device)
-        self._params = SimParams(
+        self.params = SimParams(
             mass=jnp.ones((n_worlds, n_drones, 1), device=self.device) * 0.025,
             J=jnp.tile(j[None, None, :, :], (n_worlds, n_drones, 1, 1)),
             J_INV=jnp.tile(j_inv[None, None, :, :], (n_worlds, n_drones, 1, 1)),
@@ -115,8 +115,8 @@ class Sim:
             self._mjx_data = self._sync_mjx(self.states, mjx_model, mjx_data)
             # Update default to reflect changes after resetting
         self.defaults["states"] = self.states.replace()
-        self.defaults["controls"] = self._controls.replace()
-        self.defaults["params"] = self._params.replace()
+        self.defaults["controls"] = self.controls.replace()
+        self.defaults["params"] = self.params.replace()
         return None, mj_model, mj_data, mjx_model, mjx_data
 
     def reset(self, mask: Array | None = None):
@@ -129,10 +129,8 @@ class Sim:
         mask = self._default_mask if mask is None else mask
         assert mask.shape == (self.n_worlds,), f"Mask shape mismatch {mask.shape}"
         self.states = self._masked_states_reset(mask, self.states, self.defaults["states"])
-        self._controls = self._masked_controls_reset(
-            mask, self._controls, self.defaults["controls"]
-        )
-        self._params = self._masked_params_reset(mask, self._params, self.defaults["params"])
+        self.controls = self._masked_controls_reset(mask, self.controls, self.defaults["controls"])
+        self.params = self._masked_params_reset(mask, self.params, self.defaults["params"])
         self._sync_mjx(self.states, self._mjx_model, self._mjx_data)
 
     def step(self):
@@ -157,15 +155,15 @@ class Sim:
         # physics / controller combinations.
         if self.physics == Physics.sys_id:
             mask = self.controllable
-            self._controls = self._masked_attitude_controls_update(mask, self._controls, cmd)
+            self.controls = self._masked_attitude_controls_update(mask, self.controls, cmd)
             return
-        self._controls = self._controls.replace(attitude=jnp.array(cmd, device=self.device))
+        self.controls = self.controls.replace(attitude=jnp.array(cmd, device=self.device))
 
     def state_control(self, cmd: Array):
         """Set the desired state for all drones in all worlds."""
-        assert cmd.shape == self._controls.state.shape, f"Command shape mismatch {cmd.shape}"
+        assert cmd.shape == self.controls.state.shape, f"Command shape mismatch {cmd.shape}"
         assert self.control == Control.state, "State control is not enabled by the sim config"
-        self._controls = self._controls.replace(state=jnp.array(cmd, device=self.device))
+        self.controls = self.controls.replace(state=jnp.array(cmd, device=self.device))
 
     def thrust_control(self, cmd: Array):
         raise NotImplementedError
@@ -188,7 +186,12 @@ class Sim:
     @property
     def controllable(self) -> Array:
         """Boolean array of shape (n_worlds,) that indicates which worlds are controllable."""
-        return self.states.step * self.control_freq % self.freq < self.control_freq
+        return self._controllable(self.states.step, self.control_freq, self.freq)
+
+    @staticmethod
+    @jax.jit
+    def _controllable(step: Array, ctrl_freq: int, freq: int) -> Array:
+        return step * ctrl_freq % freq < ctrl_freq
 
     def _step_sys_id(self):
         c = self.controllable
@@ -197,18 +200,18 @@ class Sim:
                 self.states.pos[c],
                 self.states.vel[c],
                 self.states.quat[c],
-                self._controls.state[c, ..., :3],
-                self._controls.state[c, ..., 3:6],
-                self._controls.state[c, ..., 9:10],
-                self._controls.pos_err_i[c],
+                self.controls.state[c, ..., :3],
+                self.controls.state[c, ..., 3:6],
+                self.controls.state[c, ..., 9:10],
+                self.controls.pos_err_i[c],
                 self.dt,
             )
-            self._controls = self._controls.replace(
-                attitude=self._controls.attitude.at[c].set(attitude_cmd),
-                pos_err_i=self._controls.pos_err_i.at[c].set(pos_err_i),
+            self.controls = self.controls.replace(
+                attitude=self.controls.attitude.at[c].set(attitude_cmd),
+                pos_err_i=self.controls.pos_err_i.at[c].set(pos_err_i),
             )
         pos, quat, vel, ang_vel = identified_dynamics(
-            self._controls.attitude,
+            self.controls.attitude,
             self.states.pos,
             self.states.quat,
             self.states.vel,
@@ -229,11 +232,11 @@ class Sim:
                     raise NotImplementedError
                 case _:
                     raise ValueError(f"Controller {self.controller} not implemented")
-            self._controls = self._controls.replace(rpms=self._controls.rpms.at[c].set(rpms))
+            self.controls = self.controls.replace(rpms=self.controls.rpms.at[c].set(rpms))
 
-        self._controls = self._controls.replace(last_rpy=quat2rpy(self.states.quat))
+        self.controls = self.controls.replace(last_rpy=quat2rpy(self.states.quat))
         forces, torques = rpms2collective_wrench(
-            self._controls.rpms, self.states.quat, self.states.rpy_rates, self._params.J
+            self.controls.rpms, self.states.quat, self.states.rpy_rates, self.params.J
         )
         pos, quat, vel, rpy_rates = analytical_dynamics(
             forces,
@@ -242,8 +245,8 @@ class Sim:
             self.states.quat,
             self.states.vel,
             self.states.rpy_rates,
-            self._params.mass,
-            self._params.J_INV,
+            self.params.mass,
+            self.params.J_INV,
             self.dt,
         )
         self._sync_states(pos, quat, vel, rpy_rates=rpy_rates)
@@ -272,25 +275,25 @@ class Sim:
                 self.states.pos[c],
                 self.states.vel[c],
                 self.states.quat[c],
-                self._controls.state[c, ..., :3],
-                self._controls.state[c, ..., 3:6],
-                self._controls.state[c, ..., 9:10],
-                self._controls.pos_err_i[c],
+                self.controls.state[c, ..., :3],
+                self.controls.state[c, ..., 3:6],
+                self.controls.state[c, ..., 9:10],
+                self.controls.pos_err_i[c],
                 self.dt,
             )
-            self._controls = self._controls.replace(
-                attitude=self._controls.attitude.at[c].set(attitude_cmd),
-                pos_err_i=self._controls.pos_err_i.at[c].set(pos_err_i),
+            self.controls = self.controls.replace(
+                attitude=self.controls.attitude.at[c].set(attitude_cmd),
+                pos_err_i=self.controls.pos_err_i.at[c].set(pos_err_i),
             )
         rpms, rpy_err_i = attitude2rpm(
-            self._controls.attitude[c],
+            self.controls.attitude[c],
             self.states.quat[c],
-            self._controls.last_rpy[c],
-            self._controls.rpy_err_i[c],
+            self.controls.last_rpy[c],
+            self.controls.rpy_err_i[c],
             self.dt,
         )
-        self._controls = self._controls.replace(
-            rpy_err_i=self._controls.rpy_err_i.at[c].set(rpy_err_i)
+        self.controls = self.controls.replace(
+            rpy_err_i=self.controls.rpy_err_i.at[c].set(rpy_err_i)
         )
         return rpms
 

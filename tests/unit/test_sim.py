@@ -53,10 +53,10 @@ def test_sim_creation(
     assert sim.states.ang_vel.shape == (n_worlds, n_drones, 3)
 
     # Test control buffer shapes
-    assert sim._controls.attitude.shape == (n_worlds, n_drones, 4)
-    assert sim._controls.thrust.shape == (n_worlds, n_drones, 4)
-    assert sim._controls.state.shape == (n_worlds, n_drones, 13)
-    assert sim._controls.state.device == jax.devices(device)[0]
+    assert sim.controls.attitude.shape == (n_worlds, n_drones, 4)
+    assert sim.controls.thrust.shape == (n_worlds, n_drones, 4)
+    assert sim.controls.state.shape == (n_worlds, n_drones, 13)
+    assert sim.controls.state.device == jax.devices(device)[0]
 
 
 @pytest.mark.unit
@@ -77,8 +77,8 @@ def test_reset(device: str, physics: Physics, n_worlds: int, n_drones: int):
 
     # Modify states
     sim.states = sim.states.replace(pos=sim.states.pos.at[:, :, 2].set(1.0))
-    sim._controls = sim._controls.replace(attitude=sim._controls.attitude.at[:, :, 2].set(1.0))
-    sim._params = sim._params.replace(mass=sim._params.mass.at[:, n_drones - 1].set(1.0))
+    sim.controls = sim.controls.replace(attitude=sim.controls.attitude.at[:, :, 2].set(1.0))
+    sim.params = sim.params.replace(mass=sim.params.mass.at[:, n_drones - 1].set(1.0))
 
     sim.reset()
 
@@ -89,14 +89,14 @@ def test_reset(device: str, physics: Physics, n_worlds: int, n_drones: int):
         assert v.shape == default.shape, f"{k} shape mismatch"
         assert v.device == default.device, f"{k} device mismatch"
         assert jnp.all(v == default), f"{k} value mismatch"
-    for k, v in to_state_dict(sim._controls).items():
+    for k, v in to_state_dict(sim.controls).items():
         default = getattr(sim.defaults["controls"], k)
         if not isinstance(v, jnp.ndarray) or not isinstance(default, jnp.ndarray):
             continue
         assert v.shape == default.shape, f"{k} shape mismatch"
         assert v.device == default.device, f"{k} device mismatch"
         assert jnp.all(v == default), f"{k} value mismatch"
-    for k, v in to_state_dict(sim._params).items():
+    for k, v in to_state_dict(sim.params).items():
         default = getattr(sim.defaults["params"], k)
         if not isinstance(v, jnp.ndarray) or not isinstance(default, jnp.ndarray):
             continue
@@ -114,8 +114,8 @@ def test_reset_masked(device: str, physics: Physics):
 
     # Modify states
     sim.states = sim.states.replace(pos=sim.states.pos.at[:, :, 2].set(1.0))
-    sim._controls = sim._controls.replace(attitude=sim._controls.attitude.at[:, :, 2].set(1.0))
-    sim._params = sim._params.replace(mass=sim._params.mass.at[:, 0].set(1.0))
+    sim.controls = sim.controls.replace(attitude=sim.controls.attitude.at[:, :, 2].set(1.0))
+    sim.params = sim.params.replace(mass=sim.params.mass.at[:, 0].set(1.0))
     sim.states = sim.states.replace(step=sim.states.step + 100)
 
     # Reset only first world
@@ -130,14 +130,14 @@ def test_reset_masked(device: str, physics: Physics):
         assert v.shape == default.shape, f"{k} shape mismatch"
         assert v.device == default.device, f"{k} device mismatch"
         assert jnp.all(v[0] == default[0]), f"{k} value mismatch"
-    for k, v in to_state_dict(sim._controls).items():
+    for k, v in to_state_dict(sim.controls).items():
         default = getattr(sim.defaults["controls"], k)
         if not isinstance(v, jnp.ndarray) or not isinstance(default, jnp.ndarray):
             continue
         assert v.shape == default.shape, f"{k} shape mismatch"
         assert v.device == default.device, f"{k} device mismatch"
         assert jnp.all(v[0] == default[0]), f"{k} value mismatch"
-    for k, v in to_state_dict(sim._params).items():
+    for k, v in to_state_dict(sim.params).items():
         default = getattr(sim.defaults["params"], k)
         if not isinstance(v, jnp.ndarray) or not isinstance(default, jnp.ndarray):
             continue
@@ -147,8 +147,8 @@ def test_reset_masked(device: str, physics: Physics):
 
     # Check world 2 kept modifications
     assert jnp.all(sim.states.pos[1, :, 2] == 1.0)
-    assert jnp.all(sim._controls.attitude[1, :, 2] == 1.0)
-    assert jnp.all(sim._params.mass[1, :, 0] == 1.0)
+    assert jnp.all(sim.controls.attitude[1, :, 2] == 1.0)
+    assert jnp.all(sim.params.mass[1, :, 0] == 1.0)
 
 
 @pytest.mark.unit
@@ -169,8 +169,8 @@ def test_sim_state_control(device: str):
     sim = Sim(n_worlds=2, n_drones=3, control=Control.state, device=device)
     cmd = np.random.rand(sim.n_worlds, sim.n_drones, 13)
     sim.state_control(cmd)
-    assert isinstance(sim._controls.state, jnp.ndarray), "Buffers must remain JAX arrays"
-    assert jnp.allclose(sim._controls.state, cmd), "Buffers must match command"
+    assert isinstance(sim.controls.state, jnp.ndarray), "Buffers must remain JAX arrays"
+    assert jnp.allclose(sim.controls.state, cmd), "Buffers must match command"
 
 
 @pytest.mark.unit
@@ -179,8 +179,8 @@ def test_sim_attitude_control(device: str):
     sim = Sim(n_worlds=2, n_drones=3, control=Control.attitude, device=device)
     cmd = np.random.rand(sim.n_worlds, sim.n_drones, 4)
     sim.attitude_control(cmd)
-    assert isinstance(sim._controls.attitude, jnp.ndarray), "Buffers must remain JAX arrays"
-    assert jnp.allclose(sim._controls.attitude, cmd), "Buffers must match command"
+    assert isinstance(sim.controls.attitude, jnp.ndarray), "Buffers must remain JAX arrays"
+    assert jnp.allclose(sim.controls.attitude, cmd), "Buffers must match command"
 
 
 @pytest.mark.parametrize("device", ["gpu", "cpu"])

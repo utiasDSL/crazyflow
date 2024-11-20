@@ -50,7 +50,7 @@ def test_reset_multi_world(physics: Physics):
     # Run simulation once
     for cmd in random_cmds:
         sim.attitude_control(cmd)
-        assert isinstance(sim._controls.attitude, jnp.ndarray)
+        assert isinstance(sim.controls.attitude, jnp.ndarray)
         sim.step()
     final_pos = sim.states.pos.copy()
     final_quat = sim.states.quat.copy()
