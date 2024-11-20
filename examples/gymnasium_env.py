@@ -24,15 +24,9 @@ envs = gymnasium.make_vec(
     num_envs=num_envs,
     num_drones_per_env=num_drones_per_env,
     max_episode_steps=200,
+    return_datatype="numpy",
     **sim_config,
 )
-
-# determine init positions of drones as a grid
-N = int(np.ceil(np.sqrt(num_drones_per_env)))
-points = np.linspace(-0.5 * (N - 1), 0.5 * (N - 1), N)
-x, y = np.meshgrid(points, points)
-grid = np.stack((x.flatten(), y.flatten(), np.zeros_like(y).flatten()), axis=-1)
-grid = grid[:num_drones_per_env]
 
 # action for going up (in attitude control)
 action = np.array(
