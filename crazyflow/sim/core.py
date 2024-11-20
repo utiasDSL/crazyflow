@@ -14,7 +14,12 @@ from mujoco.mjx import Data, Model
 
 from crazyflow.control.controller import J_INV, Control, Controller, J, attitude2rpm, state2attitude
 from crazyflow.exception import ConfigError
-from crazyflow.sim.physics import Physics, analytical_dynamics, identified_dynamics
+from crazyflow.sim.physics import (
+    Physics,
+    analytical_dynamics,
+    identified_dynamics,
+    rpms2collective_wrench,
+)
 from crazyflow.utils import clone_body
 
 
@@ -72,8 +77,8 @@ class Sim:
         }
         self._params = {
             "mass": jnp.ones((n_worlds, n_drones, 1), device=self.device) * 0.025,
-            "J": jnp.tile(J, n_worlds * n_drones).reshape(n_worlds, n_drones, 3, 3),
-            "J_INV": jnp.tile(J_INV, n_worlds * n_drones).reshape(n_worlds, n_drones, 3, 3),
+            "J": jnp.tile(J[None, None, :, :], (n_worlds, n_drones, 1, 1)),
+            "J_INV": jnp.tile(J_INV[None, None, :, :], (n_worlds, n_drones, 1, 1)),
         }
         self._default_params = self._params.copy()
         self._step = 0
@@ -113,10 +118,11 @@ class Sim:
         self._step = 0
         for key in self._params:
             self._params[key] = self._default_params[key]
+        for key in self._controls:
+            self._controls[key] = jnp.zeros_like(self._controls[key])
 
     def step(self):
         """Simulate all drones in all worlds for one time step."""
-        self._step += 1
         match self.physics:
             case Physics.mujoco:
                 raise NotImplementedError
@@ -126,6 +132,7 @@ class Sim:
                 self._step_sys_id()
             case _:
                 raise ValueError(f"Physics mode {self.physics} not implemented")
+        self._step += 1
 
     def attitude_control(self, cmd: Array):
         assert cmd.shape == (self.n_worlds, self.n_drones, 4), "Command shape mismatch"
@@ -194,14 +201,17 @@ class Sim:
             self._controls["rpms"] = rpms
 
         self._controls["last_rpy"] = quat2rpy(self.states["quat"])
+        forces, torques = rpms2collective_wrench(
+            self._controls["rpms"], self.states["quat"], self.states["rpy_rates"], self._params["J"]
+        )
         pos, quat, vel, rpy_rates = analytical_dynamics(
-            self._controls["rpms"],
+            forces,
+            torques,
             self.states["pos"],
             self.states["quat"],
             self.states["vel"],
             self.states["rpy_rates"],
             self._params["mass"],
-            self._params["J"],
             self._params["J_INV"],
             self.dt,
         )
@@ -271,7 +281,9 @@ class Sim:
         qpos = rearrange(jnp.concat([pos, quat], axis=-1), "w d qpos -> w (d qpos)")
         qvel = rearrange(jnp.concat([vel, ang_vel], axis=-1), "w d qvel -> w (d qvel)")
         mjx_data = mjx_data.replace(qpos=qpos, qvel=qvel)
-        return batched_mjx_forward(mjx_model, mjx_data)
+        mjx_data = mjx_kinematics(mjx_model, mjx_data)
+        mjx_data = mjx_collision(mjx_model, mjx_data)
+        return mjx_data
 
 
 @jax.jit
@@ -284,7 +296,9 @@ def contacts(geom_start: int, geom_count: int, data: Data) -> Array:
     return data.contact.dist < 0 & (geom1_valid | geom2_valid)
 
 
-batched_mjx_forward = jax.jit(jax.vmap(mjx.forward, in_axes=(None, 0)))
+mjx_forward = jax.vmap(mjx.forward, in_axes=(None, 0))
+mjx_kinematics = jax.vmap(mjx.kinematics, in_axes=(None, 0))
+mjx_collision = jax.vmap(mjx.collision, in_axes=(None, 0))
 
 
 quat2rpy = jax.jit(

@@ -27,7 +27,7 @@ gpu = ["jax[cuda12]"]
 find = {}
 
 [tool.setuptools.package-data]
-crazyflow = []
+crazyflow = ["models/cf2/*.xml", "models/cf2/assets/*.obj"]
 
 [tool.pytest.ini_options]
 markers = ["unit", "integration", "render"]
