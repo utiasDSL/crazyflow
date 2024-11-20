@@ -1,4 +1,6 @@
 import jax
+import jax.numpy as jnp
+import numpy as np
 import pytest
 
 from crazyflow.control.controller import Control, Controller
@@ -66,9 +68,55 @@ def test_setup(device: str):
 @pytest.mark.unit
 @pytest.mark.parametrize("device", ["gpu", "cpu"])
 @pytest.mark.parametrize("physics", Physics)
-def test_reset(device: str, physics: Physics):
-    sim = Sim(n_worlds=2, n_drones=3, physics=physics, device=device)
+@pytest.mark.parametrize("n_worlds", [1, 2])
+@pytest.mark.parametrize("n_drones", [1, 3])
+def test_reset(device: str, physics: Physics, n_worlds: int, n_drones: int):
+    """Test that reset without mask resets all worlds to default state."""
+    sim = Sim(n_worlds=n_worlds, n_drones=n_drones, physics=physics, device=device)
+
+    # Modify states
+    sim.states["pos"] = sim.states["pos"].at[:, :, 2].set(1.0)
+    sim._controls["attitude"] = sim._controls["attitude"].at[:, :, 2].set(1.0)
+    sim._params["mass"] = sim._params["mass"].at[:, :, 2].set(1.0)
+    sim._step = 100
+
     sim.reset()
+
+    assert sim._step == 0
+    for key in sim.states:
+        assert jnp.allclose(sim.states[key], sim.defaults["states"][key])
+    for key in sim._controls:
+        assert jnp.allclose(sim._controls[key], sim.defaults["controls"][key])
+    for key in sim._params:
+        assert jnp.allclose(sim._params[key], sim.defaults["params"][key])
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("device", ["gpu", "cpu"])
+@pytest.mark.parametrize("physics", Physics)
+def test_reset_masked(device: str, physics: Physics):
+    """Test that reset with mask only resets specified worlds."""
+    sim = Sim(n_worlds=2, n_drones=1, physics=physics, device=device)
+
+    # Modify states
+    sim.states["pos"] = sim.states["pos"].at[:, :, 2].set(1.0)
+    sim._controls["attitude"] = sim._controls["attitude"].at[:, :, 2].set(1.0)
+    sim._params["mass"] = sim._params["mass"].at[:, :, 0].set(1.0)
+    sim._step = 100
+
+    # Reset only first world
+    mask = jnp.array([True, False])
+    sim.reset(mask)
+
+    # Check world 1 was reset to defaults
+    assert jnp.all(sim.states["pos"][0] == sim.defaults["states"]["pos"][0])
+    assert jnp.all(sim._controls["attitude"][0] == sim.defaults["controls"]["attitude"][0])
+    assert jnp.all(sim._params["mass"][0] == sim.defaults["params"]["mass"][0])
+
+    # Check world 2 kept modifications
+    assert jnp.all(sim.states["pos"][1, :, 2] == 1.0)
+    assert jnp.all(sim._controls["attitude"][1, :, 2] == 1.0)
+    assert jnp.all(sim._params["mass"][1, :, 0] == 1.0)
 
 
 @pytest.mark.unit
@@ -81,6 +129,26 @@ def test_sim_step(physics: Physics, device: str):
             sim.step()
     except NotImplementedError:
         pytest.skip("Physics not implemented")
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("device", ["gpu", "cpu"])
+def test_sim_state_control(device: str):
+    sim = Sim(n_worlds=2, n_drones=3, control=Control.state, device=device)
+    cmd = np.random.rand(sim.n_worlds, sim.n_drones, 13)
+    sim.state_control(cmd)
+    assert isinstance(sim._controls["state"], jnp.ndarray), "Buffers must remain JAX arrays"
+    assert jnp.allclose(sim._controls["state"], cmd), "Buffers must match command"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("device", ["gpu", "cpu"])
+def test_sim_attitude_control(device: str):
+    sim = Sim(n_worlds=2, n_drones=3, control=Control.attitude, device=device)
+    cmd = np.random.rand(sim.n_worlds, sim.n_drones, 4)
+    sim.attitude_control(cmd)
+    assert isinstance(sim._controls["attitude"], jnp.ndarray), "Buffers must remain JAX arrays"
+    assert jnp.allclose(sim._controls["attitude"], cmd), "Buffers must match command"
 
 
 @pytest.mark.parametrize("device", ["gpu", "cpu"])
