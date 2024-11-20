@@ -79,7 +79,8 @@ class CrazyflowVectorEnv(VectorEnv):
 
         truncated = self.steps >= self.max_episode_steps
 
-        # TODO Reset all environments which terminated or were truncated in the last step
+        # Reset all environments which terminated or were truncated in the last step
+        self.sim.reset(mask=self.prev_done)
 
         self.steps[self.prev_done] = 0
         reward[self.prev_done] = 0.0
@@ -90,7 +91,7 @@ class CrazyflowVectorEnv(VectorEnv):
 
         return self._get_obs(), reward, terminated, truncated, {}
 
-    def reset(self, *, seed: Optional[int] = None, options: Optional[dict] = None):
+    def reset(self, *, seed: Optional[int] = None, options: Optional[dict] = {}):
         # Resets all (!) envs
         super().reset(seed=seed)
         self.sim.reset()

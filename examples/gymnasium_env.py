@@ -8,7 +8,7 @@ from crazyflow.sim.core import Sim
 from crazyflow.sim.physics import Physics
 
 
-num_envs = 2
+num_envs = 20
 num_drones_per_env = 10
 
 # set config for simulation
@@ -23,7 +23,7 @@ envs = gymnasium.make_vec(
     "crazyflow_env/CrazyflowVectorEnv-v0",
     num_envs=num_envs,
     num_drones_per_env=num_drones_per_env,
-    max_episode_steps=1000,
+    max_episode_steps=200,
     **sim_config,
 )
 
@@ -39,13 +39,11 @@ action = np.array(
     [[[0.3, 0, 0, 0] for _ in range(num_drones_per_env)] for _ in range(num_envs)], dtype=np.float32
 ).reshape(num_envs, -1)
 
-obs, info = envs.reset(seed=42, options={"pos": grid})
+obs, info = envs.reset(seed=42)
 
 # Step through the environment
 for _ in range(1500):
     observation, reward, terminated, truncated, info = envs.step(action)
     envs.render()
-    if any(terminated) or any(truncated):
-        envs.reset(options={"pos": grid})
-
+    
 envs.close()
