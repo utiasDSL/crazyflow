@@ -12,8 +12,10 @@ def profile_step(sim: Sim, n_steps: int, device: str):
     device = jax.devices(device)[0]
     cmd = jnp.zeros((sim.n_worlds, sim.n_drones, 4), device=device)
     cmd = cmd.at[0, 0, 0].set(1)
+    sim.reset()
     sim.attitude_control(cmd)
     sim.step()
+    sim.reset()
     jax.block_until_ready(sim._mjx_data)  # Ensure JIT compiled dynamics
 
     for _ in range(n_steps):

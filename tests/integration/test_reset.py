@@ -22,20 +22,20 @@ def test_reset_during_simulation(physics: Physics, controller: Controller):
     for cmd in random_cmds:
         sim.attitude_control(cmd)
         sim.step()
-    final_pos = sim.states["pos"].copy()
-    final_quat = sim.states["quat"].copy()
+    final_pos = sim.states.pos.copy()
+    final_quat = sim.states.quat.copy()
 
     sim.reset()
-    assert sim._step == 0
-    assert jnp.allclose(sim.states["pos"], sim.defaults["states"]["pos"])
-    assert jnp.allclose(sim.states["quat"], sim.defaults["states"]["quat"])
+    assert sim.states.step == 0
+    assert jnp.all(sim.states.pos == sim.defaults["states"].pos)
+    assert jnp.all(sim.states.quat == sim.defaults["states"].quat)
 
     # Verify simulation is identical when running again
     for cmd in random_cmds:
         sim.attitude_control(cmd)
         sim.step()
-    assert jnp.allclose(sim.states["pos"], final_pos)
-    assert jnp.allclose(sim.states["quat"], final_quat)
+    assert jnp.all(sim.states.pos == final_pos)
+    assert jnp.all(sim.states.quat == final_quat)
 
 
 @pytest.mark.integration
@@ -50,19 +50,19 @@ def test_reset_multi_world(physics: Physics):
     # Run simulation once
     for cmd in random_cmds:
         sim.attitude_control(cmd)
-        assert isinstance(sim._controls["attitude"], jnp.ndarray)
+        assert isinstance(sim._controls.attitude, jnp.ndarray)
         sim.step()
-    final_pos = sim.states["pos"].copy()
-    final_quat = sim.states["quat"].copy()
+    final_pos = sim.states.pos.copy()
+    final_quat = sim.states.quat.copy()
 
     sim.reset()
-    assert sim._step == 0
-    assert jnp.allclose(sim.states["pos"], sim.defaults["states"]["pos"])
-    assert jnp.allclose(sim.states["quat"], sim.defaults["states"]["quat"])
+    assert jnp.all(sim.states.step == 0)
+    assert jnp.all(sim.states.pos == sim.defaults["states"].pos)
+    assert jnp.all(sim.states.quat == sim.defaults["states"].quat)
 
     # Verify simulation is identical when running again
     for cmd in random_cmds:
         sim.attitude_control(cmd)
         sim.step()
-    assert jnp.allclose(sim.states["pos"], final_pos)
-    assert jnp.allclose(sim.states["quat"], final_quat)
+    assert jnp.all(sim.states.pos == final_pos)
+    assert jnp.all(sim.states.quat == final_quat)
