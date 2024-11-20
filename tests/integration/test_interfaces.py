@@ -67,5 +67,4 @@ def test_swarm_control(physics: Physics):
 
     # Check if drone maintained hover position
     max_dist = jnp.max(jnp.linalg.norm(sim.states["pos"] - target_pos, axis=-1))
-    print(sim.states["pos"] - target_pos)
     assert max_dist < 0.05, f"Failed to reach target, max dist: {max_dist}"

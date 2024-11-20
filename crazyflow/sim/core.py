@@ -57,6 +57,8 @@ class Sim:
         # Allocate internal states and controls for analytical and sys_id physics.
         self.n_worlds = n_worlds
         self.n_drones = n_drones
+        self.defaults = {}
+        self._step = 0
         self.states = {
             "pos": jnp.zeros((n_worlds, n_drones, 3), device=self.device),
             "quat": jnp.zeros((n_worlds, n_drones, 4), device=self.device),
@@ -75,13 +77,12 @@ class Sim:
             "pos_err_i": jnp.zeros((n_worlds, n_drones, 3), device=self.device),
             "last_rpy": jnp.zeros((n_worlds, n_drones, 3), device=self.device),
         }
+        # Allocate physics parameter buffers.
         self._params = {
             "mass": jnp.ones((n_worlds, n_drones, 1), device=self.device) * 0.025,
             "J": jnp.tile(J[None, None, :, :], (n_worlds, n_drones, 1, 1)),
             "J_INV": jnp.tile(J_INV[None, None, :, :], (n_worlds, n_drones, 1, 1)),
         }
-        self._default_params = self._params.copy()
-        self._step = 0
         # Initialize MuJoCo world and data
         self._xml_path = xml_path or self.default_path
         self._spec, self._mj_model, self._mj_data, self._mjx_model, self._mjx_data = self.setup()
@@ -108,18 +109,40 @@ class Sim:
             pos, quat = self.states["pos"], self.states["quat"]
             vel, ang_vel = self.states["vel"], self.states["ang_vel"]
             self._mjx_data = self._sync_mjx(pos, quat, vel, ang_vel, mjx_model, mjx_data)
+            # Update default to reflect changes after resetting
+        self.defaults["states"] = self.states.copy()
+        self.defaults["controls"] = self._controls.copy()
+        self.defaults["params"] = self._params.copy()
         return None, mj_model, mj_data, mjx_model, mjx_data
 
-    def reset(self):
+    def reset(self, mask: Array | None = None):
         """Reset the simulation to the initial state.
 
-        TODO: Reset all models, control variables, params, states etc.
+        Args:
+            mask: Boolean array of shape (n_worlds, ) that indicates which worlds to reset. If None,
+                all worlds are reset.
         """
         self._step = 0
+        worlds = slice(None) if mask is None else mask
         for key in self._params:
-            self._params[key] = self._default_params[key]
+            param = self._params[key].at[worlds, ...].set(self.defaults["params"][key][worlds, ...])
+            self._params[key] = param
         for key in self._controls:
-            self._controls[key] = jnp.zeros_like(self._controls[key])
+            ctrl = (
+                self._controls[key].at[worlds, ...].set(self.defaults["controls"][key][worlds, ...])
+            )
+            self._controls[key] = ctrl
+        for key in self.states:
+            state = self.states[key].at[worlds, ...].set(self.defaults["states"][key][worlds, ...])
+            self.states[key] = state
+        self._sync_mjx(
+            self.states["pos"],
+            self.states["quat"],
+            self.states["vel"],
+            self.states["ang_vel"],
+            self._mjx_model,
+            self._mjx_data,
+        )
 
     def step(self):
         """Simulate all drones in all worlds for one time step."""
@@ -141,6 +164,7 @@ class Sim:
         # control input are always visible. To simulate the controller at a lower frequency, we only
         # update the attitude buffer at the control frequency. This does not apply to other
         # physics / controller combinations.
+        cmd = jnp.array(cmd, device=self.device)
         if self.physics == Physics.sys_id:
             if self._step * self.control_freq % self.freq < self.control_freq:
                 self._controls["attitude"] = cmd
@@ -151,7 +175,7 @@ class Sim:
         """Set the desired state for all drones in all worlds."""
         assert cmd.shape == self._controls["state"].shape, f"Command shape mismatch {cmd.shape}"
         assert self.control == Control.state, "State control is not enabled by the sim config"
-        self._controls["state"] = cmd
+        self._controls["state"] = jnp.array(cmd, device=self.device)
 
     def thrust_control(self, cmd: Array):
         raise NotImplementedError
