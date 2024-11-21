@@ -20,6 +20,7 @@ from crazyflow.sim.physics import (
     identified_dynamics,
     rpms2collective_wrench,
 )
+from crazyflow.sim.structs import SimControls, SimParams, SimState
 from crazyflow.utils import clone_body
 
 
@@ -42,7 +43,7 @@ class Sim:
         assert Control(control) in Control, f"Control mode {control} not implemented"
         assert Controller(controller) in Controller, f"Controller {controller} not implemented"
         if physics == Physics.sys_id and control == Control.state:
-            raise ConfigError("sys_id physics does not support state control")
+            raise ConfigError("sys_id physics does not support state control")  # TODO: Implement
         self.physics = physics
         self.control = control
         self.controller = controller
@@ -57,32 +58,37 @@ class Sim:
         # Allocate internal states and controls for analytical and sys_id physics.
         self.n_worlds = n_worlds
         self.n_drones = n_drones
-        self.defaults = {}
-        self._step = 0
-        self.states = {
-            "pos": jnp.zeros((n_worlds, n_drones, 3), device=self.device),
-            "quat": jnp.zeros((n_worlds, n_drones, 4), device=self.device),
-            "vel": jnp.zeros((n_worlds, n_drones, 3), device=self.device),
-            "ang_vel": jnp.zeros((n_worlds, n_drones, 3), device=self.device),
-            "rpy_rates": jnp.zeros((n_worlds, n_drones, 3), device=self.device),
-        }
-        self.states["quat"] = self.states["quat"].at[:, :, 3].set(1.0)
+        self.defaults = {}  # Populated at the end of self.setup()
+        self._default_mask = jnp.ones((n_worlds,), dtype=bool, device=self.device)
+        self.states = SimState(
+            step=jnp.zeros((n_worlds,), device=self.device),
+            pos=jnp.zeros((n_worlds, n_drones, 3), device=self.device),
+            quat=jnp.zeros((n_worlds, n_drones, 4), device=self.device),
+            vel=jnp.zeros((n_worlds, n_drones, 3), device=self.device),
+            ang_vel=jnp.zeros((n_worlds, n_drones, 3), device=self.device),
+            rpy_rates=jnp.zeros((n_worlds, n_drones, 3), device=self.device),
+            device=self.device,
+        )
+        self.states = self.states.replace(quat=self.states.quat.at[..., -1].set(1.0))
         # Allocate internal control variables and physics parameters.
-        self._controls = {
-            "state": jnp.zeros((n_worlds, n_drones, 13), device=self.device),
-            "attitude": jnp.zeros((n_worlds, n_drones, 4), device=self.device),
-            "thrust": jnp.zeros((n_worlds, n_drones, 4), device=self.device),
-            "rpms": jnp.zeros((n_worlds, n_drones, 4), device=self.device),
-            "rpy_err_i": jnp.zeros((n_worlds, n_drones, 3), device=self.device),
-            "pos_err_i": jnp.zeros((n_worlds, n_drones, 3), device=self.device),
-            "last_rpy": jnp.zeros((n_worlds, n_drones, 3), device=self.device),
-        }
+        self.controls = SimControls(
+            state=jnp.zeros((n_worlds, n_drones, 13), device=self.device),
+            attitude=jnp.zeros((n_worlds, n_drones, 4), device=self.device),
+            thrust=jnp.zeros((n_worlds, n_drones, 4), device=self.device),
+            rpms=jnp.zeros((n_worlds, n_drones, 4), device=self.device),
+            rpy_err_i=jnp.zeros((n_worlds, n_drones, 3), device=self.device),
+            pos_err_i=jnp.zeros((n_worlds, n_drones, 3), device=self.device),
+            last_rpy=jnp.zeros((n_worlds, n_drones, 3), device=self.device),
+            device=self.device,
+        )
         # Allocate physics parameter buffers.
-        self._params = {
-            "mass": jnp.ones((n_worlds, n_drones, 1), device=self.device) * 0.025,
-            "J": jnp.tile(J[None, None, :, :], (n_worlds, n_drones, 1, 1)),
-            "J_INV": jnp.tile(J_INV[None, None, :, :], (n_worlds, n_drones, 1, 1)),
-        }
+        j, j_inv = jnp.array(J, device=self.device), jnp.array(J_INV, device=self.device)
+        self.params = SimParams(
+            mass=jnp.ones((n_worlds, n_drones, 1), device=self.device) * 0.025,
+            J=jnp.tile(j[None, None, :, :], (n_worlds, n_drones, 1, 1)),
+            J_INV=jnp.tile(j_inv[None, None, :, :], (n_worlds, n_drones, 1, 1)),
+            device=self.device,
+        )
         # Initialize MuJoCo world and data
         self._xml_path = xml_path or self.default_path
         self._spec, self._mj_model, self._mj_data, self._mjx_model, self._mjx_data = self.setup()
@@ -105,14 +111,12 @@ class Sim:
             x, y = jnp.meshgrid(points, points)
             grid = jnp.stack((x.flatten(), y.flatten()), axis=-1)
             grid = grid[: self.n_drones]
-            self.states["pos"] = self.states["pos"].at[..., :2].set(grid)
-            pos, quat = self.states["pos"], self.states["quat"]
-            vel, ang_vel = self.states["vel"], self.states["ang_vel"]
-            self._mjx_data = self._sync_mjx(pos, quat, vel, ang_vel, mjx_model, mjx_data)
+            self.states = self.states.replace(pos=self.states.pos.at[..., :2].set(grid))
+            self._mjx_data = self._sync_mjx(self.states, mjx_model, mjx_data)
             # Update default to reflect changes after resetting
-        self.defaults["states"] = self.states.copy()
-        self.defaults["controls"] = self._controls.copy()
-        self.defaults["params"] = self._params.copy()
+        self.defaults["states"] = self.states.replace()
+        self.defaults["controls"] = self.controls.replace()
+        self.defaults["params"] = self.params.replace()
         return None, mj_model, mj_data, mjx_model, mjx_data
 
     def reset(self, mask: Array | None = None):
@@ -122,27 +126,12 @@ class Sim:
             mask: Boolean array of shape (n_worlds, ) that indicates which worlds to reset. If None,
                 all worlds are reset.
         """
-        self._step = 0
-        worlds = slice(None) if mask is None else mask
-        for key in self._params:
-            param = self._params[key].at[worlds, ...].set(self.defaults["params"][key][worlds, ...])
-            self._params[key] = param
-        for key in self._controls:
-            ctrl = (
-                self._controls[key].at[worlds, ...].set(self.defaults["controls"][key][worlds, ...])
-            )
-            self._controls[key] = ctrl
-        for key in self.states:
-            state = self.states[key].at[worlds, ...].set(self.defaults["states"][key][worlds, ...])
-            self.states[key] = state
-        self._sync_mjx(
-            self.states["pos"],
-            self.states["quat"],
-            self.states["vel"],
-            self.states["ang_vel"],
-            self._mjx_model,
-            self._mjx_data,
-        )
+        mask = self._default_mask if mask is None else mask
+        assert mask.shape == (self.n_worlds,), f"Mask shape mismatch {mask.shape}"
+        self.states = self._masked_states_reset(mask, self.states, self.defaults["states"])
+        self.controls = self._masked_controls_reset(mask, self.controls, self.defaults["controls"])
+        self.params = self._masked_params_reset(mask, self.params, self.defaults["params"])
+        self._sync_mjx(self.states, self._mjx_model, self._mjx_data)
 
     def step(self):
         """Simulate all drones in all worlds for one time step."""
@@ -155,7 +144,7 @@ class Sim:
                 self._step_sys_id()
             case _:
                 raise ValueError(f"Physics mode {self.physics} not implemented")
-        self._step += 1
+        self.states = self.states.replace(step=self.states.step + 1)
 
     def attitude_control(self, cmd: Array):
         assert cmd.shape == (self.n_worlds, self.n_drones, 4), "Command shape mismatch"
@@ -164,18 +153,17 @@ class Sim:
         # control input are always visible. To simulate the controller at a lower frequency, we only
         # update the attitude buffer at the control frequency. This does not apply to other
         # physics / controller combinations.
-        cmd = jnp.array(cmd, device=self.device)
         if self.physics == Physics.sys_id:
-            if self._step * self.control_freq % self.freq < self.control_freq:
-                self._controls["attitude"] = cmd
+            mask = self.controllable
+            self.controls = self._masked_attitude_controls_update(mask, self.controls, cmd)
             return
-        self._controls["attitude"] = cmd
+        self.controls = self.controls.replace(attitude=jnp.array(cmd, device=self.device))
 
     def state_control(self, cmd: Array):
         """Set the desired state for all drones in all worlds."""
-        assert cmd.shape == self._controls["state"].shape, f"Command shape mismatch {cmd.shape}"
+        assert cmd.shape == self.controls.state.shape, f"Command shape mismatch {cmd.shape}"
         assert self.control == Control.state, "State control is not enabled by the sim config"
-        self._controls["state"] = jnp.array(cmd, device=self.device)
+        self.controls = self.controls.replace(state=jnp.array(cmd, device=self.device))
 
     def thrust_control(self, cmd: Array):
         raise NotImplementedError
@@ -192,29 +180,51 @@ class Sim:
             self.viewer.close()
 
     @property
-    def time(self) -> float:
-        return self._step / self.freq
+    def time(self) -> Array:
+        return self.states.step / self.freq
 
     @property
-    def controllable(self) -> bool:
-        """True if the controller can update the control input this step, else False."""
-        return self._step * self.control_freq % self.freq < self.control_freq
+    def controllable(self) -> Array:
+        """Boolean array of shape (n_worlds,) that indicates which worlds are controllable."""
+        return self._controllable(self.states.step, self.control_freq, self.freq)
+
+    @staticmethod
+    @jax.jit
+    def _controllable(step: Array, ctrl_freq: int, freq: int) -> Array:
+        return step * ctrl_freq % freq < ctrl_freq
 
     def _step_sys_id(self):
+        c = self.controllable
+        if c.any() and self.control == Control.state:
+            attitude_cmd, pos_err_i = state2attitude(
+                self.states.pos[c],
+                self.states.vel[c],
+                self.states.quat[c],
+                self.controls.state[c, ..., :3],
+                self.controls.state[c, ..., 3:6],
+                self.controls.state[c, ..., 9:10],
+                self.controls.pos_err_i[c],
+                self.dt,
+            )
+            self.controls = self.controls.replace(
+                attitude=self.controls.attitude.at[c].set(attitude_cmd),
+                pos_err_i=self.controls.pos_err_i.at[c].set(pos_err_i),
+            )
         pos, quat, vel, ang_vel = identified_dynamics(
-            self._controls["attitude"],
-            self.states["pos"],
-            self.states["quat"],
-            self.states["vel"],
-            self.states["ang_vel"],
+            self.controls.attitude,
+            self.states.pos,
+            self.states.quat,
+            self.states.vel,
+            self.states.ang_vel,
             self.dt,
         )
         self._sync_states(pos, quat, vel, ang_vel)
-        self._mjx_data = self._sync_mjx(pos, quat, vel, ang_vel, self._mjx_model, self._mjx_data)
+        self._mjx_data = self._sync_mjx(self.states, self._mjx_model, self._mjx_data)
 
     def _step_analytical(self):
         # Only update the RPMs at the control frequency
-        if self._step * self.control_freq % self.freq < self.control_freq:
+        c = self.controllable
+        if c.any():
             match self.controller:
                 case Controller.emulatefirmware:
                     rpms = self._step_emulate_firmware()
@@ -222,26 +232,25 @@ class Sim:
                     raise NotImplementedError
                 case _:
                     raise ValueError(f"Controller {self.controller} not implemented")
-            self._controls["rpms"] = rpms
+            self.controls = self.controls.replace(rpms=self.controls.rpms.at[c].set(rpms))
 
-        self._controls["last_rpy"] = quat2rpy(self.states["quat"])
+        self.controls = self.controls.replace(last_rpy=quat2rpy(self.states.quat))
         forces, torques = rpms2collective_wrench(
-            self._controls["rpms"], self.states["quat"], self.states["rpy_rates"], self._params["J"]
+            self.controls.rpms, self.states.quat, self.states.rpy_rates, self.params.J
         )
         pos, quat, vel, rpy_rates = analytical_dynamics(
             forces,
             torques,
-            self.states["pos"],
-            self.states["quat"],
-            self.states["vel"],
-            self.states["rpy_rates"],
-            self._params["mass"],
-            self._params["J_INV"],
+            self.states.pos,
+            self.states.quat,
+            self.states.vel,
+            self.states.rpy_rates,
+            self.params.mass,
+            self.params.J_INV,
             self.dt,
         )
         self._sync_states(pos, quat, vel, rpy_rates=rpy_rates)
-        ang_vel = self.states["ang_vel"]
-        self._mjx_data = self._sync_mjx(pos, quat, vel, ang_vel, self._mjx_model, self._mjx_data)
+        self._mjx_data = self._sync_mjx(self.states, self._mjx_model, self._mjx_data)
 
     def contacts(self, body: str | None = None) -> Array:
         """Get contact information from the simulation.
@@ -260,27 +269,32 @@ class Sim:
         return contacts(geom_start, geom_count, self._mjx_data)
 
     def _step_emulate_firmware(self) -> Array:
+        c = self.controllable
         if self.control == Control.state:
             attitude_cmd, pos_err_i = state2attitude(
-                self.states["pos"],
-                self.states["vel"],
-                self.states["quat"],
-                self._controls["state"][..., :3],
-                self._controls["state"][..., 3:6],
-                self._controls["state"][..., 9:10],
-                self._controls["pos_err_i"],
+                self.states.pos[c],
+                self.states.vel[c],
+                self.states.quat[c],
+                self.controls.state[c, ..., :3],
+                self.controls.state[c, ..., 3:6],
+                self.controls.state[c, ..., 9:10],
+                self.controls.pos_err_i[c],
                 self.dt,
             )
-            self._controls["attitude"] = attitude_cmd
-            self._controls["pos_err_i"] = pos_err_i
+            self.controls = self.controls.replace(
+                attitude=self.controls.attitude.at[c].set(attitude_cmd),
+                pos_err_i=self.controls.pos_err_i.at[c].set(pos_err_i),
+            )
         rpms, rpy_err_i = attitude2rpm(
-            self._controls["attitude"],
-            self.states["quat"],
-            self._controls["last_rpy"],
-            self._controls["rpy_err_i"],
+            self.controls.attitude[c],
+            self.states.quat[c],
+            self.controls.last_rpy[c],
+            self.controls.rpy_err_i[c],
             self.dt,
         )
-        self._controls["rpy_err_i"] = rpy_err_i
+        self.controls = self.controls.replace(
+            rpy_err_i=self.controls.rpy_err_i.at[c].set(rpy_err_i)
+        )
         return rpms
 
     def _sync_states(
@@ -291,16 +305,16 @@ class Sim:
         ang_vel: Array | None = None,
         rpy_rates: Array | None = None,
     ):
-        self.states["pos"], self.states["quat"] = pos, quat
-        self.states["vel"] = vel
+        self.states = self.states.replace(pos=pos, quat=quat, vel=vel)
         if ang_vel is not None:
-            self.states["ang_vel"] = ang_vel
+            self.states = self.states.replace(ang_vel=ang_vel)
         if rpy_rates is not None:
-            self.states["rpy_rates"] = rpy_rates
+            self.states = self.states.replace(rpy_rates=rpy_rates)
 
     @staticmethod
     @jax.jit
-    def _sync_mjx(pos: Array, quat: Array, vel: Array, ang_vel: Array, mjx_model, mjx_data) -> Data:
+    def _sync_mjx(states: SimState, mjx_model, mjx_data) -> Data:
+        pos, quat, vel, ang_vel = states.pos, states.quat, states.vel, states.ang_vel
         quat = quat[..., [-1, 0, 1, 2]]  # MuJoCo quat is [w, x, y, z], ours is [x, y, z, w]
         qpos = rearrange(jnp.concat([pos, quat], axis=-1), "w d qpos -> w (d qpos)")
         qvel = rearrange(jnp.concat([vel, ang_vel], axis=-1), "w d qvel -> w (d qvel)")
@@ -308,6 +322,45 @@ class Sim:
         mjx_data = mjx_kinematics(mjx_model, mjx_data)
         mjx_data = mjx_collision(mjx_model, mjx_data)
         return mjx_data
+
+    @staticmethod
+    @jax.jit
+    def _masked_states_reset(mask: Array, states: SimState, defaults: SimState) -> SimState:
+        states = states.replace(step=jnp.where(mask, defaults.step, states.step))
+        mask_3d = mask[:, None, None]
+        states = states.replace(pos=jnp.where(mask_3d, defaults.pos, states.pos))
+        states = states.replace(quat=jnp.where(mask_3d, defaults.quat, states.quat))
+        states = states.replace(vel=jnp.where(mask_3d, defaults.vel, states.vel))
+        states = states.replace(ang_vel=jnp.where(mask_3d, defaults.ang_vel, states.ang_vel))
+        states = states.replace(rpy_rates=jnp.where(mask_3d, defaults.rpy_rates, states.rpy_rates))
+        return states
+
+    @staticmethod
+    @jax.jit
+    def _masked_controls_reset(
+        mask: Array, controls: SimControls, defaults: SimControls
+    ) -> SimControls:
+        atts = ["state", "attitude", "thrust", "rpms", "rpy_err_i", "pos_err_i", "last_rpy"]
+        mask = mask.reshape((-1, 1, 1))
+        return controls.replace(
+            **{k: jnp.where(mask, getattr(defaults, k), getattr(controls, k)) for k in atts}
+        )
+
+    @staticmethod
+    @jax.jit
+    def _masked_params_reset(mask: Array, params: SimParams, defaults: SimParams) -> SimParams:
+        params = params.replace(mass=jnp.where(mask[:, None, None], defaults.mass, params.mass))
+        mask_4d = mask[:, None, None, None]
+        params = params.replace(J=jnp.where(mask_4d, defaults.J, params.J))
+        params = params.replace(J_INV=jnp.where(mask_4d, defaults.J_INV, params.J_INV))
+        return params
+
+    @staticmethod
+    @jax.jit
+    def _masked_attitude_controls_update(
+        mask: Array, controls: SimControls, cmd: Array
+    ) -> SimControls:
+        return controls.replace(attitude=jnp.where(mask[:, None, None], cmd, controls.attitude))
 
 
 @jax.jit
@@ -328,3 +381,9 @@ mjx_collision = jax.vmap(mjx.collision, in_axes=(None, 0))
 quat2rpy = jax.jit(
     partial(jnp.vectorize, signature="(4)->(3)")(lambda x: R.from_quat(x).as_euler("xyz"))
 )
+
+
+@jax.jit
+def jit_where(mask: Array, x: Array, y: Array) -> Array:
+    mask = mask.reshape((-1,) + (1,) * (x.ndim - 1))  # Broadcast mask to match x and y
+    return jnp.where(mask, x, y)
