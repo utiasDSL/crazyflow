@@ -1,7 +1,6 @@
 from enum import Enum
 from functools import partial
 
-import jax
 import jax.numpy as jnp
 from jax import Array
 from jax.scipy.spatial.transform import Rotation as R
@@ -30,7 +29,6 @@ class Physics(str, Enum):
     default = mujoco
 
 
-@jax.jit
 @partial(jnp.vectorize, signature="(4),(3),(4),(3),(3)->(3),(4),(3),(3)", excluded=[5])
 def identified_dynamics(
     cmd: Array, pos: Array, quat: Array, vel: Array, ang_vel: Array, dt: float
@@ -71,7 +69,6 @@ def identified_dynamics(
     return next_pos, next_quat, next_vel, next_ang_vel
 
 
-@jax.jit
 @partial(
     jnp.vectorize, signature="(3),(3),(3),(4),(3),(3),(1),(3,3)->(3),(4),(3),(3)", excluded=[8]
 )
@@ -102,7 +99,6 @@ def analytical_dynamics(
     return next_pos, next_quat, next_vel, next_rpy_rates
 
 
-@jax.jit
 @partial(jnp.vectorize, signature="(4),(4),(3),(3,3)->(3),(3)")
 def rpms2collective_wrench(
     rpms: Array, quat: Array, rpy_rates: Array, J: Array
