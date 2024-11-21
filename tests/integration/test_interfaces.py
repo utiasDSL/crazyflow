@@ -1,8 +1,8 @@
 import jax.numpy as jnp
 import pytest
 
-from crazyflow.control.controller import Control, Controller
-from crazyflow.sim.core import Physics, Sim, state2attitude
+from crazyflow.control.controller import Control, Controller, state2attitude
+from crazyflow.sim.core import Physics, Sim
 
 
 @pytest.mark.integration

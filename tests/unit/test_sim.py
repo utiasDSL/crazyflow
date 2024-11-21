@@ -21,7 +21,7 @@ def test_sim_creation(
 ):
     n_drones = 1
 
-    def create_sim():
+    def create_sim() -> Sim:
         return Sim(
             n_worlds=n_worlds,
             n_drones=n_drones,
@@ -32,10 +32,6 @@ def test_sim_creation(
         )
 
     if n_drones * n_worlds > 1 and controller == Controller.pycffirmware:
-        with pytest.raises(ConfigError):
-            create_sim()
-        return
-    if physics == Physics.sys_id and control == Control.state:
         with pytest.raises(ConfigError):
             create_sim()
         return
@@ -116,7 +112,7 @@ def test_reset_masked(device: str, physics: Physics):
     sim.states = sim.states.replace(pos=sim.states.pos.at[:, :, 2].set(1.0))
     sim.controls = sim.controls.replace(attitude=sim.controls.attitude.at[:, :, 2].set(1.0))
     sim.params = sim.params.replace(mass=sim.params.mass.at[:, 0].set(1.0))
-    sim.states = sim.states.replace(step=sim.states.step + 100)
+    sim.steps = sim.steps + 100
 
     # Reset only first world
     mask = jnp.array([True, False])
@@ -152,15 +148,35 @@ def test_reset_masked(device: str, physics: Physics):
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize("n_worlds", [1, 2])
+@pytest.mark.parametrize("n_drones", [1, 3])
 @pytest.mark.parametrize("physics", Physics)
+@pytest.mark.parametrize("control", Control)
+@pytest.mark.parametrize("controller", Controller)
 @pytest.mark.parametrize("device", ["gpu", "cpu"])
-def test_sim_step(physics: Physics, device: str):
-    sim = Sim(n_worlds=2, n_drones=3, physics=physics, device=device)
+def test_sim_step(
+    n_worlds: int,
+    n_drones: int,
+    physics: Physics,
+    control: Control,
+    controller: Controller,
+    device: str,
+):
+    if n_drones * n_worlds > 1 and controller == Controller.pycffirmware:
+        return  # PyCFFirmware does not support multiple drones
+    sim = Sim(
+        n_worlds=n_worlds,
+        n_drones=n_drones,
+        physics=physics,
+        device=device,
+        control=control,
+        controller=controller,
+    )
     try:
-        for _ in range(3):
+        for _ in range(2):
             sim.step()
     except NotImplementedError:
-        pytest.skip("Physics not implemented")
+        pytest.skip("Physics not implemented")  # TODO: Remove once MuJoCo is supported
 
 
 @pytest.mark.unit

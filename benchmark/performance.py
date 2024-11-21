@@ -8,10 +8,10 @@ from crazyflow.sim.core import Sim
 
 def profile_step(sim: Sim, n_steps: int, device: str):
     device = jax.devices(device)[0]
-    cmd = np.zeros((sim.n_worlds, sim.n_drones, 4))
+    cmd = np.zeros((sim.n_worlds, sim.n_drones, 13))
     # Ensure JIT compiled dynamics and control
     sim.reset()
-    sim.attitude_control(cmd)
+    sim.state_control(cmd)
     sim.step()
     sim.reset()
     jax.block_until_ready(sim._mjx_data)
@@ -20,9 +20,10 @@ def profile_step(sim: Sim, n_steps: int, device: str):
     profiler.start()
 
     for _ in range(n_steps):
-        sim.attitude_control(cmd)
+        sim.state_control(cmd)
+        # sim.reset()
         sim.step()
-        jax.block_until_ready(sim._mjx_data)
+        jax.block_until_ready(sim.states.pos)
     profiler.stop()
     renderer = HTMLRenderer()
     renderer.open_in_browser(profiler.last_session)
@@ -33,12 +34,22 @@ def main():
     sim = Sim(
         n_worlds=1,
         n_drones=1,
-        physics="sys_id",
-        control="attitude",
+        physics="analytical",
+        control="state",
         controller="emulatefirmware",
         device=device,
     )
     profile_step(sim, 1000, device)
+    # old | new
+    # sys_id + attitude:
+    # 0.61 reset, 0.61 step  |  0.61 reset, 0.61 step
+    # sys_id + state:
+    # 14.53 step, 0.53 reset |  0.75 reset, 0.88 step
+
+    # Analytical + attitude:
+    # 0.75 reset, 9.38 step  |  0.75 reset, 0.89 step
+    # Analytical + state:
+    # 0.75 reset, 15.1 step  |  0.75 reset, 0.5 step
 
 
 if __name__ == "__main__":
