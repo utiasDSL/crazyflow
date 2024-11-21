@@ -1,4 +1,5 @@
 from typing import Optional, Tuple, Literal, Dict, Union
+from dataclasses import fields
 import numpy as np
 import jax
 import jax.numpy as jnp
@@ -37,20 +38,25 @@ class CrazyflowVectorEnv(VectorEnv):
 
         self.sim = Sim(n_worlds=num_envs, n_drones=num_drones_per_env, **kwargs)
 
-        self.steps = jnp.zeros((num_envs), dtype=jnp.int32)
         self.prev_done = jnp.zeros((num_envs), dtype=jnp.bool_)
 
         self.single_action_space = spaces.Box(
             -1,
             1,
-            shape=(math.prod(self.sim._controls[self.sim.control].shape[1:]),),
+            shape=(math.prod(getattr(self.sim.controls, self.sim.control).shape[1:]),),
             dtype=jnp.float32,
         )
         self.action_space = batch_space(self.single_action_space, num_envs)
 
+        self.states_to_exclude_from_obs = ["step", "device"]
         _obs_size = 0
-        for key in self.sim.states.keys():
-            _obs_size += math.prod(self.sim.states[key].shape[1:])
+        for field in fields(self.sim.states):
+            field_name = field.name
+            if field_name in self.states_to_exclude_from_obs:
+                continue
+            _obs_size += math.prod(
+                getattr(self.sim.states, field_name).shape[1:]
+            )
         self.single_observation_space = spaces.Box(
             -jnp.inf, jnp.inf, shape=(_obs_size,), dtype=jnp.float32
         )
@@ -82,14 +88,13 @@ class CrazyflowVectorEnv(VectorEnv):
 
         terminated = self._get_terminated()
         reward = self._get_reward()
-        truncated = self.steps >= self.max_episode_steps
+        truncated = self.sim.states.step >= self.max_episode_steps
 
         # Reset all environments which terminated or were truncated in the last step
         self.sim.reset(mask=self.prev_done)
 
         # Compute the new states without in-place mutation
         # TODO: check if this is the most performance way to do this
-        self.steps = jax.lax.select(self.prev_done, jnp.zeros_like(self.steps), self.steps + 1)
         reward = jax.lax.select(self.prev_done, jnp.zeros_like(reward), reward)
         terminated = jax.lax.select(self.prev_done, jnp.full_like(terminated, False), terminated)
         truncated = jax.lax.select(self.prev_done, jnp.full_like(truncated, False), truncated)
@@ -110,7 +115,6 @@ class CrazyflowVectorEnv(VectorEnv):
             options = {}
         self.sim.reset()
 
-        self.steps = jnp.zeros(self.num_envs, dtype=jnp.int32)
         self.prev_done = jnp.zeros(self.num_envs, dtype=jnp.bool_)
 
         return self._get_obs(), {}
@@ -121,8 +125,9 @@ class CrazyflowVectorEnv(VectorEnv):
     def _get_obs(self) -> Dict[str, jnp.ndarray]:
         # Returns observations for all environments
         obs = {
-            key: self._maybe_to_numpy(value.reshape(*value.shape[:-2], -1))
-            for key, value in self.sim.states.items()
+            field.name: self._maybe_to_numpy(getattr(self.sim.states, field.name))
+            for field in fields(self.sim.states)
+            if field.name not in self.states_to_exclude_from_obs
         }
         return obs
 
@@ -138,7 +143,7 @@ class CrazyflowVectorEnv(VectorEnv):
         if self.return_datatype == "numpy" and not isinstance(data, np.ndarray):
             return jax.device_get(data)
         return data
-    
+
     def _maybe_to_jax(self, data: Union[np.ndarray, jnp.ndarray]) -> jnp.ndarray:
         # Potentially dont need to check for "self.return_datatype == "jax"", as simulation works with jax arrays in any case
         if self.return_datatype == "jax" and not isinstance(data, jnp.ndarray):
