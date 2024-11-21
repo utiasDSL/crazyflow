@@ -1,5 +1,5 @@
 import jax
-import jax.numpy as jnp
+import numpy as np
 from pyinstrument import Profiler
 from pyinstrument.renderers.html import HTMLRenderer
 
@@ -8,11 +8,12 @@ from crazyflow.sim.core import Sim
 
 def profile_step(sim: Sim, n_steps: int, device: str):
     device = jax.devices(device)[0]
-    cmd = jnp.zeros((sim.n_worlds, sim.n_drones, 4), device=device)
-    cmd = cmd.at[0, 0, 0].set(1)
+    cmd = np.zeros((sim.n_worlds, sim.n_drones, 4))
     # Ensure JIT compiled dynamics and control
+    sim.reset()
     sim.attitude_control(cmd)
     sim.step()
+    sim.reset()
     jax.block_until_ready(sim._mjx_data)
 
     profiler = Profiler()
