@@ -192,32 +192,32 @@ class Sim:
 
     def _step_sys_id(self):
         mask = self.controllable
-        if mask.any():
-            if self.control == Control.state:
-                self.controls = self._masked_state_controls_update(mask, self.controls)
-                self.controls = fused_masked_state2attitude(
-                    mask, self.states, self.controls, self.dt
-                )
-            self.controls = self._masked_attitude_controls_update(mask, self.controls)
-            self.last_ctrl_steps = self._masked_controls_step_update(
-                mask, self.steps, self.last_ctrl_steps
-            )
+        # Optional optimization: check if mask.any() before updating the controls. This breaks jax's
+        # gradient tracing, so we omit it for now.
+        if self.control == Control.state:
+            self.controls = self._masked_state_controls_update(mask, self.controls)
+            self.controls = fused_masked_state2attitude(mask, self.states, self.controls, self.dt)
+        self.controls = self._masked_attitude_controls_update(mask, self.controls)
+        self.last_ctrl_steps = self._masked_controls_step_update(
+            mask, self.steps, self.last_ctrl_steps
+        )
         self.states = fused_identified_dynamics(self.states, self.controls, self.dt)
         self._mjx_data = self._sync_mjx(self.states, self._mjx_model, self._mjx_data)
 
     def _step_analytical(self):
         mask = self.controllable
-        if mask.any():  # Only update the RPMs at the control frequency
-            match self.controller:
-                case Controller.emulatefirmware:
-                    self.controls = self._step_emulate_firmware()
-                case Controller.pycffirmware:
-                    raise NotImplementedError
-                case _:
-                    raise ValueError(f"Controller {self.controller} not implemented")
-            self.last_ctrl_steps = self._masked_controls_step_update(
-                mask, self.steps, self.last_ctrl_steps
-            )
+        # Optional optimization: check if mask.any() before updating the controls. This breaks jax's
+        # gradient tracing, so we omit it for now.
+        match self.controller:
+            case Controller.emulatefirmware:
+                self.controls = self._step_emulate_firmware()
+            case Controller.pycffirmware:
+                raise NotImplementedError
+            case _:
+                raise ValueError(f"Controller {self.controller} not implemented")
+        self.last_ctrl_steps = self._masked_controls_step_update(
+            mask, self.steps, self.last_ctrl_steps
+        )
         forces, torques = fused_rpms2collective_wrench(self.states, self.controls, self.params)
         self.states = fused_analytical_dynamics(forces, torques, self.states, self.params, self.dt)
         self._mjx_data = self._sync_mjx(self.states, self._mjx_model, self._mjx_data)
