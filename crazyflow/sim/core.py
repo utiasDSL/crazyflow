@@ -42,8 +42,6 @@ class Sim:
         assert Physics(physics) in Physics, f"Physics mode {physics} not implemented"
         assert Control(control) in Control, f"Control mode {control} not implemented"
         assert Controller(controller) in Controller, f"Controller {controller} not implemented"
-        if physics == Physics.sys_id and control == Control.state:
-            raise ConfigError("sys_id physics does not support state control")  # TODO: Implement
         self.physics = physics
         self.control = control
         self.controller = controller
@@ -232,7 +230,7 @@ class Sim:
 
     @staticmethod
     @jax.jit
-    def _sync_mjx(states: SimState, mjx_model, mjx_data) -> Data:
+    def _sync_mjx(states: SimState, mjx_model: Model, mjx_data: Data) -> Data:
         pos, quat, vel, ang_vel = states.pos, states.quat, states.vel, states.ang_vel
         quat = quat[..., [-1, 0, 1, 2]]  # MuJoCo quat is [w, x, y, z], ours is [x, y, z, w]
         qpos = rearrange(jnp.concat([pos, quat], axis=-1), "w d qpos -> w (d qpos)")

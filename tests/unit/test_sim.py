@@ -35,10 +35,6 @@ def test_sim_creation(
         with pytest.raises(ConfigError):
             create_sim()
         return
-    if physics == Physics.sys_id and control == Control.state:
-        with pytest.raises(ConfigError):
-            create_sim()
-        return
     sim = create_sim()
     assert sim.n_worlds == n_worlds
     assert sim.n_drones == n_drones
@@ -168,8 +164,6 @@ def test_sim_step(
 ):
     if n_drones * n_worlds > 1 and controller == Controller.pycffirmware:
         return  # PyCFFirmware does not support multiple drones
-    if physics == Physics.sys_id and control == Control.state:
-        return  # TODO: SysID currently does not support state control. Remove once fixed.
     sim = Sim(
         n_worlds=n_worlds,
         n_drones=n_drones,

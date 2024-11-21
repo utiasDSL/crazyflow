@@ -31,10 +31,10 @@ def fused_identified_dynamics(state: SimState, cmd: SimControls, dt: float) -> S
         cmd: The current simulation controls.
         dt: The simulation time step.
     """
-    pos, quat, vel, ang_vel = identified_dynamics(
-        cmd.attitude, state.pos, state.quat, state.vel, state.ang_vel, dt
+    pos, quat, vel, rpy_rates = identified_dynamics(
+        cmd.attitude, state.pos, state.quat, state.vel, state.rpy_rates, dt
     )
-    return state.replace(pos=pos, quat=quat, vel=vel, ang_vel=ang_vel)
+    return state.replace(pos=pos, quat=quat, vel=vel, rpy_rates=rpy_rates)
 
 
 @jax.jit
