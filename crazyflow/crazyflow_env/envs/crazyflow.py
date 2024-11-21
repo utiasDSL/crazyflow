@@ -16,6 +16,7 @@ class CrazyflowVectorEnv(VectorEnv):
 
     def __init__(
         self,
+        *,
         num_envs: int = 1,
         max_episode_steps: int = 1000,
         return_datatype: Literal["numpy", "jax"] = "jax",

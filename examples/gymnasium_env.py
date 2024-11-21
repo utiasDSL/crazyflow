@@ -1,5 +1,6 @@
 import gymnasium
 import numpy as np
+import jax.numpy as jnp
 import crazyflow.crazyflow_env.envs
 from ml_collections import config_dict
 
@@ -27,7 +28,7 @@ envs = gymnasium.make_vec(
 )
 
 # action for going up (in attitude control)
-action = np.array(
+action = jnp.array(
     [[[0.3, 0, 0, 0] for _ in range(sim_config.n_drones)] for _ in range(sim_config.n_worlds)], dtype=np.float32
 ).reshape(sim_config.n_worlds, -1)
 
