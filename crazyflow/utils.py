@@ -1,5 +1,7 @@
 from typing import Callable
 
+import jax.numpy as jnp
+from jax import Array
 from mujoco._specs import MjsBody, MjsJoint, MjsSite
 
 
@@ -63,3 +65,13 @@ def clone_body(world: MjsBody, body: MjsBody, name: str) -> MjsBody:
         if attr not in invalid:
             setattr(new_body, attr, getattr(body, attr))
     return new_body
+
+
+def grid_2d(n: int, spacing: float = 1.0, center: Array = jnp.zeros(2)) -> Array:
+    """Generate a 2D grid of points."""
+    N = int(jnp.ceil(jnp.sqrt(n)))
+    points = jnp.linspace(-0.5 * spacing * (N - 1), 0.5 * spacing * (N - 1), N)
+    x, y = jnp.meshgrid(points, points)
+    grid = jnp.stack((x.flatten(), y.flatten()), axis=-1) + center
+    order = jnp.argsort(jnp.linalg.norm(grid, axis=-1))
+    return grid[order[:n]]

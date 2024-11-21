@@ -1,7 +1,6 @@
 from enum import Enum
 from functools import partial
 
-import jax
 import jax.numpy as jnp
 from jax import Array
 from jax.scipy.spatial.transform import Rotation as R
@@ -30,10 +29,9 @@ class Physics(str, Enum):
     default = mujoco
 
 
-@jax.jit
 @partial(jnp.vectorize, signature="(4),(3),(4),(3),(3)->(3),(4),(3),(3)", excluded=[5])
 def identified_dynamics(
-    cmd: Array, pos: Array, quat: Array, vel: Array, ang_vel: Array, dt: float
+    cmd: Array, pos: Array, quat: Array, vel: Array, rpy_rates: Array, dt: float
 ) -> tuple[Array, Array, Array, Array]:
     """Dynamics model identified from data collected on the real drone.
 
@@ -50,7 +48,7 @@ def identified_dynamics(
         pos: The current position.
         quat: The current orientation.
         vel: The current velocity.
-        ang_vel: The current angular velocity.
+        rpy_rates: The current roll, pitch, and yaw rates.
         dt: The simulation time step.
     """
     collective_thrust, attitude = cmd[0], cmd[1:]
@@ -60,18 +58,19 @@ def identified_dynamics(
     a1, a2 = SYS_ID_PARAMS["acc_k1"], SYS_ID_PARAMS["acc_k2"]
     acc = thrust * a1 + drift * a2 - jnp.array([0, 0, GRAVITY])
     roll_cmd, pitch_cmd, yaw_cmd = attitude
-    roll_rate = SYS_ID_PARAMS["roll_alpha"] * quat[0] + SYS_ID_PARAMS["roll_beta"] * roll_cmd
-    pitch_rate = SYS_ID_PARAMS["pitch_alpha"] * quat[1] + SYS_ID_PARAMS["pitch_beta"] * pitch_cmd
-    yaw_rate = SYS_ID_PARAMS["yaw_alpha"] * quat[2] + SYS_ID_PARAMS["yaw_beta"] * yaw_cmd
+    rpy = rot.as_euler("xyz")
+    roll_rate = SYS_ID_PARAMS["roll_alpha"] * rpy[0] + SYS_ID_PARAMS["roll_beta"] * roll_cmd
+    pitch_rate = SYS_ID_PARAMS["pitch_alpha"] * rpy[1] + SYS_ID_PARAMS["pitch_beta"] * pitch_cmd
+    yaw_rate = SYS_ID_PARAMS["yaw_alpha"] * rpy[2] + SYS_ID_PARAMS["yaw_beta"] * yaw_cmd
     rpy_rates = jnp.array([roll_rate, pitch_rate, yaw_rate])
     next_pos = pos + vel * dt
-    next_quat = R.from_euler("xyz", R.from_quat(quat).as_euler("xyz") + ang_vel * dt).as_quat()
+    next_rot = R.from_euler("xyz", rpy + rpy_rates * dt)
+    next_quat = next_rot.as_quat()
     next_vel = vel + acc * dt
-    next_ang_vel = ang_vel + rpy_rates * dt
-    return next_pos, next_quat, next_vel, next_ang_vel
+    next_rpy_rates = next_rot.apply(rpy_rates)
+    return next_pos, next_quat, next_vel, next_rpy_rates
 
 
-@jax.jit
 @partial(
     jnp.vectorize, signature="(3),(3),(3),(4),(3),(3),(1),(3,3)->(3),(4),(3),(3)", excluded=[8]
 )
@@ -102,7 +101,6 @@ def analytical_dynamics(
     return next_pos, next_quat, next_vel, next_rpy_rates
 
 
-@jax.jit
 @partial(jnp.vectorize, signature="(4),(4),(3),(3,3)->(3),(3)")
 def rpms2collective_wrench(
     rpms: Array, quat: Array, rpy_rates: Array, J: Array

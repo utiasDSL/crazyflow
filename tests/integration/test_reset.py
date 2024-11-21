@@ -26,7 +26,7 @@ def test_reset_during_simulation(physics: Physics, controller: Controller):
     final_quat = sim.states.quat.copy()
 
     sim.reset()
-    assert sim.states.step == 0
+    assert jnp.all(sim.steps == 0)
     assert jnp.all(sim.states.pos == sim.defaults["states"].pos)
     assert jnp.all(sim.states.quat == sim.defaults["states"].quat)
 
@@ -56,7 +56,7 @@ def test_reset_multi_world(physics: Physics):
     final_quat = sim.states.quat.copy()
 
     sim.reset()
-    assert jnp.all(sim.states.step == 0)
+    assert jnp.all(sim.steps == 0)
     assert jnp.all(sim.states.pos == sim.defaults["states"].pos)
     assert jnp.all(sim.states.quat == sim.defaults["states"].quat)
 

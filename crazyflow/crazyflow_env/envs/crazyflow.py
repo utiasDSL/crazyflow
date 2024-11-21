@@ -1,14 +1,17 @@
-from typing import Optional, Tuple, Literal, Dict, Union
+import math
 from dataclasses import fields
-import numpy as np
+from typing import Dict, Literal, Optional, Tuple
+
 import jax
 import jax.numpy as jnp
+import numpy as np
 from gymnasium import spaces
 from gymnasium.vector import VectorEnv
 from gymnasium.vector.utils import batch_space
+from jax import Array
+
 from crazyflow.control.controller import Control
 from crazyflow.sim.core import Sim
-import math
 
 
 class CrazyflowVectorEnv(VectorEnv):
@@ -36,10 +39,11 @@ class CrazyflowVectorEnv(VectorEnv):
         self.num_envs = num_envs
         self.max_episode_steps = max_episode_steps
         self.return_datatype = return_datatype
+        self.device = jax.devices(kwargs["device"])[0]
 
         self.sim = Sim(**kwargs)
 
-        self.prev_done = jnp.zeros((self.sim.n_worlds), dtype=jnp.bool_)
+        self.prev_done = jnp.zeros((self.sim.n_worlds), dtype=jnp.bool_, device=self.device)
 
         self.single_action_space = spaces.Box(
             -1,
@@ -61,18 +65,11 @@ class CrazyflowVectorEnv(VectorEnv):
         )
         self.observation_space = batch_space(self.single_observation_space, self.sim.n_worlds)
 
-    def step(
-        self, action: Union[jnp.ndarray, np.ndarray]
-    ) -> Tuple[
-        Union[jnp.ndarray, np.ndarray],
-        Union[jnp.ndarray, np.ndarray],
-        Union[jnp.ndarray, np.ndarray],
-        Union[jnp.ndarray, np.ndarray],
-        Dict,
-    ]:
+    def step(self, action: Array) -> Tuple[Array, Array, Array, Array, Dict]:
         assert self.action_space.contains(action), f"{action!r} ({type(action)}) invalid"
-        action = self._maybe_to_jax(action)
-        action = action.reshape((self.sim.n_worlds, self.sim.n_drones, -1))
+        action = jnp.array(action, device=self.device).reshape(
+            (self.sim.n_worlds, self.sim.n_drones, -1)
+        )
 
         if self.sim.control == Control.state:
             self.sim.state_control(action)
@@ -86,27 +83,26 @@ class CrazyflowVectorEnv(VectorEnv):
         self.sim.step()
 
         terminated = self._get_terminated()
-        reward = self._get_reward()
-        truncated = self.sim.states.step >= self.max_episode_steps
+        truncated = self.sim.steps >= self.max_episode_steps
 
         # Reset all environments which terminated or were truncated in the last step
         self.sim.reset(mask=self.prev_done)
 
-        # Compute the new states without in-place mutation
-        # TODO: check if this is the most performance way to do this
-        reward = jax.lax.select(self.prev_done, jnp.zeros_like(reward), reward)
-        terminated = jax.lax.select(self.prev_done, jnp.full_like(terminated, False), terminated)
-        truncated = jax.lax.select(self.prev_done, jnp.full_like(truncated, False), truncated)
+        terminated = jnp.where(self.prev_done, False, terminated)
+        truncated = jnp.where(self.prev_done, False, truncated)
+        reward = self.reward
 
         self.prev_done = jnp.logical_or(terminated, truncated)
 
         return (
             self._get_obs(),
-            self._maybe_to_numpy(reward),
+            reward,
             self._maybe_to_numpy(terminated),
             self._maybe_to_numpy(truncated),
             {},
         )
+
+    # return self.obs, self.reward, self.terminated, self.truncated, self.info
 
     def reset(self, *, seed: Optional[int] = None, options: Optional[dict] = None):
         # Resets ALL (!) environments
@@ -115,8 +111,16 @@ class CrazyflowVectorEnv(VectorEnv):
         self.sim.reset()
 
         self.prev_done = jnp.zeros((self.sim.n_worlds), dtype=jnp.bool_)
-
         return self._get_obs(), {}
+
+    @property
+    def reward(self):
+        return self._reward(self.prev_done)
+
+    @staticmethod
+    @jax.jit
+    def _reward(done: jax.Array )-> jnp.ndarray:
+        return jnp.where(done, 0.0, 1.0)
 
     def render(self):
         self.sim.render()
@@ -130,21 +134,11 @@ class CrazyflowVectorEnv(VectorEnv):
         }
         return obs
 
-    def _get_reward(self) -> jnp.ndarray:
-        # Returns rewards for all environments
-        return jnp.zeros((self.sim.n_worlds), dtype=jnp.float32)
-
     def _get_terminated(self) -> jnp.ndarray:
         # Returns termination status for all environments
         return jnp.zeros((self.sim.n_worlds), dtype=jnp.bool_)
 
-    def _maybe_to_numpy(self, data: Union[jnp.ndarray, np.ndarray]) -> np.ndarray:
+    def _maybe_to_numpy(self, data: Array) -> np.ndarray:
         if self.return_datatype == "numpy" and not isinstance(data, np.ndarray):
             return jax.device_get(data)
-        return data
-
-    def _maybe_to_jax(self, data: Union[np.ndarray, jnp.ndarray]) -> jnp.ndarray:
-        # Potentially dont need to check for "self.return_datatype == "jax"", as simulation works with jax arrays in any case
-        if self.return_datatype == "jax" and not isinstance(data, jnp.ndarray):
-            return jax.device_put(data)
         return data

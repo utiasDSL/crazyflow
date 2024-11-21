@@ -50,12 +50,16 @@ def profile_gym_env_step(sim_config: config_dict.ConfigDict, n_steps: int, devic
     )
 
     # Action for going up (in attitude control)
-    action = jnp.array(
+    action = np.array(
         [[[0.3, 0, 0, 0] for _ in range(sim_config.n_drones)] for _ in range(sim_config.n_worlds)],
         dtype=np.float32,
     ).reshape(sim_config.n_worlds, -1)
 
+    # step through env once to ensure JIT compilation
     _, _ = envs.reset(seed=42)
+    _, _, _, _, _ = envs.step(action)
+    _, _ = envs.reset(seed=42)
+    
     jax.block_until_ready(envs.unwrapped.sim._mjx_data)  # Ensure JIT compiled dynamics
 
     # Step through the environment
