@@ -13,8 +13,10 @@ def profile_step(sim: Sim, n_steps: int, device: str):
     sim.reset()
     sim.state_control(cmd)
     sim.step()
+    sim.state_control(cmd)
+    sim.step()
     sim.reset()
-    jax.block_until_ready(sim._mjx_data)
+    jax.block_until_ready(sim.states.pos)
 
     profiler = Profiler()
     profiler.start()

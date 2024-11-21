@@ -14,7 +14,9 @@ class SimState:
 @dataclass
 class SimControls:
     state: Array
+    staged_state: Array
     attitude: Array
+    staged_attitude: Array
     thrust: Array
     rpms: Array
     rpy_err_i: Array
