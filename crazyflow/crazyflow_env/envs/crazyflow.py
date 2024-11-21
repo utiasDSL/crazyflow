@@ -17,28 +17,28 @@ class CrazyflowVectorEnv(VectorEnv):
     def __init__(
         self,
         num_envs: int = 1,
-        num_drones_per_env: int = 1,
         max_episode_steps: int = 1000,
         return_datatype: Literal["numpy", "jax"] = "jax",
         **kwargs: dict,
     ):
-        """
+        """Summary: Initializes the CrazyflowVectorEnv.
+
         Args:
-            num_envs (int): The number of parallel environments (simulations) to run.
-            num_drones_per_env (int): The number of drones in each environment.
-            max_episode_steps (int): The maximum number of steps per episode.
+        max_episode_steps (int): The maximum number of steps per episode.
             return_datatype (Literal["numpy", "jax"]): The data type for returned arrays, either "numpy" or "jax". If specified as "numpy", the returned arrays will be numpy arrays on the CPU. If specified as "jax", the returned arrays will be jax arrays on the "device" specifiedf or the simulation.
             **kwargs: Takes arguments that are passed to the Crazyfly simulation .
         """
+        assert "n_worlds" in kwargs, "n_worlds must be specified in kwargs"
+        assert "n_drones" in kwargs, "n_drones must be specified in kwargs"
+        assert num_envs == kwargs["n_worlds"], "num_envs must be equal to n_worlds"
 
         self.num_envs = num_envs
-        self.num_drones_per_env = num_drones_per_env
         self.max_episode_steps = max_episode_steps
         self.return_datatype = return_datatype
 
-        self.sim = Sim(n_worlds=num_envs, n_drones=num_drones_per_env, **kwargs)
+        self.sim = Sim(**kwargs)
 
-        self.prev_done = jnp.zeros((num_envs), dtype=jnp.bool_)
+        self.prev_done = jnp.zeros((self.sim.n_worlds), dtype=jnp.bool_)
 
         self.single_action_space = spaces.Box(
             -1,
@@ -46,7 +46,7 @@ class CrazyflowVectorEnv(VectorEnv):
             shape=(math.prod(getattr(self.sim.controls, self.sim.control).shape[1:]),),
             dtype=jnp.float32,
         )
-        self.action_space = batch_space(self.single_action_space, num_envs)
+        self.action_space = batch_space(self.single_action_space, self.sim.n_worlds)
 
         self.states_to_exclude_from_obs = ["step", "device"]
         _obs_size = 0
@@ -54,13 +54,11 @@ class CrazyflowVectorEnv(VectorEnv):
             field_name = field.name
             if field_name in self.states_to_exclude_from_obs:
                 continue
-            _obs_size += math.prod(
-                getattr(self.sim.states, field_name).shape[1:]
-            )
+            _obs_size += math.prod(getattr(self.sim.states, field_name).shape[1:])
         self.single_observation_space = spaces.Box(
             -jnp.inf, jnp.inf, shape=(_obs_size,), dtype=jnp.float32
         )
-        self.observation_space = batch_space(self.single_observation_space, num_envs)
+        self.observation_space = batch_space(self.single_observation_space, self.sim.n_worlds)
 
     def step(
         self, action: Union[jnp.ndarray, np.ndarray]
@@ -73,7 +71,7 @@ class CrazyflowVectorEnv(VectorEnv):
     ]:
         assert self.action_space.contains(action), f"{action!r} ({type(action)}) invalid"
         action = self._maybe_to_jax(action)
-        action = action.reshape((self.num_envs, self.num_drones_per_env, -1))
+        action = action.reshape((self.sim.n_worlds, self.sim.n_drones, -1))
 
         if self.sim.control == Control.state:
             self.sim.state_control(action)
@@ -115,7 +113,7 @@ class CrazyflowVectorEnv(VectorEnv):
             options = {}
         self.sim.reset()
 
-        self.prev_done = jnp.zeros(self.num_envs, dtype=jnp.bool_)
+        self.prev_done = jnp.zeros((self.sim.n_worlds), dtype=jnp.bool_)
 
         return self._get_obs(), {}
 
@@ -133,11 +131,11 @@ class CrazyflowVectorEnv(VectorEnv):
 
     def _get_reward(self) -> jnp.ndarray:
         # Returns rewards for all environments
-        return jnp.zeros((self.num_envs), dtype=jnp.float32)
+        return jnp.zeros((self.sim.n_worlds), dtype=jnp.float32)
 
     def _get_terminated(self) -> jnp.ndarray:
         # Returns termination status for all environments
-        return jnp.zeros((self.num_envs), dtype=jnp.bool_)
+        return jnp.zeros((self.sim.n_worlds), dtype=jnp.bool_)
 
     def _maybe_to_numpy(self, data: Union[jnp.ndarray, np.ndarray]) -> np.ndarray:
         if self.return_datatype == "numpy" and not isinstance(data, np.ndarray):

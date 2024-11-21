@@ -8,9 +8,6 @@ from crazyflow.sim.core import Sim
 from crazyflow.sim.physics import Physics
 
 
-num_envs = 20
-num_drones_per_env = 10
-
 # set config for simulation
 sim_config = config_dict.ConfigDict()
 sim_config.device = "cpu"
@@ -18,20 +15,21 @@ sim_config.physics = Physics.sys_id
 sim_config.control = Control.default
 sim_config.controller = Controller.default
 sim_config.freq = 60
+sim_config.n_drones=10
+sim_config.n_worlds=20
 
 envs = gymnasium.make_vec(
     "crazyflow_env/CrazyflowVectorEnv-v0",
-    num_envs=num_envs,
-    num_drones_per_env=num_drones_per_env,
     max_episode_steps=200,
     return_datatype="numpy",
+    num_envs=sim_config.n_worlds,
     **sim_config,
 )
 
 # action for going up (in attitude control)
 action = np.array(
-    [[[0.3, 0, 0, 0] for _ in range(num_drones_per_env)] for _ in range(num_envs)], dtype=np.float32
-).reshape(num_envs, -1)
+    [[[0.3, 0, 0, 0] for _ in range(sim_config.n_drones)] for _ in range(sim_config.n_worlds)], dtype=np.float32
+).reshape(sim_config.n_worlds, -1)
 
 obs, info = envs.reset(seed=42)
 
