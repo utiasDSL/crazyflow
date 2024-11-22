@@ -58,7 +58,10 @@ class Sim:
         self.n_drones = n_drones
         self.defaults = {}  # Populated at the end of self.setup()
         self._default_mask = jnp.ones((n_worlds,), dtype=bool, device=self.device)
-        self.steps = jnp.zeros((n_worlds,), device=self.device)
+        self.steps = jnp.zeros((n_worlds,), dtype=int, device=self.device)
+        # We need to set the last control step to -freq to ensure that the first control
+        # command is applied at t=0
+        self.last_ctrl_steps = jnp.ones((n_worlds,), dtype=int, device=self.device) * -freq
         self.states = SimState(
             pos=jnp.zeros((n_worlds, n_drones, 3), device=self.device),
             quat=jnp.zeros((n_worlds, n_drones, 4), device=self.device),
@@ -70,7 +73,9 @@ class Sim:
         # Allocate internal control variables and physics parameters.
         self.controls = SimControls(
             state=jnp.zeros((n_worlds, n_drones, 13), device=self.device),
+            staged_state=jnp.zeros((n_worlds, n_drones, 13), device=self.device),
             attitude=jnp.zeros((n_worlds, n_drones, 4), device=self.device),
+            staged_attitude=jnp.zeros((n_worlds, n_drones, 4), device=self.device),
             thrust=jnp.zeros((n_worlds, n_drones, 4), device=self.device),
             rpms=jnp.zeros((n_worlds, n_drones, 4), device=self.device),
             rpy_err_i=jnp.zeros((n_worlds, n_drones, 3), device=self.device),
@@ -123,6 +128,7 @@ class Sim:
         self.controls = self._masked_controls_reset(mask, self.controls, self.defaults["controls"])
         self.params = self._masked_params_reset(mask, self.params, self.defaults["params"])
         self.steps = jnp.where(mask, 0, self.steps)
+        self.last_ctrl_steps = jnp.where(mask, -self.freq, self.last_ctrl_steps)
         self._sync_mjx(self.states, self._mjx_model, self._mjx_data)
 
     def step(self):
@@ -139,23 +145,16 @@ class Sim:
         self.steps = self.steps + 1
 
     def attitude_control(self, cmd: Array):
+        """Set the desired attitude for all drones in all worlds."""
         assert cmd.shape == (self.n_worlds, self.n_drones, 4), "Command shape mismatch"
         assert self.control == Control.attitude, "Attitude control is not enabled by the sim config"
-        # sys_id physics uses the controller input to compute the physics step, so changes in the
-        # control input are always visible. To simulate the controller at a lower frequency, we only
-        # update the attitude buffer at the control frequency. This does not apply to other
-        # physics / controller combinations.
-        if self.physics == Physics.sys_id:
-            mask = self.controllable
-            self.controls = self._masked_attitude_controls_update(mask, self.controls, cmd)
-            return
-        self.controls = self.controls.replace(attitude=jnp.array(cmd, device=self.device))
+        self.controls = self.controls.replace(staged_attitude=jnp.array(cmd, device=self.device))
 
     def state_control(self, cmd: Array):
         """Set the desired state for all drones in all worlds."""
         assert cmd.shape == self.controls.state.shape, f"Command shape mismatch {cmd.shape}"
         assert self.control == Control.state, "State control is not enabled by the sim config"
-        self.controls = self.controls.replace(state=jnp.array(cmd, device=self.device))
+        self.controls = self.controls.replace(staged_state=jnp.array(cmd, device=self.device))
 
     def thrust_control(self, cmd: Array):
         raise NotImplementedError
@@ -177,31 +176,48 @@ class Sim:
 
     @property
     def controllable(self) -> Array:
-        """Boolean array of shape (n_worlds,) that indicates which worlds are controllable."""
-        return self._controllable(self.steps, self.control_freq, self.freq)
+        """Boolean array of shape (n_worlds,) that indicates which worlds are controllable.
+
+        A world is controllable if the last control step was more than 1/control_freq seconds ago.
+        Desired control commands get stashed in the staged control buffers and are applied in `step`
+        as soon as the controller frequency allows for an update. Successive control updates that
+        happen before the staged buffers are applied overwrite the desired values.
+        """
+        return self._controllable(self.steps, self.last_ctrl_steps, self.control_freq, self.freq)
 
     @staticmethod
     @jax.jit
-    def _controllable(step: Array, ctrl_freq: int, freq: int) -> Array:
-        return step * ctrl_freq % freq < ctrl_freq
+    def _controllable(step: Array, ctrl_step: Array, ctrl_freq: int, freq: int) -> Array:
+        return (step - ctrl_step) >= (freq / ctrl_freq)
 
     def _step_sys_id(self):
         mask = self.controllable
-        if mask.any() and self.control == Control.state:
+        # Optional optimization: check if mask.any() before updating the controls. This breaks jax's
+        # gradient tracing, so we omit it for now.
+        if self.control == Control.state:
+            self.controls = self._masked_state_controls_update(mask, self.controls)
             self.controls = fused_masked_state2attitude(mask, self.states, self.controls, self.dt)
+        self.controls = self._masked_attitude_controls_update(mask, self.controls)
+        self.last_ctrl_steps = self._masked_controls_step_update(
+            mask, self.steps, self.last_ctrl_steps
+        )
         self.states = fused_identified_dynamics(self.states, self.controls, self.dt)
         self._mjx_data = self._sync_mjx(self.states, self._mjx_model, self._mjx_data)
 
     def _step_analytical(self):
         mask = self.controllable
-        if mask.any():  # Only update the RPMs at the control frequency
-            match self.controller:
-                case Controller.emulatefirmware:
-                    self.controls = self._step_emulate_firmware()
-                case Controller.pycffirmware:
-                    raise NotImplementedError
-                case _:
-                    raise ValueError(f"Controller {self.controller} not implemented")
+        # Optional optimization: check if mask.any() before updating the controls. This breaks jax's
+        # gradient tracing, so we omit it for now.
+        match self.controller:
+            case Controller.emulatefirmware:
+                self.controls = self._step_emulate_firmware()
+            case Controller.pycffirmware:
+                raise NotImplementedError
+            case _:
+                raise ValueError(f"Controller {self.controller} not implemented")
+        self.last_ctrl_steps = self._masked_controls_step_update(
+            mask, self.steps, self.last_ctrl_steps
+        )
         forces, torques = fused_rpms2collective_wrench(self.states, self.controls, self.params)
         self.states = fused_analytical_dynamics(forces, torques, self.states, self.params, self.dt)
         self._mjx_data = self._sync_mjx(self.states, self._mjx_model, self._mjx_data)
@@ -225,7 +241,9 @@ class Sim:
     def _step_emulate_firmware(self) -> SimControls:
         mask = self.controllable
         if self.control == Control.state:
+            self.controls = self._masked_state_controls_update(mask, self.controls)
             self.controls = fused_masked_state2attitude(mask, self.states, self.controls, self.dt)
+        self.controls = self._masked_attitude_controls_update(mask, self.controls)
         return fused_masked_attitude2rpm(mask, self.states, self.controls, self.dt)
 
     @staticmethod
@@ -256,11 +274,19 @@ class Sim:
     def _masked_controls_reset(
         mask: Array, controls: SimControls, defaults: SimControls
     ) -> SimControls:
-        atts = ["state", "attitude", "thrust", "rpms", "rpy_err_i", "pos_err_i", "last_rpy"]
-        mask = mask.reshape((-1, 1, 1))
-        return controls.replace(
-            **{k: jnp.where(mask, getattr(defaults, k), getattr(controls, k)) for k in atts}
+        mask = mask[:, None, None]
+        controls = controls.replace(
+            state=jnp.where(mask, defaults.state, controls.state),
+            attitude=jnp.where(mask, defaults.attitude, controls.attitude),
+            thrust=jnp.where(mask, defaults.thrust, controls.thrust),
+            rpms=jnp.where(mask, defaults.rpms, controls.rpms),
+            rpy_err_i=jnp.where(mask, defaults.rpy_err_i, controls.rpy_err_i),
+            pos_err_i=jnp.where(mask, defaults.pos_err_i, controls.pos_err_i),
+            last_rpy=jnp.where(mask, defaults.last_rpy, controls.last_rpy),
+            staged_attitude=jnp.where(mask, defaults.staged_attitude, controls.staged_attitude),
+            staged_state=jnp.where(mask, defaults.staged_state, controls.staged_state),
         )
+        return controls
 
     @staticmethod
     @jax.jit
@@ -273,10 +299,20 @@ class Sim:
 
     @staticmethod
     @jax.jit
-    def _masked_attitude_controls_update(
-        mask: Array, controls: SimControls, cmd: Array
-    ) -> SimControls:
-        return controls.replace(attitude=jnp.where(mask[:, None, None], cmd, controls.attitude))
+    def _masked_attitude_controls_update(mask: Array, controls: SimControls) -> SimControls:
+        cmd, staged_cmd = controls.attitude, controls.staged_attitude
+        return controls.replace(attitude=jnp.where(mask[:, None, None], staged_cmd, cmd))
+
+    @staticmethod
+    @jax.jit
+    def _masked_state_controls_update(mask: Array, controls: SimControls) -> SimControls:
+        cmd, staged_cmd = controls.state, controls.staged_state
+        return controls.replace(state=jnp.where(mask[:, None, None], staged_cmd, cmd))
+
+    @staticmethod
+    @jax.jit
+    def _masked_controls_step_update(mask: Array, steps: Array, last_ctrl_steps: Array) -> Array:
+        return jnp.where(mask, steps, last_ctrl_steps)
 
 
 @jax.jit

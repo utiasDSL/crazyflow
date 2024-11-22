@@ -75,6 +75,10 @@ def fused_masked_state2attitude(
         Fused version of `crazyflow.control.controller.state2attitude`. See `crazyflow.sim.fused`
         for more details.
 
+    Warning:
+        We write the results to `cmd.staged_attitude` instead of `cmd.attitude`. If you want to
+        apply the results, you need to update `cmd.attitude` with `cmd.staged_attitude`.
+
     Args:
         mask: A boolean array of shape (n_worlds, ). Internally, we broadcast over all drones.
         state: The current simulation state.
@@ -89,7 +93,7 @@ def fused_masked_state2attitude(
     # that avoids computing the above expressions when the mask is false.
     attitude = jnp.where(mask, attitude, cmd.attitude)
     pos_err_i = jnp.where(mask, pos_err_i, cmd.pos_err_i)
-    return cmd.replace(attitude=attitude, pos_err_i=pos_err_i)
+    return cmd.replace(staged_attitude=attitude, pos_err_i=pos_err_i)
 
 
 @jax.jit

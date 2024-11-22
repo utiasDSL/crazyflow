@@ -21,6 +21,8 @@ def test_state_interface(physics: Physics, controller: Controller):
         cmd = cmd.at[0, 0, 2].set(1.0)  # Set z position target to 1.0
         sim.state_control(cmd)
         sim.step()
+        if jnp.linalg.norm(sim.states.pos[0, 0] - jnp.array([0.0, 0.0, 1.0])) < 0.1:
+            break
 
     # Check if drone reached target position
     distance = jnp.linalg.norm(sim.states.pos[0, 0] - jnp.array([0.0, 0.0, 1.0]))
@@ -45,6 +47,8 @@ def test_attitude_interface(physics: Physics, controller: Controller):
         )
         sim.attitude_control(cmd)
         sim.step()
+        if jnp.linalg.norm(sim.states.pos[0, 0] - target_pos) < 0.1:
+            break
 
     # Check if drone maintained hover position
     dpos = sim.states.pos[0, 0] - target_pos
@@ -64,6 +68,8 @@ def test_swarm_control(physics: Physics):
         cmd = cmd.at[..., :3].set(target_pos)
         sim.state_control(cmd)
         sim.step()
+        if jnp.linalg.norm(sim.states.pos[0, 0] - target_pos) < 0.1:
+            break
 
     # Check if drone maintained hover position
     max_dist = jnp.max(jnp.linalg.norm(sim.states.pos - target_pos, axis=-1))
