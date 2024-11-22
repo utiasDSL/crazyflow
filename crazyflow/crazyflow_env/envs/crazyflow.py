@@ -84,7 +84,8 @@ class CrazyflowVectorEnv(VectorEnv):
         self.sim.step()
 
         # Reset all environments which terminated or were truncated in the last step
-        self.sim.reset(mask=self.prev_done)
+        if jnp.any(self.prev_done):
+            self.sim.reset(mask=self.prev_done)
 
         reward = self.reward
         terminated = self.terminated

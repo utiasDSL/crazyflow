@@ -124,8 +124,6 @@ class Sim:
         """
         mask = self._default_mask if mask is None else mask
         assert mask.shape == (self.n_worlds,), f"Mask shape mismatch {mask.shape}"
-        if not jnp.any(mask):
-            return
         self.states = self._masked_states_reset(mask, self.states, self.defaults["states"])
         self.controls = self._masked_controls_reset(mask, self.controls, self.defaults["controls"])
         self.params = self._masked_params_reset(mask, self.params, self.defaults["params"])
