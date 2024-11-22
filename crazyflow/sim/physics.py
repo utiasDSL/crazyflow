@@ -26,7 +26,7 @@ class Physics(str, Enum):
     mujoco = "mujoco"
     analytical = "analytical"
     sys_id = "sys_id"
-    default = mujoco
+    default = analytical
 
 
 @partial(jnp.vectorize, signature="(4),(3),(4),(3),(3)->(3),(4),(3),(3)", excluded=[5])
