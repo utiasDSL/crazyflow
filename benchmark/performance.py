@@ -53,8 +53,12 @@ def profile_gym_env_step(sim_config: config_dict.ConfigDict, n_steps: int, devic
     _, _ = envs.reset(seed=42)
     _, _, _, _, _ = envs.step(action)
     _, _ = envs.reset(seed=42)
+    _, _, _, _, _ = envs.step(action)
+    _, _ = envs.reset(seed=42)
+    _, _, _, _, _ = envs.step(action)
+    _, _ = envs.reset(seed=42)
     
-    # jax.block_until_ready(envs.unwrapped.sim._mjx_data)  # Ensure JIT compiled dynamics
+    jax.block_until_ready(envs.unwrapped.sim._mjx_data)  # Ensure JIT compiled dynamics
 
     profiler = Profiler()
     profiler.start()
@@ -78,7 +82,7 @@ def main():
     sim_config.device = device
 
  
-    # profile_step(sim_config, 1000, device)
+    profile_step(sim_config, 1000, device)
     # old | new
     # sys_id + attitude:
     # 0.61 reset, 0.61 step  |  0.61 reset, 0.61 step

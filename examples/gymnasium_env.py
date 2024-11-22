@@ -21,7 +21,7 @@ sim_config.n_worlds=20
 
 envs = gymnasium.make_vec(
     "crazyflow_env/CrazyflowVectorEnv-v0",
-    max_episode_steps=200,
+    max_episode_steps=1000,
     return_datatype="numpy",
     num_envs=sim_config.n_worlds,
     **sim_config,

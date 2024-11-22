@@ -12,6 +12,7 @@ from jax import Array
 
 from crazyflow.control.controller import Control
 from crazyflow.sim.core import Sim
+from crazyflow.sim.structs import SimState
 
 
 class CrazyflowVectorEnv(VectorEnv):
@@ -37,9 +38,9 @@ class CrazyflowVectorEnv(VectorEnv):
         assert num_envs == kwargs["n_worlds"], "num_envs must be equal to n_worlds"
 
         self.num_envs = num_envs
-        self.max_episode_steps = max_episode_steps
         self.return_datatype = return_datatype
         self.device = jax.devices(kwargs["device"])[0]
+        self.max_episode_steps = jnp.array(max_episode_steps, dtype=jnp.int32, device=self.device)
 
         self.sim = Sim(**kwargs)
 
@@ -82,15 +83,12 @@ class CrazyflowVectorEnv(VectorEnv):
 
         self.sim.step()
 
-        terminated = self._get_terminated()
-        truncated = self.sim.steps >= self.max_episode_steps
-
         # Reset all environments which terminated or were truncated in the last step
         self.sim.reset(mask=self.prev_done)
 
-        terminated = jnp.where(self.prev_done, False, terminated)
-        truncated = jnp.where(self.prev_done, False, truncated)
         reward = self.reward
+        terminated = self.terminated
+        truncated = self.truncated
 
         self.prev_done = jnp.logical_or(terminated, truncated)
 
@@ -101,8 +99,6 @@ class CrazyflowVectorEnv(VectorEnv):
             self._maybe_to_numpy(truncated),
             {},
         )
-
-    # return self.obs, self.reward, self.terminated, self.truncated, self.info
 
     def reset(self, *, seed: Optional[int] = None, options: Optional[dict] = None):
         # Resets ALL (!) environments
@@ -115,12 +111,36 @@ class CrazyflowVectorEnv(VectorEnv):
 
     @property
     def reward(self):
-        return self._reward(self.prev_done)
+        return self._reward(self.terminated, self.sim.states)
+
+    @property
+    def terminated(self):
+        return self._terminated(self.prev_done, self.sim.states)
+
+    @property
+    def truncated(self):
+        return self._truncated(self.prev_done, self.sim.steps, self.max_episode_steps)
 
     @staticmethod
     @jax.jit
-    def _reward(done: jax.Array )-> jnp.ndarray:
-        return jnp.where(done, 0.0, 1.0)
+    def _reward(terminated: jax.Array, states: SimState) -> jnp.ndarray:
+        z_coords = states.pos[..., 2]
+        reward = jnp.sum(z_coords, axis=1)
+        return jnp.where(terminated, -1.0, reward)
+
+    @staticmethod
+    @jax.jit
+    def _terminated(dones: jax.Array, states: SimState) -> jnp.ndarray:
+        # terminate if any drone goes below -0.1 in z
+        z_coords = states.pos[..., 2]
+        terminated = jnp.any(z_coords < -0.1, axis=1)
+        return jnp.where(dones, False, terminated)
+
+    @staticmethod
+    @jax.jit
+    def _truncated(dones: jax.Array, steps: jax.Array, max_episode_steps: jax.Array) -> jnp.ndarray:
+        truncated = steps >= max_episode_steps
+        return jnp.where(dones, False, truncated)
 
     def render(self):
         self.sim.render()
@@ -133,10 +153,6 @@ class CrazyflowVectorEnv(VectorEnv):
             if field.name not in self.states_to_exclude_from_obs
         }
         return obs
-
-    def _get_terminated(self) -> jnp.ndarray:
-        # Returns termination status for all environments
-        return jnp.zeros((self.sim.n_worlds), dtype=jnp.bool_)
 
     def _maybe_to_numpy(self, data: Array) -> np.ndarray:
         if self.return_datatype == "numpy" and not isinstance(data, np.ndarray):

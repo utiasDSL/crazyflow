@@ -59,6 +59,8 @@ def profile_gym_env_step(sim_config: config_dict.ConfigDict, n_steps: int, devic
     _, _ = envs.reset(seed=42)
     _, _, _, _, _ = envs.step(action)
     _, _ = envs.reset(seed=42)
+    _, _, _, _, _ = envs.step(action)
+    _, _ = envs.reset(seed=42)
     
     jax.block_until_ready(envs.unwrapped.sim._mjx_data)  # Ensure JIT compiled dynamics
 
@@ -110,7 +112,7 @@ def main():
     sim_config.controller = "emulatefirmware"
     sim_config.device = device
 
-    # profile_step(sim_config, 100, device)
+    profile_step(sim_config, 100, device)
     profile_gym_env_step(sim_config, 100, device)
 
 
