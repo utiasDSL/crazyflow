@@ -1,8 +1,10 @@
 import math
 from dataclasses import fields
+from functools import partial
 from typing import Dict, Literal, Optional, Tuple
 
 import jax
+from jax.scipy.spatial.transform import Rotation
 import jax.numpy as jnp
 import numpy as np
 from gymnasium import spaces
@@ -72,6 +74,8 @@ class CrazyflowVectorEnv(VectorEnv):
             (self.sim.n_worlds, self.sim.n_drones, -1)
         )
 
+        action = self._rescale_action(action, self.sim.control)
+
         if self.sim.control == Control.state:
             self.sim.state_control(action)
         elif self.sim.control == Control.attitude:
@@ -85,7 +89,7 @@ class CrazyflowVectorEnv(VectorEnv):
 
         # Reset all environments which terminated or were truncated in the last step
         if jnp.any(self.prev_done):
-            self.sim.reset(mask=self.prev_done)
+            self.reset(mask=self.prev_done)
 
         reward = self.reward
         terminated = self.terminated
@@ -100,15 +104,56 @@ class CrazyflowVectorEnv(VectorEnv):
             self._maybe_to_numpy(truncated),
             {},
         )
+    
+    @staticmethod
+    @partial(jax.jit, static_argnames=["control_type"]) # static_argnames assumes they dont change during runtime
+    def _rescale_action(action: Array, control_type: str) -> Array:
+        """Rescales actions based on the control type.
 
-    def reset(self, *, seed: Optional[int] = None, options: Optional[dict] = None):
+        Args:
+            action (Array): Input actions to rescale.
+            control_type (str): The type of control (`state`, `attitude`, or `thrust`).
+
+        Returns:
+            Array: Rescaled actions.
+        """
+        def scale_state(action):
+            scale_factor = jnp.ones(13)  # Example scaling for state control
+            return action * scale_factor
+
+        def scale_attitude(action):
+            scale_factor = jnp.ones(4)  # Example scaling for attitude control
+            return action * scale_factor
+
+        def scale_thrust(action):
+            scale_factor = jnp.ones(4)  # Example scaling for thrust control
+            return action * scale_factor
+
+        # Use Python if-statements (works with static_argnames)
+        if control_type == "state":
+            return scale_state(action)
+        elif control_type == "attitude":
+            return scale_attitude(action)
+        elif control_type == "thrust":
+            return scale_thrust(action)
+        else:
+            raise ValueError(f"Unsupported control type: {control_type}")
+
+    def reset_all(self, *, seed: Optional[int] = None, options: Optional[dict] = None):
+        super().reset(seed=seed)
+
         # Resets ALL (!) environments
         if options is None:
             options = {}
-        self.sim.reset()
+
+        self.reset(mask=jnp.ones((self.sim.n_worlds), dtype=jnp.bool_))
 
         self.prev_done = jnp.zeros((self.sim.n_worlds), dtype=jnp.bool_)
+
         return self._get_obs(), {}
+    
+    def reset(self, mask: Array) -> None:
+        self.sim.reset(mask=mask)
 
     @property
     def reward(self):
@@ -159,3 +204,55 @@ class CrazyflowVectorEnv(VectorEnv):
         if self.return_datatype == "numpy" and not isinstance(data, np.ndarray):
             return jax.device_get(data)
         return data
+
+class CrazyflowVectorEnvReachGoal(CrazyflowVectorEnv):
+    """JAX Gymnasium environment for Crazyflie simulation."""
+
+    def __init__(
+        self,
+        jax_random_key,
+        **kwargs: dict,
+    ):
+       
+       assert kwargs["n_drones"] == 1, "Currently only supported for one drone"
+       super().__init__(**kwargs)
+       self.goal = jnp.zeros((kwargs["n_worlds"], 3), dtype=jnp.float32)
+       self.jax_key = jax.random.key(jax_random_key)
+
+    @property
+    def reward(self):
+        return self._reward(self.terminated, self.sim.states, self.goal)
+
+    @staticmethod
+    @jax.jit
+    def _reward(terminated: jax.Array, states: SimState, goal: jax.Array) -> jnp.ndarray:
+        norm_distance = jnp.linalg.norm(states.pos - goal, axis=2)
+        reward = jnp.exp(-2.0*norm_distance)
+        return jnp.where(terminated, -1.0, reward)
+    
+    def reset(self, mask: Array) -> None:
+        self.sim.reset(mask=mask)
+
+        mask3d = mask[:, None, None]
+
+        # Sample initial pos
+        self.jax_key, subkey = jax.random.split(self.jax_key)
+        init_pos = jax.random.uniform(key=subkey, shape=(self.sim.n_worlds, self.sim.n_drones, 3), minval=-1.0, maxval=1.0)
+        self.sim.states= self.sim.states.replace(pos=jnp.where(mask3d, init_pos, self.sim.states.pos))
+
+        # Sample initial vel
+        self.jax_key, subkey = jax.random.split(self.jax_key)
+        init_vel = jax.random.uniform(key=subkey, shape=(self.sim.n_worlds,self.sim.n_drones, 3), minval=-0.1, maxval=0.1)
+        self.sim.states = self.sim.states.replace(vel=jnp.where(mask3d, init_vel, self.sim.states.vel))
+
+        # Sample initial ang_vel
+        # TODO: doesnt work? @Martin: check!
+        # self.jax_key, subkey = jax.random.split(self.jax_key)
+        # init_ang_vel = jax.random.uniform(key=subkey, shape=(self.sim.n_worlds,self.sim.n_drones, 3), minval=-100, maxval=100) # ~5°/s
+        # self.sim.states = self.sim.states.replace(ang_vel=jnp.where(mask3d, init_ang_vel, self.sim.states.ang_vel))
+
+        # Generate new goals
+        self.jax_key, subkey = jax.random.split(self.jax_key)
+        new_goals = jax.random.uniform(key=subkey, shape=(self.sim.n_worlds, 3), minval=-1.0, maxval=1.0)
+        self.goal = self.goal.at[mask].set(new_goals[mask])
+

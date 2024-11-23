@@ -16,14 +16,17 @@ sim_config.physics = Physics.sys_id
 sim_config.control = Control.default
 sim_config.controller = Controller.default
 sim_config.freq = 60
-sim_config.n_drones=10
+sim_config.n_drones=1
 sim_config.n_worlds=20
 
+SEED=42
+
 envs = gymnasium.make_vec(
-    "crazyflow_env/CrazyflowVectorEnv-v0",
-    max_episode_steps=1000,
+    "crazyflow_env/CrazyflowVectorEnvReachGoal-v0",
+    max_episode_steps=200,
     return_datatype="numpy",
-    num_envs=sim_config.n_worlds,
+    num_envs=sim_config.n_worlds, # required for VectorEnv
+    jax_random_key=42,
     **sim_config,
 )
 
@@ -32,7 +35,7 @@ action = np.array(
     [[[0.3, 0, 0, 0] for _ in range(sim_config.n_drones)] for _ in range(sim_config.n_worlds)], dtype=np.float32
 ).reshape(sim_config.n_worlds, -1)
 
-obs, info = envs.reset(seed=42)
+obs, info = envs.reset_all(seed=SEED)
 
 # Step through the environment
 for _ in range(1500):

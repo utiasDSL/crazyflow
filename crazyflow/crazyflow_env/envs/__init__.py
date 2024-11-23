@@ -1,1 +1,1 @@
-from crazyflow.crazyflow_env.envs.crazyflow import CrazyflowVectorEnv
+from crazyflow.crazyflow_env.envs.crazyflow import CrazyflowVectorEnvReachGoal 

@@ -30,7 +30,6 @@ def profile_step(sim_config: config_dict.ConfigDict, n_steps: int, device: str):
 
     for _ in range(n_steps):
         sim.state_control(cmd)
-        # sim.reset()
         sim.step()
         jax.block_until_ready(sim.states.pos)
     profiler.stop()
@@ -41,10 +40,11 @@ def profile_gym_env_step(sim_config: config_dict.ConfigDict, n_steps: int, devic
     device = jax.devices(device)[0]
 
     envs = gymnasium.make_vec(
-        "crazyflow_env/CrazyflowVectorEnv-v0",
+        "crazyflow_env/CrazyflowVectorEnvReachGoal-v0",
         max_episode_steps=200,
         return_datatype="numpy",
         num_envs=sim_config.n_worlds,
+        jax_random_key=42,
         **sim_config,
     )
 
@@ -52,13 +52,13 @@ def profile_gym_env_step(sim_config: config_dict.ConfigDict, n_steps: int, devic
     action = np.zeros((sim_config.n_worlds, sim_config.n_drones, 13),dtype=np.float32).reshape(sim_config.n_worlds, -1)
 
     # step through env once to ensure JIT compilation
-    _, _ = envs.reset(seed=42)
+    _, _ = envs.reset_all(seed=42)
     _, _, _, _, _ = envs.step(action)
-    _, _ = envs.reset(seed=42)
+    _, _ = envs.reset_all(seed=42)
     _, _, _, _, _ = envs.step(action)
-    _, _ = envs.reset(seed=42)
+    _, _ = envs.reset_all(seed=42)
     _, _, _, _, _ = envs.step(action)
-    _, _ = envs.reset(seed=42)
+    _, _ = envs.reset_all(seed=42)
     
     jax.block_until_ready(envs.unwrapped.sim._mjx_data)  # Ensure JIT compiled dynamics
 
@@ -83,7 +83,6 @@ def main():
     sim_config.controller = "emulatefirmware"
     sim_config.device = device
 
- 
     profile_step(sim_config, 1000, device)
     # old | new
     # sys_id + attitude:
