@@ -184,7 +184,7 @@ class CrazyflowVectorBaseEnv(VectorEnv):
             vel=jnp.where(mask3d, init_vel, self.sim.states.vel)
         )
 
-        # Setting initial ryp_rate when using 
+        # Setting initial ryp_rate when using physics.sys_id will not have an impact
 
     @property
     def reward(self):
