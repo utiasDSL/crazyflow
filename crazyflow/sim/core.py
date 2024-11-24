@@ -1,3 +1,4 @@
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -148,13 +149,13 @@ class Sim:
         """Set the desired attitude for all drones in all worlds."""
         assert cmd.shape == (self.n_worlds, self.n_drones, 4), "Command shape mismatch"
         assert self.control == Control.attitude, "Attitude control is not enabled by the sim config"
-        self.controls = self.controls.replace(staged_attitude=jnp.array(cmd, device=self.device))
+        self.controls = self._attitude_control(cmd, self.controls, self.device)
 
     def state_control(self, cmd: Array):
         """Set the desired state for all drones in all worlds."""
         assert cmd.shape == self.controls.state.shape, f"Command shape mismatch {cmd.shape}"
         assert self.control == Control.state, "State control is not enabled by the sim config"
-        self.controls = self.controls.replace(staged_state=jnp.array(cmd, device=self.device))
+        self.controls = self._state_control(cmd, self.controls, self.device)
 
     def thrust_control(self, cmd: Array):
         raise NotImplementedError
@@ -185,10 +186,21 @@ class Sim:
         """
         return self._controllable(self.steps, self.last_ctrl_steps, self.control_freq, self.freq)
 
-    @staticmethod
-    @jax.jit
-    def _controllable(step: Array, ctrl_step: Array, ctrl_freq: int, freq: int) -> Array:
-        return (step - ctrl_step) >= (freq / ctrl_freq)
+    def contacts(self, body: str | None = None) -> Array:
+        """Get contact information from the simulation.
+
+        Args:
+            body: Optional body name to filter contacts for. If None, returns flags for all bodies.
+
+        Returns:
+            An boolean array of shape (n_worlds,) that is True if any contact is present.
+        """
+        if body is None:
+            return self._mjx_data.contact.dist < 0
+        body_id = self._mj_model.body(body).id
+        geom_start = self._mj_model.body_geomadr[body_id]
+        geom_count = self._mj_model.body_geomnum[body_id]
+        return contacts(geom_start, geom_count, self._mjx_data)
 
     def _step_sys_id(self):
         mask = self.controllable
@@ -221,22 +233,6 @@ class Sim:
         forces, torques = fused_rpms2collective_wrench(self.states, self.controls, self.params)
         self.states = fused_analytical_dynamics(forces, torques, self.states, self.params, self.dt)
         self._mjx_data = self._sync_mjx(self.states, self._mjx_model, self._mjx_data)
-
-    def contacts(self, body: str | None = None) -> Array:
-        """Get contact information from the simulation.
-
-        Args:
-            body: Optional body name to filter contacts for. If None, returns flags for all bodies.
-
-        Returns:
-            An boolean array of shape (n_worlds,) that is True if any contact is present.
-        """
-        if body is None:
-            return self._mjx_data.contact.dist < 0
-        body_id = self._mj_model.body(body).id
-        geom_start = self._mj_model.body_geomadr[body_id]
-        geom_count = self._mj_model.body_geomnum[body_id]
-        return contacts(geom_start, geom_count, self._mjx_data)
 
     def _step_emulate_firmware(self) -> SimControls:
         mask = self.controllable
@@ -298,6 +294,16 @@ class Sim:
         return params
 
     @staticmethod
+    @partial(jax.jit, static_argnames="device")
+    def _attitude_control(cmd: Array, controls: SimControls, device: str) -> SimControls:
+        return controls.replace(staged_attitude=jnp.array(cmd, device=device))
+
+    @staticmethod
+    @partial(jax.jit, static_argnames="device")
+    def _state_control(cmd: Array, controls: SimControls, device: str) -> SimControls:
+        return controls.replace(staged_state=jnp.array(cmd, device=device))
+
+    @staticmethod
     @jax.jit
     def _masked_attitude_controls_update(mask: Array, controls: SimControls) -> SimControls:
         cmd, staged_cmd = controls.attitude, controls.staged_attitude
@@ -313,6 +319,11 @@ class Sim:
     @jax.jit
     def _masked_controls_step_update(mask: Array, steps: Array, last_ctrl_steps: Array) -> Array:
         return jnp.where(mask, steps, last_ctrl_steps)
+
+    @staticmethod
+    @jax.jit
+    def _controllable(step: Array, ctrl_step: Array, ctrl_freq: int, freq: int) -> Array:
+        return (step - ctrl_step) >= (freq / ctrl_freq)
 
 
 @jax.jit
