@@ -7,5 +7,5 @@ Fast, parallelizable simulations of Crazyflies with JAX and MuJoCo.
 
 
 ## Known Issues
-- `"RuntimeError: MUJOCO_PATH environment variable is not set"` upon installing the package: Try to not use `conda` with this project, as the `mujoco` install commonly fails with the mentioned error. Use another environment virtualization, e.g. `venv`, instead.
+- `"RuntimeError: MUJOCO_PATH environment variable is not set"` upon installing this package. This error can be resolved by using `venv` instead of `conda`. Somtimes the `mujoco` install can [fail with `conda`](https://github.com/google-deepmind/mujoco/issues/1004).
 - If using `zsh` don't forget to escape brackets when installing additional dependencies: `pip install .\[gpu\]`.

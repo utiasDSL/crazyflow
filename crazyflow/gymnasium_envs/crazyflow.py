@@ -1,10 +1,10 @@
 import math
+import warnings
 from dataclasses import fields
 from functools import partial
 from typing import Dict, Literal, Optional, Tuple
 
 import jax
-from jax.scipy.spatial.transform import Rotation
 import jax.numpy as jnp
 import numpy as np
 from gymnasium import spaces
@@ -12,12 +12,31 @@ from gymnasium.vector import VectorEnv
 from gymnasium.vector.utils import batch_space
 from jax import Array
 
-from crazyflow.control.controller import Control
+from crazyflow.control.controller import Control, MAX_THRUST, MIN_THRUST
 from crazyflow.sim.core import Sim
 from crazyflow.sim.structs import SimState
+from flax.struct import dataclass
 
 
-class CrazyflowVectorBaseEnv(VectorEnv):
+@dataclass
+class RescaleParams:
+    scale_factor: jnp.ndarray
+    mean: jnp.ndarray
+
+
+CONTROL_RESCALE_PARAMS = {
+    "state": None,  # Not implemented
+    "attitude": RescaleParams(
+        scale_factor=jnp.array(
+            [4 * (MAX_THRUST - MIN_THRUST) / 2, jnp.pi / 6, jnp.pi / 6, jnp.pi / 6]
+        ),
+        mean=jnp.array([4 * (MIN_THRUST + MAX_THRUST) / 2, 0.0, 0.0, 0.0]),
+    ),
+    "thrust": None,
+}
+
+
+class CrazyflowBaseEnv(VectorEnv):
     """JAX Gymnasium environment for Crazyflie simulation."""
 
     def __init__(
@@ -29,15 +48,13 @@ class CrazyflowVectorBaseEnv(VectorEnv):
         return_datatype: Literal["numpy", "jax"] = "jax",
         **kwargs: dict,
     ):
-        """Summary: Initializes the CrazyflowVectorEnv.
+        """Summary: Initializes the CrazyflowEnv.
 
         Args:
         max_episode_steps (int): The maximum number of steps per episode.
             return_datatype (Literal["numpy", "jax"]): The data type for returned arrays, either "numpy" or "jax". If specified as "numpy", the returned arrays will be numpy arrays on the CPU. If specified as "jax", the returned arrays will be jax arrays on the "device" specifiedf or the simulation.
             **kwargs: Takes arguments that are passed to the Crazyfly simulation .
         """
-        assert "n_worlds" in kwargs, "n_worlds must be specified in kwargs"
-        assert "n_drones" in kwargs, "n_drones must be specified in kwargs"
         assert num_envs == kwargs["n_worlds"], "num_envs must be equal to n_worlds"
 
         self.jax_key = jax.random.key(jax_random_key)
@@ -49,6 +66,16 @@ class CrazyflowVectorBaseEnv(VectorEnv):
 
         self.sim = Sim(**kwargs)
 
+        assert (
+            self.sim.freq >= self.sim.control_freq
+        ), "Simulation frequency must be higher than control frequency"
+        if not self.sim.freq % self.sim.control_freq == 0:
+            warnings.warn(
+                "Simulation frequency should be a multiple of control frequency. We can handle the other case, but we highly recommend to change the simulation frequency to a multiple of the control frequency."
+            )
+
+        self.n_substeps = jnp.array(self.sim.freq // self.sim.control_freq)
+
         self.prev_done = jnp.zeros((self.sim.n_worlds), dtype=jnp.bool_, device=self.device)
 
         self.single_action_space = spaces.Box(
@@ -59,12 +86,15 @@ class CrazyflowVectorBaseEnv(VectorEnv):
         )
         self.action_space = batch_space(self.single_action_space, self.sim.n_worlds)
 
-        self.states_to_exclude_from_obs = ["step", "device", "pos"]  # exclude pos from observation
+        self.states_to_include_in_obs = ["pos", "quat", "vel", "ang_vel", "rpy_rates"]
         self._obs_size = 0
-        for field in fields(self.sim.states):
-            if field.name in self.states_to_exclude_from_obs:
-                continue
-            self._obs_size += math.prod(getattr(self.sim.states, field.name).shape[1:])
+        for state in self.states_to_include_in_obs:
+            if state == "pos":
+                self._obs_size += math.prod(
+                    getattr(self.sim.states, state)[0, :, 2].shape
+                )  # exclude x-y coordinates
+            else:
+                self._obs_size += math.prod(getattr(self.sim.states, state).shape[1:])
         self.single_observation_space = spaces.Box(
             -jnp.inf, jnp.inf, shape=(self._obs_size,), dtype=jnp.float32
         )
@@ -79,6 +109,9 @@ class CrazyflowVectorBaseEnv(VectorEnv):
         action = self._rescale_action(action, self.sim.control)
 
         if self.sim.control == Control.state:
+            raise NotImplementedError(
+                "Possibly you want to control state differences instead of absolute states"
+            )
             self.sim.state_control(action)
         elif self.sim.control == Control.attitude:
             self.sim.attitude_control(action)
@@ -87,7 +120,8 @@ class CrazyflowVectorBaseEnv(VectorEnv):
         else:
             raise ValueError(f"Invalid control type {self.sim.control}")
 
-        self.sim.step()
+        for _ in range(self.n_substeps):
+            self.sim.step()
 
         # Reset all environments which terminated or were truncated in the last step
         if jnp.any(self.prev_done):
@@ -108,9 +142,7 @@ class CrazyflowVectorBaseEnv(VectorEnv):
         )
 
     @staticmethod
-    @partial(
-        jax.jit, static_argnames=["control_type"]
-    )  # static_argnames assumes they dont change during runtime
+    @partial(jax.jit, static_argnames=["control_type"])
     def _rescale_action(action: Array, control_type: str) -> Array:
         """Rescales actions based on the control type.
 
@@ -121,28 +153,13 @@ class CrazyflowVectorBaseEnv(VectorEnv):
         Returns:
             Array: Rescaled actions.
         """
+        params = CONTROL_RESCALE_PARAMS.get(control_type)
+        if params is None:
+            raise NotImplementedError(
+                f"Rescaling not implemented for control type '{control_type}'"
+            )
 
-        def scale_state(action):
-            scale_factor = jnp.ones(13)  # Example scaling for state control
-            return action * scale_factor
-
-        def scale_attitude(action):
-            scale_factor = jnp.ones(4)  # Example scaling for attitude control
-            return action * scale_factor
-
-        def scale_thrust(action):
-            scale_factor = jnp.ones(4)  # Example scaling for thrust control
-            return action * scale_factor
-
-        # Use Python if-statements (works with static_argnames)
-        if control_type == "state":
-            return scale_state(action)
-        elif control_type == "attitude":
-            return scale_attitude(action)
-        elif control_type == "thrust":
-            return scale_thrust(action)
-        else:
-            raise ValueError(f"Unsupported control type: {control_type}")
+        return action * params.scale_factor + params.mean
 
     def reset_all(self, *, seed: Optional[int] = None, options: Optional[dict] = None):
         super().reset(seed=seed)
@@ -191,40 +208,45 @@ class CrazyflowVectorBaseEnv(VectorEnv):
 
     @property
     def terminated(self):
-        return self._terminated(self.prev_done, self.sim.states)
+        return self._terminated(self.prev_done, self.sim.states, self.sim.contacts())
 
     @property
     def truncated(self):
-        return self._truncated(self.prev_done, self.sim.steps, self.max_episode_steps)
+        return self._truncated(
+            self.prev_done, self.sim.steps, self.max_episode_steps, self.n_substeps
+        )
+
+    def _reward() -> None:
+        raise NotImplementedError
 
     @staticmethod
     @jax.jit
-    def _reward(terminated: jax.Array, states: SimState) -> jnp.ndarray:
+    def _terminated(dones: jax.Array, states: SimState, contacts: jax.Array) -> jnp.ndarray:
+        contact = jnp.any(contacts, axis=1)
         z_coords = states.pos[..., 2]
-        reward = jnp.sum(z_coords, axis=1)
-        return jnp.where(terminated, -1.0, reward)
-
-    @staticmethod
-    @jax.jit
-    def _terminated(dones: jax.Array, states: SimState) -> jnp.ndarray:
-        terminated = False  # no termination condition
+        below_ground = jnp.any(
+            z_coords < -0.1, axis=1
+        )  # Should not be triggered due to collision checking
+        terminated = jnp.logical_or(below_ground, contact)  # no termination condition
         return jnp.where(dones, False, terminated)
 
     @staticmethod
     @jax.jit
-    def _truncated(dones: jax.Array, steps: jax.Array, max_episode_steps: jax.Array) -> jnp.ndarray:
-        truncated = steps >= max_episode_steps
+    def _truncated(
+        dones: jax.Array, steps: jax.Array, max_episode_steps: jax.Array, n_substeps: jax.Array
+    ) -> jnp.ndarray:
+        truncated = steps / n_substeps >= max_episode_steps
         return jnp.where(dones, False, truncated)
 
     def render(self):
         self.sim.render()
 
     def _get_obs(self) -> Dict[str, jnp.ndarray]:
-        # Returns observations for all environments
         obs = {
-            field.name: self._maybe_to_numpy(getattr(self.sim.states, field.name))
-            for field in fields(self.sim.states)
-            if field.name not in self.states_to_exclude_from_obs
+            state: self._maybe_to_numpy(
+                getattr(self.sim.states, state)[..., 2] if state == "pos" else getattr(self.sim.states, state)
+            )
+            for state in self.states_to_include_in_obs
         }
         return obs
 
@@ -234,7 +256,7 @@ class CrazyflowVectorBaseEnv(VectorEnv):
         return data
 
 
-class CrazyflowVectorEnvReachGoal(CrazyflowVectorBaseEnv):
+class CrazyflowEnvReachGoal(CrazyflowBaseEnv):
     """JAX Gymnasium environment for Crazyflie simulation."""
 
     def __init__(self, **kwargs: dict):
@@ -279,7 +301,7 @@ class CrazyflowVectorEnvReachGoal(CrazyflowVectorBaseEnv):
         return obs
 
 
-class CrazyflowVectorEnvTargetVelocity(CrazyflowVectorBaseEnv):
+class CrazyflowEnvTargetVelocity(CrazyflowBaseEnv):
     """JAX Gymnasium environment for Crazyflie simulation."""
 
     def __init__(self, **kwargs: dict):
@@ -302,7 +324,7 @@ class CrazyflowVectorEnvTargetVelocity(CrazyflowVectorBaseEnv):
     @jax.jit
     def _reward(terminated: jax.Array, states: SimState, target_vel: jax.Array) -> jnp.ndarray:
         norm_distance = jnp.linalg.norm(states.vel - target_vel, axis=2)
-        reward = jnp.exp(- norm_distance)
+        reward = jnp.exp(-norm_distance)
         return jnp.where(terminated, -1.0, reward)
 
     def reset(self, mask: Array) -> None:
