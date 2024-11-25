@@ -6,7 +6,7 @@ import jax.numpy as jnp
 import numpy as np
 import gymnasium
 from crazyflow.sim.core import Sim
-import crazyflow.crazyflow_env.envs
+import crazyflow.gymnasium_envs
 
 
 def analyze_timings(times: list[float], n_steps: int, n_worlds: int, freq: float) -> None:
@@ -42,7 +42,7 @@ def profile_gym_env_step(sim_config: config_dict.ConfigDict, n_steps: int, devic
     device = jax.devices(device)[0]
 
     envs = gymnasium.make_vec(
-        "crazyflow_env/CrazyflowVectorEnvReachGoal-v0",
+        "CrazyflowEnvReachGoal-v0",
         max_episode_steps=200,
         return_datatype="numpy",
         num_envs=sim_config.n_worlds,
@@ -52,7 +52,7 @@ def profile_gym_env_step(sim_config: config_dict.ConfigDict, n_steps: int, devic
 
     # Action for going up (in attitude control)
     action = np.array(
-        [[[0.3, 0, 0, 0] for _ in range(sim_config.n_drones)] for _ in range(sim_config.n_worlds)],
+        [[[-0.3, 0, 0, 0] for _ in range(sim_config.n_drones)] for _ in range(sim_config.n_worlds)],
         dtype=np.float32,
     ).reshape(sim_config.n_worlds, -1)
 
@@ -113,7 +113,10 @@ def main():
     sim_config.controller = "emulatefirmware"
     sim_config.device = device
 
+    print("SIM PERFORMANCE")
     profile_step(sim_config, 100, device)
+
+    print("\nGYM ENV PERFORMANCE")
     profile_gym_env_step(sim_config, 100, device)
 
 

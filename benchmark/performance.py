@@ -7,7 +7,7 @@ from pyinstrument import Profiler
 from pyinstrument.renderers.html import HTMLRenderer
 
 from crazyflow.sim.core import Sim
-import crazyflow.crazyflow_env.envs
+import crazyflow.gymnasium_envs
 
 
 def profile_step(sim_config: config_dict.ConfigDict, n_steps: int, device: str):
@@ -43,7 +43,7 @@ def profile_gym_env_step(sim_config: config_dict.ConfigDict, n_steps: int, devic
     device = jax.devices(device)[0]
 
     envs = gymnasium.make_vec(
-        "crazyflow_env/CrazyflowVectorEnvReachGoal-v0",
+        "CrazyflowEnvReachGoal-v0",
         max_episode_steps=200,
         return_datatype="numpy",
         num_envs=sim_config.n_worlds,
@@ -52,7 +52,10 @@ def profile_gym_env_step(sim_config: config_dict.ConfigDict, n_steps: int, devic
     )
 
     # Action for going up (in attitude control)
-    action = np.zeros((sim_config.n_worlds, sim_config.n_drones, 13),dtype=np.float32).reshape(sim_config.n_worlds, -1)
+    action = np.array(
+        [[[-0.3, 0, 0, 0] for _ in range(sim_config.n_drones)] for _ in range(sim_config.n_worlds)],
+        dtype=np.float32,
+    ).reshape(sim_config.n_worlds, -1)
 
     # step through env once to ensure JIT compilation
     _, _ = envs.reset_all(seed=42)
@@ -82,7 +85,7 @@ def main():
     sim_config.n_worlds = 1
     sim_config.n_drones = 1
     sim_config.physics = "analytical"
-    sim_config.control = "state"
+    sim_config.control = "attitude"
     sim_config.controller = "emulatefirmware"
     sim_config.device = device
 
