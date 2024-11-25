@@ -23,8 +23,8 @@ class CrazyflowVectorBaseEnv(VectorEnv):
     def __init__(
         self,
         *,
-        jax_random_key, # required for jax random number generator
-        num_envs: int = 1, # required for VectorEnv
+        jax_random_key,  # required for jax random number generator
+        num_envs: int = 1,  # required for VectorEnv
         max_episode_steps: int = 1000,
         return_datatype: Literal["numpy", "jax"] = "jax",
         **kwargs: dict,
@@ -79,8 +79,7 @@ class CrazyflowVectorBaseEnv(VectorEnv):
         action = self._rescale_action(action, self.sim.control)
 
         if self.sim.control == Control.state:
-            raise NotImplementedError("State control not implemented. Should use relative states for control.")
-            # self.sim.state_control(action)
+            self.sim.state_control(action)
         elif self.sim.control == Control.attitude:
             self.sim.attitude_control(action)
         elif self.sim.control == Control.thrust:
@@ -163,13 +162,15 @@ class CrazyflowVectorBaseEnv(VectorEnv):
 
         mask3d = mask[:, None, None]
 
+        # NOTE Setting initial ryp_rate when using physics.sys_id will not have an impact
+
         # Sample initial pos
         self.jax_key, subkey = jax.random.split(self.jax_key)
         init_pos = jax.random.uniform(
             key=subkey,
             shape=(self.sim.n_worlds, self.sim.n_drones, 3),
-            minval=jnp.array([-1.0, -1.0, 0.5]),  # x,y,z
-            maxval=jnp.array([1.0, 1.0, 1.5]),  # x,y,z
+            minval=jnp.array([-1.0, -1.0, 1.0]),  # x,y,z
+            maxval=jnp.array([1.0, 1.0, 2.0]),  # x,y,z
         )
         self.sim.states = self.sim.states.replace(
             pos=jnp.where(mask3d, init_pos, self.sim.states.pos)
@@ -178,13 +179,11 @@ class CrazyflowVectorBaseEnv(VectorEnv):
         # Sample initial vel
         self.jax_key, subkey = jax.random.split(self.jax_key)
         init_vel = jax.random.uniform(
-            key=subkey, shape=(self.sim.n_worlds, self.sim.n_drones, 3), minval=-0.1, maxval=0.1
+            key=subkey, shape=(self.sim.n_worlds, self.sim.n_drones, 3), minval=-1.0, maxval=1.0
         )
         self.sim.states = self.sim.states.replace(
             vel=jnp.where(mask3d, init_vel, self.sim.states.vel)
         )
-
-        # Setting initial ryp_rate when using physics.sys_id will not have an impact
 
     @property
     def reward(self):
@@ -208,9 +207,7 @@ class CrazyflowVectorBaseEnv(VectorEnv):
     @staticmethod
     @jax.jit
     def _terminated(dones: jax.Array, states: SimState) -> jnp.ndarray:
-        # terminate if any drone goes below -0.1 in z
-        z_coords = states.pos[..., 2]
-        terminated = jnp.any(z_coords < -0.1, axis=1)
+        terminated = False  # no termination condition
         return jnp.where(dones, False, terminated)
 
     @staticmethod
@@ -279,4 +276,49 @@ class CrazyflowVectorEnvReachGoal(CrazyflowVectorBaseEnv):
     def _get_obs(self) -> Dict[str, jnp.ndarray]:
         obs = super()._get_obs()
         obs["difference_to_goal"] = [self.goal - self.sim.states.pos]
+        return obs
+
+
+class CrazyflowVectorEnvTargetVelocity(CrazyflowVectorBaseEnv):
+    """JAX Gymnasium environment for Crazyflie simulation."""
+
+    def __init__(self, **kwargs: dict):
+        assert kwargs["n_drones"] == 1, "Currently only supported for one drone"
+
+        super().__init__(**kwargs)
+        self._obs_size += 3  # difference to target velocity
+        self.single_observation_space = spaces.Box(
+            -jnp.inf, jnp.inf, shape=(self._obs_size,), dtype=jnp.float32
+        )
+        self.observation_space = batch_space(self.single_observation_space, self.sim.n_worlds)
+
+        self.target_vel = jnp.zeros((kwargs["n_worlds"], 3), dtype=jnp.float32)
+
+    @property
+    def reward(self):
+        return self._reward(self.terminated, self.sim.states, self.target_vel)
+
+    @staticmethod
+    @jax.jit
+    def _reward(terminated: jax.Array, states: SimState, target_vel: jax.Array) -> jnp.ndarray:
+        norm_distance = jnp.linalg.norm(states.vel - target_vel, axis=2)
+        reward = jnp.exp(- norm_distance)
+        return jnp.where(terminated, -1.0, reward)
+
+    def reset(self, mask: Array) -> None:
+        super().reset(mask)
+
+        # Generate new target_vels
+        self.jax_key, subkey = jax.random.split(self.jax_key)
+        new_target_vel = jax.random.uniform(
+            key=subkey,
+            shape=(self.sim.n_worlds, 3),
+            minval=jnp.array([-1.0, -1.0, -1.0]),  # x,y,z
+            maxval=jnp.array([1.0, 1.0, 1.0]),  # x,y,z
+        )
+        self.target_vel = self.target_vel.at[mask].set(new_target_vel[mask])
+
+    def _get_obs(self) -> Dict[str, jnp.ndarray]:
+        obs = super()._get_obs()
+        obs["difference_to_target_vel"] = [self.target_vel - self.sim.states.vel]
         return obs

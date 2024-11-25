@@ -20,7 +20,7 @@ SEED=42
 
 envs = gymnasium.make_vec(
     "crazyflow_env/CrazyflowVectorEnvReachGoal-v0",
-    max_episode_steps=1000,
+    max_episode_steps=100,
     return_datatype="numpy",
     num_envs=sim_config.n_worlds, 
     jax_random_key=SEED,
