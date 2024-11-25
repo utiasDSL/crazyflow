@@ -1,3 +1,5 @@
+import jax
+
 from crazyflow.sim import Physics, Sim
 from crazyflow.sim.domain_randomizer import DomainRandomizer
 
@@ -54,10 +56,18 @@ def example_2(sim):
     print("Random frictions on geom 0: ", batched_sys.geom_friction[:, 0, 0])
 
 
-def example_3(sim):
+def randomize_mass(sim):
     """Randomize mass from a uniform distribution."""
-    env_num = 10
+    n_worlds, n_drones = 10, 2
     mass_range = (0.022, 0.032)
+    """
+    from crazyflow.randomize import randomize_mass
+    
+    new_masses = rng(shape=(n_worlds, n_drones), minval=mass_range[0], maxval=mass_range[1])
+    randomize_mass(sim, new_masses)
+    """
+
+    env_num = 10
     domain_randomizer = DomainRandomizer(env_num=env_num, seed=0)
     batched_sys = domain_randomizer.randomize_mass_from_distribution(
         sim._mjx_model, "uniform", mass_range
