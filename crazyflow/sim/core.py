@@ -83,6 +83,7 @@ class Sim:
             pos_err_i=jnp.zeros((n_worlds, n_drones, 3), device=self.device),
             last_rpy=jnp.zeros((n_worlds, n_drones, 3), device=self.device),
         )
+        self.controls_changed = jnp.ones((n_worlds,), dtype=bool, device=self.device)
         # Allocate physics parameter buffers.
         j, j_inv = jnp.array(J, device=self.device), jnp.array(J_INV, device=self.device)
         self.params = SimParams(
@@ -133,6 +134,7 @@ class Sim:
         self.params = self._masked_params_reset(mask, self.params, self.defaults["params"])
         self.steps = jnp.where(mask, 0, self.steps)
         self.last_ctrl_steps = jnp.where(mask, -self.freq, self.last_ctrl_steps)
+        self.controls_changed = jnp.where(mask, False, self.controls_changed)
         self._sync_mjx(self.states, self._mjx_data)
 
     def step(self):
@@ -153,12 +155,14 @@ class Sim:
         assert cmd.shape == (self.n_worlds, self.n_drones, 4), "Command shape mismatch"
         assert self.control == Control.attitude, "Attitude control is not enabled by the sim config"
         self.controls = self._attitude_control(cmd, self.controls, self.device)
+        self.controls_changed = self._controls_changed(self.controls_changed)
 
     def state_control(self, cmd: Array):
         """Set the desired state for all drones in all worlds."""
         assert cmd.shape == self.controls.state.shape, f"Command shape mismatch {cmd.shape}"
         assert self.control == Control.state, "State control is not enabled by the sim config"
         self.controls = self._state_control(cmd, self.controls, self.device)
+        self.controls_changed = self._controls_changed(self.controls_changed)
 
     def thrust_control(self, cmd: Array):
         raise NotImplementedError
@@ -205,8 +209,21 @@ class Sim:
         geom_count = self._mj_model.body_geomnum[body_id]
         return contacts(geom_start, geom_count, self._mjx_data)
 
+    @property
+    def control_mask(self) -> Array:
+        return self._control_mask(
+            self.steps, self.last_ctrl_steps, self.control_freq, self.freq, self.controls_changed
+        )
+
+    @staticmethod
+    @jax.jit
+    def _control_mask(
+        steps: Array, last_ctrl_steps: Array, control_freq: int, freq: int, controls_changed: Array
+    ) -> Array:
+        return Sim._controllable(steps, last_ctrl_steps, control_freq, freq) & controls_changed
+
     def _step_sys_id(self):
-        mask = self.controllable
+        mask = self.control_mask
         # Optional optimization: check if mask.any() before updating the controls. This breaks jax's
         # gradient tracing, so we omit it for now.
         if self.control == Control.state:
@@ -216,11 +233,12 @@ class Sim:
         self.last_ctrl_steps = self._masked_controls_step_update(
             mask, self.steps, self.last_ctrl_steps
         )
+        self.controls_changed = self._masked_controls_changed_update(mask, self.controls_changed)
         self.states = fused_identified_dynamics(self.states, self.controls, self.dt)
         self._mjx_data = self._sync_mjx(self.states, self._mjx_data)
 
     def _step_analytical(self):
-        mask = self.controllable
+        mask = self.control_mask
         # Optional optimization: check if mask.any() before updating the controls. This breaks jax's
         # gradient tracing, so we omit it for now.
         match self.controller:
@@ -233,12 +251,13 @@ class Sim:
         self.last_ctrl_steps = self._masked_controls_step_update(
             mask, self.steps, self.last_ctrl_steps
         )
+        self.controls_changed = self._masked_controls_changed_update(mask, self.controls_changed)
         forces, torques = fused_rpms2collective_wrench(self.states, self.controls, self.params)
         self.states = fused_analytical_dynamics(forces, torques, self.states, self.params, self.dt)
         self._mjx_data = self._sync_mjx(self.states, self._mjx_data)
 
     def _step_emulate_firmware(self) -> SimControls:
-        mask = self.controllable
+        mask = self.control_mask
         if self.control == Control.state:
             self.controls = self._masked_state_controls_update(mask, self.controls)
             self.controls = fused_masked_state2attitude(mask, self.states, self.controls, self.dt)
@@ -337,6 +356,16 @@ class Sim:
     @jax.jit
     def _masked_controls_step_update(mask: Array, steps: Array, last_ctrl_steps: Array) -> Array:
         return jnp.where(mask, steps, last_ctrl_steps)
+
+    @staticmethod
+    @jax.jit
+    def _masked_controls_changed_update(mask: Array, controls_changed: Array) -> Array:
+        return jnp.where(mask, False, controls_changed)
+
+    @staticmethod
+    @jax.jit
+    def _controls_changed(controls_changed: Array) -> Array:
+        return controls_changed.at[:].set(True)
 
     @staticmethod
     @jax.jit
