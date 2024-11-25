@@ -1,5 +1,4 @@
 from enum import Enum
-from functools import partial
 
 import jax.numpy as jnp
 from jax import Array
@@ -29,7 +28,6 @@ class Physics(str, Enum):
     default = analytical
 
 
-@partial(jnp.vectorize, signature="(4),(3),(4),(3),(3)->(3),(4),(3),(3)", excluded=[5])
 def identified_dynamics(
     cmd: Array, pos: Array, quat: Array, vel: Array, rpy_rates: Array, dt: float
 ) -> tuple[Array, Array, Array, Array]:
@@ -71,9 +69,6 @@ def identified_dynamics(
     return next_pos, next_quat, next_vel, next_rpy_rates
 
 
-@partial(
-    jnp.vectorize, signature="(3),(3),(3),(4),(3),(3),(1),(3,3)->(3),(4),(3),(3)", excluded=[8]
-)
 def analytical_dynamics(
     forces: Array,
     torques: Array,
@@ -86,22 +81,24 @@ def analytical_dynamics(
     dt: float,
 ) -> tuple[Array, Array, Array, Array]:
     """Analytical dynamics model."""
+    # Convert rotational quantities to local frame
     rot = R.from_quat(quat)
-    rpy_rates = rot.apply(rpy_rates, inverse=True)
-    forces = forces - jnp.array([0, 0, GRAVITY * mass[0]])
-    rpy_rates_deriv = J_INV @ torques
-    acc = forces / mass
+    torques_local = rot.apply(torques, inverse=True)
+    rpy_rates_local = rot.apply(rpy_rates, inverse=True)
+    # Compute acceleration in global frame, rpy_rates in local frame
+    acc = forces / mass - jnp.array([0, 0, GRAVITY])
+    rpy_rates_deriv_local = J_INV @ torques_local
     # Update state.
     next_pos = pos + vel * dt
     next_vel = vel + acc * dt
-    rpy_rates = rpy_rates + rpy_rates_deriv * dt
-    next_rot = R.from_euler("xyz", R.from_quat(quat).as_euler("xyz") + rpy_rates * dt)
+    next_rot = R.from_euler("xyz", R.from_quat(quat).as_euler("xyz") + rpy_rates_local * dt)
     next_quat = next_rot.as_quat()
-    next_rpy_rates = next_rot.apply(rpy_rates)  # Always give rpy rates in world frame
+    # Convert rpy rates back to global frame
+    next_rpy_rates_local = rpy_rates_local + rpy_rates_deriv_local * dt
+    next_rpy_rates = next_rot.apply(next_rpy_rates_local)  # Always give rpy rates in world frame
     return next_pos, next_quat, next_vel, next_rpy_rates
 
 
-@partial(jnp.vectorize, signature="(4),(4),(3),(3,3)->(3),(3)")
 def rpms2collective_wrench(
     rpms: Array, quat: Array, rpy_rates: Array, J: Array
 ) -> tuple[Array, Array]:
