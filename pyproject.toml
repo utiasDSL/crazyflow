@@ -17,7 +17,15 @@ classifiers = [
     "Intended Audience :: Science/Research",
 ]
 
-dependencies = ["jax", "mujoco", "gymnasium", "imageio", "mujoco-mjx"]
+dependencies = [
+    "jax",
+    "mujoco",
+    "gymnasium",
+    "imageio",
+    "mujoco-mjx",
+    "einops",
+    "flax",
+]
 
 [project.optional-dependencies]
 test = ["pytest>=8.0.0"]
@@ -27,7 +35,7 @@ gpu = ["jax[cuda12]"]
 find = {}
 
 [tool.setuptools.package-data]
-crazyflow = []
+crazyflow = ["models/cf2/*.xml", "models/cf2/assets/*.obj"]
 
 [tool.pytest.ini_options]
 markers = ["unit", "integration", "render"]
