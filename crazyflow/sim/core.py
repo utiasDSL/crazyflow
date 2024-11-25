@@ -12,7 +12,7 @@ from jax import Array
 from mujoco.mjx import Data, Model
 
 from crazyflow.control.controller import J_INV, Control, Controller, J
-from crazyflow.exception import ConfigError
+from crazyflow.exception import ConfigError, NotInitializedError
 from crazyflow.sim.fused import (
     fused_analytical_dynamics,
     fused_identified_dynamics,
@@ -106,10 +106,13 @@ class Sim:
         mjx_model = mjx.put_model(mj_model, device=self.device)
         mjx_data = mjx.put_data(mj_model, mj_data, device=self.device)
         mjx_data = jax.vmap(lambda _: mjx_data)(jnp.arange(self.n_worlds))
+        # Optimization: Compile the sync function with the finalized model (mjx_model is not
+        # changing anymore) to avoid overhead. See Sim._sync_mjx for details.
+        self._sync_mjx = jax.jit(partial(self._sync_mjx_full, mjx_model=mjx_model))
         if self.n_drones > 1:  # If multiple drones, arrange them in a grid
             grid = grid_2d(self.n_drones)
             self.states = self.states.replace(pos=self.states.pos.at[..., :2].set(grid))
-            self._mjx_data = self._sync_mjx(self.states, mjx_model, mjx_data)
+            self._mjx_data = self._sync_mjx(self.states, mjx_data)
             # Update default to reflect changes after resetting
         self.defaults["states"] = self.states.replace()
         self.defaults["controls"] = self.controls.replace()
@@ -130,7 +133,7 @@ class Sim:
         self.params = self._masked_params_reset(mask, self.params, self.defaults["params"])
         self.steps = jnp.where(mask, 0, self.steps)
         self.last_ctrl_steps = jnp.where(mask, -self.freq, self.last_ctrl_steps)
-        self._sync_mjx(self.states, self._mjx_model, self._mjx_data)
+        self._sync_mjx(self.states, self._mjx_data)
 
     def step(self):
         """Simulate all drones in all worlds for one time step."""
@@ -214,7 +217,7 @@ class Sim:
             mask, self.steps, self.last_ctrl_steps
         )
         self.states = fused_identified_dynamics(self.states, self.controls, self.dt)
-        self._mjx_data = self._sync_mjx(self.states, self._mjx_model, self._mjx_data)
+        self._mjx_data = self._sync_mjx(self.states, self._mjx_data)
 
     def _step_analytical(self):
         mask = self.controllable
@@ -232,7 +235,7 @@ class Sim:
         )
         forces, torques = fused_rpms2collective_wrench(self.states, self.controls, self.params)
         self.states = fused_analytical_dynamics(forces, torques, self.states, self.params, self.dt)
-        self._mjx_data = self._sync_mjx(self.states, self._mjx_model, self._mjx_data)
+        self._mjx_data = self._sync_mjx(self.states, self._mjx_data)
 
     def _step_emulate_firmware(self) -> SimControls:
         mask = self.controllable
@@ -243,8 +246,23 @@ class Sim:
         return fused_masked_attitude2rpm(mask, self.states, self.controls, self.dt)
 
     @staticmethod
-    @jax.jit
-    def _sync_mjx(states: SimState, mjx_model: Model, mjx_data: Data) -> Data:
+    def _sync_mjx(states: SimState, mjx_data: Data) -> Data:
+        """Sync the states to the MuJoCo data.
+
+        We initialize this function in Sim.setup() to compile it with the finalized MuJoCo model.
+        This allows us to avoid the overhead associated with flattening and unflattening the model
+        struct on every call in Sim._sync_mjx_full.
+
+        Warning:
+            Raises NotInitializedError if Sim.setup() was not called yet.
+
+        Warning:
+            If the model changes, the sync function needs to be recompiled with the new model.
+        """
+        raise NotInitializedError("MuJoCo sync function not initialized, call Sim.setup() first")
+
+    @staticmethod
+    def _sync_mjx_full(states: SimState, mjx_data: Data, mjx_model: Model) -> Data:
         pos, quat, vel, ang_vel = states.pos, states.quat, states.vel, states.ang_vel
         quat = quat[..., [-1, 0, 1, 2]]  # MuJoCo quat is [w, x, y, z], ours is [x, y, z, w]
         qpos = rearrange(jnp.concat([pos, quat], axis=-1), "w d qpos -> w (d qpos)")

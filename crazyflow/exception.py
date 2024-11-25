@@ -4,3 +4,7 @@ class CrazyflowError(Exception):
 
 class ConfigError(CrazyflowError):
     """Error raised when the configuration is invalid."""
+
+
+class NotInitializedError(CrazyflowError):
+    """Error raised when a component is not initialized."""
