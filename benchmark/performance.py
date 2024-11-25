@@ -8,12 +8,14 @@ from crazyflow.sim.core import Sim
 
 def profile_step(sim: Sim, n_steps: int, device: str):
     device = jax.devices(device)[0]
-    cmd = np.zeros((sim.n_worlds, sim.n_drones, 13))
+    ndim = 13 if sim.control == "state" else 4
+    control_fn = sim.state_control if sim.control == "state" else sim.attitude_control
+    cmd = np.zeros((sim.n_worlds, sim.n_drones, ndim))
     # Ensure JIT compiled dynamics and control
     sim.reset()
-    sim.state_control(cmd)
+    control_fn(cmd)
     sim.step()
-    sim.state_control(cmd)
+    control_fn(cmd)
     sim.step()
     sim.reset()
     jax.block_until_ready(sim.states.pos)
@@ -22,7 +24,7 @@ def profile_step(sim: Sim, n_steps: int, device: str):
     profiler.start()
 
     for _ in range(n_steps):
-        sim.state_control(cmd)
+        control_fn(cmd)
         # sim.reset()
         sim.step()
         jax.block_until_ready(sim.states.pos)
