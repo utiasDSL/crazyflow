@@ -17,23 +17,29 @@ from crazyflow.sim.core import Sim
 from crazyflow.sim.structs import SimState
 from flax.struct import dataclass
 
-
 @dataclass
 class RescaleParams:
     scale_factor: jnp.ndarray
     mean: jnp.ndarray
 
-
 CONTROL_RESCALE_PARAMS = {
-    "state": None,  # Not implemented
-    "attitude": RescaleParams(
-        scale_factor=jnp.array(
-            [4 * (MAX_THRUST - MIN_THRUST) / 2, jnp.pi / 6, jnp.pi / 6, jnp.pi / 6]
+        "state": None, 
+        "thrust": None
+        "attitude": RescaleParams(
+            scale_factor=jnp.array([
+                4 * (MAX_THRUST - MIN_THRUST) / 2, 
+                jnp.pi / 6, 
+                jnp.pi / 6, 
+                jnp.pi / 6
+            ]),
+            mean=jnp.array([
+                4 * (MIN_THRUST + MAX_THRUST) / 2, 
+                0.0, 
+                0.0, 
+                0.0
+            ])
         ),
-        mean=jnp.array([4 * (MIN_THRUST + MAX_THRUST) / 2, 0.0, 0.0, 0.0]),
-    ),
-    "thrust": None,
-}
+    }
 
 
 class CrazyflowBaseEnv(VectorEnv):
