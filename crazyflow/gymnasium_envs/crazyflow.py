@@ -24,7 +24,7 @@ class RescaleParams:
 
 CONTROL_RESCALE_PARAMS = {
         "state": None, 
-        "thrust": None
+        "thrust": None,
         "attitude": RescaleParams(
             scale_factor=jnp.array([
                 4 * (MAX_THRUST - MIN_THRUST) / 2, 
