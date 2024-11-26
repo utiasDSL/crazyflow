@@ -25,6 +25,7 @@ dependencies = [
     "mujoco-mjx",
     "einops",
     "flax",
+    "ml_collections",
 ]
 
 [project.optional-dependencies]
