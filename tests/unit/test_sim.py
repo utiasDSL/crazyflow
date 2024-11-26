@@ -10,6 +10,24 @@ from crazyflow.sim.core import Sim
 from crazyflow.sim.physics import Physics
 
 
+def available_backends() -> list[str]:
+    """Return list of available JAX backends."""
+    backends = []
+    for backend in ["tpu", "gpu", "cpu"]:
+        try:
+            jax.devices(backend)
+        except RuntimeError:
+            pass
+        else:
+            backends.append(backend)
+    return backends
+
+
+def skip_unavailable_device(device: str):
+    if device not in available_backends():
+        pytest.skip(f"{device} device not available")
+
+
 @pytest.mark.unit
 @pytest.mark.parametrize("physics", Physics)
 @pytest.mark.parametrize("device", ["gpu", "cpu"])
@@ -20,6 +38,7 @@ def test_sim_creation(
     physics: Physics, device: str, control: Control, controller: Controller, n_worlds: int
 ):
     n_drones = 1
+    skip_unavailable_device(device)
 
     def create_sim() -> Sim:
         return Sim(
@@ -58,6 +77,7 @@ def test_sim_creation(
 @pytest.mark.unit
 @pytest.mark.parametrize("device", ["gpu", "cpu"])
 def test_setup(device: str):
+    skip_unavailable_device(device)
     sim = Sim(n_worlds=2, n_drones=3, device=device)
     sim.setup()
 
@@ -69,6 +89,7 @@ def test_setup(device: str):
 @pytest.mark.parametrize("n_drones", [1, 3])
 def test_reset(device: str, physics: Physics, n_worlds: int, n_drones: int):
     """Test that reset without mask resets all worlds to default state."""
+    skip_unavailable_device(device)
     sim = Sim(n_worlds=n_worlds, n_drones=n_drones, physics=physics, device=device)
     if physics == Physics.mujoco:
         return  # MuJoCo is not yet supported. TODO: Enable once supported
@@ -113,6 +134,7 @@ def test_reset(device: str, physics: Physics, n_worlds: int, n_drones: int):
 @pytest.mark.parametrize("physics", Physics)
 def test_reset_masked(device: str, physics: Physics):
     """Test that reset with mask only resets specified worlds."""
+    skip_unavailable_device(device)
     sim = Sim(n_worlds=2, n_drones=1, physics=physics, device=device)
 
     # Modify states
@@ -169,6 +191,7 @@ def test_sim_step(
     controller: Controller,
     device: str,
 ):
+    skip_unavailable_device(device)
     if n_drones * n_worlds > 1 and controller == Controller.pycffirmware:
         return  # PyCFFirmware does not support multiple drones
     sim = Sim(
@@ -218,6 +241,7 @@ def test_sim_control(control: Control, control_freq: int):
 @pytest.mark.unit
 @pytest.mark.parametrize("device", ["gpu", "cpu"])
 def test_sim_state_control(device: str):
+    skip_unavailable_device(device)
     sim = Sim(n_worlds=2, n_drones=3, control=Control.state, device=device)
     cmd = np.random.rand(sim.n_worlds, sim.n_drones, 13)
     sim.state_control(cmd)
@@ -228,6 +252,7 @@ def test_sim_state_control(device: str):
 @pytest.mark.unit
 @pytest.mark.parametrize("device", ["gpu", "cpu"])
 def test_sim_attitude_control(device: str):
+    skip_unavailable_device(device)
     sim = Sim(n_worlds=2, n_drones=3, control=Control.attitude, device=device)
     cmd = np.random.rand(sim.n_worlds, sim.n_drones, 4)
     sim.attitude_control(cmd)
@@ -238,6 +263,7 @@ def test_sim_attitude_control(device: str):
 @pytest.mark.parametrize("device", ["gpu", "cpu"])
 @pytest.mark.render
 def test_render(device: str):
+    skip_unavailable_device(device)
     sim = Sim(device=device)
     sim.render()
     sim.viewer.close()
@@ -246,6 +272,7 @@ def test_render(device: str):
 @pytest.mark.unit
 @pytest.mark.parametrize("device", ["gpu", "cpu"])
 def test_device(device: str):
+    skip_unavailable_device(device)
     sim = Sim(n_worlds=2, physics=Physics.sys_id, device=device)
     sim.step()
     assert sim.states.pos.device == jax.devices(device)[0]
@@ -257,6 +284,7 @@ def test_device(device: str):
 @pytest.mark.parametrize("n_worlds", [1, 2])
 @pytest.mark.parametrize("n_drones", [1, 3])
 def test_shape_consistency(device: str, n_drones: int, n_worlds: int):
+    skip_unavailable_device(device)
     sim = Sim(n_worlds=n_worlds, n_drones=n_drones, physics=Physics.sys_id, device=device)
     qpos_shape, qvel_shape = sim._mjx_data.qpos.shape, sim._mjx_data.qvel.shape
     sim.step()
