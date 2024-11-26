@@ -201,31 +201,18 @@ def test_sim_control(control: Control, control_freq: int):
         assert jnp.all(sim.controllable[1] == can_control_2[i]), f"Controllable 2 mismatch at t={i}"
         cmd_fn(cmd)
         sim.step()
+        sim_cmd = getattr(sim.controls, control)[0]
         if can_control_1[i]:
-            sim_cmd = getattr(sim.controls, control)[0]
-            assert jnp.all(sim_cmd == cmd[0]), f"Buffer 1 mismatch at t={i}"
+            assert jnp.all(sim_cmd == cmd[0]), f"Controls do not match at t={i}"
+        else:
+            assert not jnp.all(sim_cmd == cmd[0]), f"Controls shouldn't match at t={i}"
+        sim_cmd = getattr(sim.controls, control)[1]
         if can_control_2[i]:
-            sim_cmd = getattr(sim.controls, control)[1]
-            assert jnp.all(sim_cmd == cmd[1]), f"Buffer 2 mismatch at t={i}"
+            assert jnp.all(sim_cmd == cmd[1]), f"Controls do not match at t={i}"
+        else:
+            assert not jnp.all(sim_cmd == cmd[1]), f"Controls shouldn't match at t={i}"
         if i == 0:
             sim.reset(np.array([False, True]))  # Make world 2 asynchronous
-
-
-@pytest.mark.unit
-@pytest.mark.parametrize("control", [Control.state, Control.attitude])
-def test_async_sim_control(control: Control):
-    sim = Sim(n_worlds=2, n_drones=3, control=control, freq=100, control_freq=50)
-    cmd_dim = 13 if control == Control.state else 4
-    cmd_fn = sim.attitude_control if control == Control.attitude else sim.state_control
-    cmd = np.random.rand(sim.n_worlds, sim.n_drones, cmd_dim)
-    cmd_fn(cmd)
-    for i in range(3):  # Running for 3 steps ->
-        sim.step()
-    cmd = np.random.rand(sim.n_worlds, sim.n_drones, cmd_dim)
-    cmd_fn(cmd)
-    sim.step()
-    sim_cmd = sim.controls.attitude[0] if control == Control.attitude else sim.controls.state[0]
-    assert jnp.all(sim_cmd == cmd[0]), "Async control was not applied correctly"
 
 
 @pytest.mark.unit
