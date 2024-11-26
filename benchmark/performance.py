@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import gymnasium
 import jax
 import numpy as np
@@ -7,6 +11,9 @@ from pyinstrument.renderers.html import HTMLRenderer
 
 import crazyflow  # noqa: F401, ensure gymnasium envs are registered
 from crazyflow.sim.core import Sim
+
+if TYPE_CHECKING:
+    from crazyflow.gymnasium_envs import CrazyflowEnvReachGoal
 
 
 def profile_step(sim_config: config_dict.ConfigDict, n_steps: int, device: str):
@@ -40,8 +47,8 @@ def profile_step(sim_config: config_dict.ConfigDict, n_steps: int, device: str):
 def profile_gym_env_step(sim_config: config_dict.ConfigDict, n_steps: int, device: str):
     device = jax.devices(device)[0]
 
-    envs = gymnasium.make_vec(
-        "CrazyflowEnvReachGoal-v0",
+    envs: CrazyflowEnvReachGoal = gymnasium.make_vec(
+        "DroneReachPos-v0",
         max_episode_steps=200,
         return_datatype="numpy",
         num_envs=sim_config.n_worlds,
@@ -50,28 +57,25 @@ def profile_gym_env_step(sim_config: config_dict.ConfigDict, n_steps: int, devic
     )
 
     # Action for going up (in attitude control)
-    action = np.array(
-        [[[-0.3, 0, 0, 0] for _ in range(sim_config.n_drones)] for _ in range(sim_config.n_worlds)],
-        dtype=np.float32,
-    ).reshape(sim_config.n_worlds, -1)
+    action = np.zeros((sim_config.n_worlds, 4), dtype=np.float32)
+    action[..., 0] = -0.3
 
-    # step through env once to ensure JIT compilation
-    _, _ = envs.reset_all(seed=42)
-    _, _, _, _, _ = envs.step(action)
-    _, _ = envs.reset_all(seed=42)
-    _, _, _, _, _ = envs.step(action)
-    _, _ = envs.reset_all(seed=42)
-    _, _, _, _, _ = envs.step(action)
-    _, _ = envs.reset_all(seed=42)
+    # Step through env once to ensure JIT compilation.
+    # TODO: Currently triggering recompiles also after the first full run. Investigate why and fix
+    # envs accordingly.
+    envs.reset_all(seed=42)
 
-    jax.block_until_ready(envs.unwrapped.sim._mjx_data)  # Ensure JIT compiled dynamics
+    for _ in range(envs.max_episode_steps + 1):  # Ensure all paths have been taken at least once
+        envs.step(action)
+
+    envs.reset_all(seed=42)
 
     profiler = Profiler()
     profiler.start()
 
     for _ in range(n_steps):
         _, _, _, _, _ = envs.step(action)
-        jax.block_until_ready(envs.unwrapped.sim._mjx_data)
+
     profiler.stop()
     renderer = HTMLRenderer()
     renderer.open_in_browser(profiler.last_session)
@@ -89,17 +93,6 @@ def main():
     sim_config.device = device
 
     profile_step(sim_config, 1000, device)
-    # old | new
-    # sys_id + attitude:
-    # 0.61 reset, 0.61 step  |  0.61 reset, 0.61 step
-    # sys_id + state:
-    # 14.53 step, 0.53 reset |  0.75 reset, 0.88 step
-
-    # Analytical + attitude:
-    # 0.75 reset, 9.38 step  |  0.75 reset, 0.80 step
-    # Analytical + state:
-    # 0.75 reset, 15.1 step  |  0.75 reset, 0.82 step
-
     profile_gym_env_step(sim_config, 1000, device)
 
 
