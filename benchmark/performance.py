@@ -1,19 +1,16 @@
-import jax
-import jax.numpy as jnp
-import numpy as np
 import gymnasium
+import jax
+import numpy as np
 from ml_collections import config_dict
 from pyinstrument import Profiler
 from pyinstrument.renderers.html import HTMLRenderer
 
+import crazyflow  # noqa: F401, ensure gymnasium envs are registered
 from crazyflow.sim.core import Sim
-import crazyflow.gymnasium_envs
 
 
 def profile_step(sim_config: config_dict.ConfigDict, n_steps: int, device: str):
-    sim = Sim(
-        **sim_config
-    )
+    sim = Sim(**sim_config)
     device = jax.devices(device)[0]
     ndim = 13 if sim.control == "state" else 4
     control_fn = sim.state_control if sim.control == "state" else sim.attitude_control
@@ -38,6 +35,7 @@ def profile_step(sim_config: config_dict.ConfigDict, n_steps: int, device: str):
     profiler.stop()
     renderer = HTMLRenderer()
     renderer.open_in_browser(profiler.last_session)
+
 
 def profile_gym_env_step(sim_config: config_dict.ConfigDict, n_steps: int, device: str):
     device = jax.devices(device)[0]
@@ -65,7 +63,7 @@ def profile_gym_env_step(sim_config: config_dict.ConfigDict, n_steps: int, devic
     _, _ = envs.reset_all(seed=42)
     _, _, _, _, _ = envs.step(action)
     _, _ = envs.reset_all(seed=42)
-    
+
     jax.block_until_ready(envs.unwrapped.sim._mjx_data)  # Ensure JIT compiled dynamics
 
     profiler = Profiler()
@@ -78,6 +76,7 @@ def profile_gym_env_step(sim_config: config_dict.ConfigDict, n_steps: int, devic
     renderer = HTMLRenderer()
     renderer.open_in_browser(profiler.last_session)
     envs.close()
+
 
 def main():
     device = "cpu"
@@ -102,7 +101,6 @@ def main():
     # 0.75 reset, 15.1 step  |  0.75 reset, 0.82 step
 
     profile_gym_env_step(sim_config, 1000, device)
-
 
 
 if __name__ == "__main__":
