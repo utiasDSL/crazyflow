@@ -1,45 +1,38 @@
 import math
 import warnings
-from dataclasses import fields
 from functools import partial
 from typing import Dict, Literal, Optional, Tuple
 
 import jax
 import jax.numpy as jnp
 import numpy as np
+from flax.struct import dataclass
 from gymnasium import spaces
 from gymnasium.vector import VectorEnv
 from gymnasium.vector.utils import batch_space
 from jax import Array
 
-from crazyflow.control.controller import Control, MAX_THRUST, MIN_THRUST
+from crazyflow.control.controller import MAX_THRUST, MIN_THRUST, Control
 from crazyflow.sim.core import Sim
 from crazyflow.sim.structs import SimState
-from flax.struct import dataclass
+
 
 @dataclass
 class RescaleParams:
     scale_factor: jnp.ndarray
     mean: jnp.ndarray
 
+
 CONTROL_RESCALE_PARAMS = {
-        "state": None, 
-        "thrust": None,
-        "attitude": RescaleParams(
-            scale_factor=jnp.array([
-                4 * (MAX_THRUST - MIN_THRUST) / 2, 
-                jnp.pi / 6, 
-                jnp.pi / 6, 
-                jnp.pi / 6
-            ]),
-            mean=jnp.array([
-                4 * (MIN_THRUST + MAX_THRUST) / 2, 
-                0.0, 
-                0.0, 
-                0.0
-            ])
+    "state": None,
+    "thrust": None,
+    "attitude": RescaleParams(
+        scale_factor=jnp.array(
+            [4 * (MAX_THRUST - MIN_THRUST) / 2, jnp.pi / 6, jnp.pi / 6, jnp.pi / 6]
         ),
-    }
+        mean=jnp.array([4 * (MIN_THRUST + MAX_THRUST) / 2, 0.0, 0.0, 0.0]),
+    ),
+}
 
 
 class CrazyflowBaseEnv(VectorEnv):
@@ -48,7 +41,7 @@ class CrazyflowBaseEnv(VectorEnv):
     def __init__(
         self,
         *,
-        jax_random_key,  # required for jax random number generator
+        jax_random_key: int,  # required for jax random number generator
         num_envs: int = 1,  # required for VectorEnv
         max_episode_steps: int = 1000,
         return_datatype: Literal["numpy", "jax"] = "jax",
@@ -57,9 +50,13 @@ class CrazyflowBaseEnv(VectorEnv):
         """Summary: Initializes the CrazyflowEnv.
 
         Args:
-        max_episode_steps (int): The maximum number of steps per episode.
-            return_datatype (Literal["numpy", "jax"]): The data type for returned arrays, either "numpy" or "jax". If specified as "numpy", the returned arrays will be numpy arrays on the CPU. If specified as "jax", the returned arrays will be jax arrays on the "device" specifiedf or the simulation.
-            **kwargs: Takes arguments that are passed to the Crazyfly simulation .
+            jax_random_key: The random key for the jax random number generator.
+            num_envs: The number of environments to run in parallel.
+            max_episode_steps: The maximum number of steps per episode.
+            return_datatype: The data type for returned arrays, either "numpy" or "jax". If "numpy",
+                the returned arrays will be numpy arrays on the CPU. If "jax", the returned arrays
+                will be jax arrays on the "device" specified for the simulation.
+            **kwargs: Takes arguments that are passed to the Crazyfly simulation.
         """
         assert num_envs == kwargs["n_worlds"], "num_envs must be equal to n_worlds"
 
@@ -167,7 +164,9 @@ class CrazyflowBaseEnv(VectorEnv):
 
         return action * params.scale_factor + params.mean
 
-    def reset_all(self, *, seed: Optional[int] = None, options: Optional[dict] = None):
+    def reset_all(
+        self, *, seed: Optional[int] = None, options: Optional[dict] = None
+    ) -> tuple[dict[str, Array], dict]:
         super().reset(seed=seed)
 
         # Resets ALL (!) environments
@@ -209,15 +208,15 @@ class CrazyflowBaseEnv(VectorEnv):
         )
 
     @property
-    def reward(self):
+    def reward(self) -> Array:
         return self._reward(self.terminated, self.sim.states)
 
     @property
-    def terminated(self):
+    def terminated(self) -> Array:
         return self._terminated(self.prev_done, self.sim.states, self.sim.contacts())
 
     @property
-    def truncated(self):
+    def truncated(self) -> Array:
         return self._truncated(
             self.prev_done, self.sim.steps, self.max_episode_steps, self.n_substeps
         )
@@ -250,7 +249,9 @@ class CrazyflowBaseEnv(VectorEnv):
     def _get_obs(self) -> Dict[str, jnp.ndarray]:
         obs = {
             state: self._maybe_to_numpy(
-                getattr(self.sim.states, state)[..., 2] if state == "pos" else getattr(self.sim.states, state)
+                getattr(self.sim.states, state)[..., 2]
+                if state == "pos"
+                else getattr(self.sim.states, state)
             )
             for state in self.states_to_include_in_obs
         }
@@ -278,7 +279,7 @@ class CrazyflowEnvReachGoal(CrazyflowBaseEnv):
         self.goal = jnp.zeros((kwargs["n_worlds"], 3), dtype=jnp.float32)
 
     @property
-    def reward(self):
+    def reward(self) -> Array:
         return self._reward(self.terminated, self.sim.states, self.goal)
 
     @staticmethod
@@ -323,7 +324,7 @@ class CrazyflowEnvTargetVelocity(CrazyflowBaseEnv):
         self.target_vel = jnp.zeros((kwargs["n_worlds"], 3), dtype=jnp.float32)
 
     @property
-    def reward(self):
+    def reward(self) -> Array:
         return self._reward(self.terminated, self.sim.states, self.target_vel)
 
     @staticmethod

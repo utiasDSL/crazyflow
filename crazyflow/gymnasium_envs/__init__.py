@@ -1,6 +1,3 @@
-from crazyflow.gymnasium_envs.crazyflow import CrazyflowEnvReachGoal, CrazyflowEnvTargetVelocity
-
-
 from gymnasium.envs.registration import register
 
 register(

@@ -1,27 +1,28 @@
 import time
-from ml_collections import config_dict
 
+import gymnasium
 import jax
 import jax.numpy as jnp
 import numpy as np
-import gymnasium
+from ml_collections import config_dict
+
+import crazyflow  # noqa: F401, ensure gymnasium envs are registered
 from crazyflow.sim.core import Sim
-import crazyflow.gymnasium_envs
 
 
 def analyze_timings(times: list[float], n_steps: int, n_worlds: int, freq: float) -> None:
     """Analyze timing results and print performance metrics."""
     if not times:
         raise ValueError("The list of timing results is empty.")
-    
+
     tmin, idx_tmin = np.min(times), np.argmin(times)
     tmax, idx_tmax = np.max(times), np.argmax(times)
-    
+
     # Check for significant variance
     if tmax / tmin > 5:
         print("Warning: step time varies by more than 5x. Is JIT compiling during the benchmark?")
         print(f"Times: max {tmax:.2e}@{idx_tmax}, min {tmin:.2e}@{idx_tmin}")
-    
+
     # Performance metrics
     n_frames = n_steps * n_worlds  # Number of frames simulated
     total_time = np.sum(times)
@@ -29,7 +30,7 @@ def analyze_timings(times: list[float], n_steps: int, n_worlds: int, freq: float
     step_time_std = np.std(times)
     fps = n_frames / total_time
     real_time_factor = (n_steps / freq) * n_worlds / total_time
-    
+
     print(
         f"Avg step time: {avg_step_time:.2e}s, std: {step_time_std:.2e}"
         f"\nFPS: {fps:.3e}, Real time factor: {real_time_factor:.2e}"
@@ -62,7 +63,7 @@ def profile_gym_env_step(sim_config: config_dict.ConfigDict, n_steps: int, devic
     _, _ = envs.reset_all(seed=42)
     _, _, _, _, _ = envs.step(action)
     _, _ = envs.reset_all(seed=42)
-    
+
     jax.block_until_ready(envs.unwrapped.sim._mjx_data)  # Ensure JIT compiled dynamics
 
     # Step through the environment
@@ -85,7 +86,7 @@ def profile_step(sim_config: config_dict.ConfigDict, n_steps: int, device: str):
 
     cmd = jnp.zeros((sim.n_worlds, sim.n_drones, 4), device=device)
     cmd = cmd.at[0, 0, 0].set(1)
-    
+
     sim.reset()
     sim.attitude_control(cmd)
     sim.step()

@@ -2,7 +2,6 @@ import gymnasium
 import numpy as np
 from ml_collections import config_dict
 
-import crazyflow.gymnasium_envs
 from crazyflow.control.controller import Control, Controller
 from crazyflow.sim.physics import Physics
 
@@ -13,23 +12,24 @@ sim_config.physics = Physics.sys_id
 sim_config.control = Control.default
 sim_config.controller = Controller.default
 sim_config.control_freq = 50
-sim_config.n_drones=1
-sim_config.n_worlds=20
+sim_config.n_drones = 1
+sim_config.n_worlds = 20
 
-SEED=42
+SEED = 42
 
 envs = gymnasium.make_vec(
     "CrazyflowEnvReachGoal-v0",
     max_episode_steps=1000,
     return_datatype="numpy",
-    num_envs=sim_config.n_worlds, 
+    num_envs=sim_config.n_worlds,
     jax_random_key=SEED,
     **sim_config,
 )
 
 # action for going up (in attitude control). NOTE actions are rescaled in the environment
 action = np.array(
-    [[[-0.2, 0, 0, 0] for _ in range(sim_config.n_drones)] for _ in range(sim_config.n_worlds)], dtype=np.float32
+    [[[-0.2, 0, 0, 0] for _ in range(sim_config.n_drones)] for _ in range(sim_config.n_worlds)],
+    dtype=np.float32,
 ).reshape(sim_config.n_worlds, -1)
 
 obs, info = envs.reset_all(seed=SEED)
@@ -38,5 +38,5 @@ obs, info = envs.reset_all(seed=SEED)
 for _ in range(1500):
     observation, reward, terminated, truncated, info = envs.step(action)
     envs.render()
-    
+
 envs.close()
