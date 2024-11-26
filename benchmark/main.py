@@ -21,7 +21,7 @@ def analyze_timings(times: list[float], n_steps: int, n_worlds: int, freq: float
     # Check for significant variance
     if tmax / tmin > 5:
         print("Warning: step time varies by more than 5x. Is JIT compiling during the benchmark?")
-        print(f"Times: max {tmax:.2e}@{idx_tmax}, min {tmin:.2e}@{idx_tmin}")
+        print(f"Times: max {tmax:.2e} @ {idx_tmax}, min {tmin:.2e} @ {idx_tmin}")
 
     # Performance metrics
     n_frames = n_steps * n_worlds  # Number of frames simulated
@@ -43,7 +43,7 @@ def profile_gym_env_step(sim_config: config_dict.ConfigDict, n_steps: int, devic
     device = jax.devices(device)[0]
 
     envs = gymnasium.make_vec(
-        "CrazyflowEnvReachGoal-v0",
+        "DroneReachPos-v0",
         max_episode_steps=200,
         return_datatype="numpy",
         num_envs=sim_config.n_worlds,
@@ -114,10 +114,10 @@ def main():
     sim_config.controller = "emulatefirmware"
     sim_config.device = device
 
-    print("SIM PERFORMANCE")
+    print("Simulator performance")
     profile_step(sim_config, 100, device)
 
-    print("\nGYM ENV PERFORMANCE")
+    print("\nGymnasium environment performance")
     profile_gym_env_step(sim_config, 100, device)
 
 
