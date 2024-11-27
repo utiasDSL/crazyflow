@@ -26,7 +26,6 @@ def profile_step(sim_config: config_dict.ConfigDict, n_steps: int, device: str):
     sim.reset()
     control_fn(cmd)
     sim.step()
-    control_fn(cmd)
     sim.step()
     sim.reset()
     jax.block_until_ready(sim.states.pos)
@@ -52,7 +51,6 @@ def profile_gym_env_step(sim_config: config_dict.ConfigDict, n_steps: int, devic
         max_episode_steps=200,
         return_datatype="numpy",
         num_envs=sim_config.n_worlds,
-        jax_random_key=42,
         **sim_config,
     )
 
@@ -61,20 +59,17 @@ def profile_gym_env_step(sim_config: config_dict.ConfigDict, n_steps: int, devic
     action[..., 0] = -0.3
 
     # Step through env once to ensure JIT compilation.
-    # TODO: Currently triggering recompiles also after the first full run. Investigate why and fix
-    # envs accordingly.
     envs.reset_all(seed=42)
-
-    for _ in range(envs.max_episode_steps + 1):  # Ensure all paths have been taken at least once
-        envs.step(action)
-
+    envs.step(action)
+    envs.step(action)  # Ensure all paths have been taken at least once
     envs.reset_all(seed=42)
 
     profiler = Profiler()
     profiler.start()
 
     for _ in range(n_steps):
-        _, _, _, _, _ = envs.step(action)
+        envs.step(action)
+        jax.block_until_ready(envs.unwrapped.sim.states.pos)
 
     profiler.stop()
     renderer = HTMLRenderer()
