@@ -19,9 +19,9 @@ differentiation and optimization.
 import casadi as cs
 from casadi import MX
 
-from crazyflow.constants import GRAVITY, ARM_LEN
-from crazyflow.sim.core import Sim
+from crazyflow.constants import ARM_LEN, GRAVITY
 from crazyflow.control.controller import KF, KM
+from crazyflow.sim.core import Sim
 
 
 class SymbolicModel:
@@ -149,14 +149,14 @@ def symbolic(sim: Sim, dt: float) -> SymbolicModel:
     Returns:
         The CasADi symbolic model of the environment.
     """
-    m, g = sim.params.mass[0,0,1], GRAVITY
+    m, g = sim.params.mass[0,0,1], GRAVITY # select first drone in first world
     # Define states.
     z = cs.MX.sym("z")
     z_dot = cs.MX.sym("z_dot")
 
     # Set up the dynamics model for a 3D quadrotor.
     nx, nu = 12, 4
-    Ixx, Iyy, Izz = sim.params.J[0,0].diagonal()
+    Ixx, Iyy, Izz = sim.params.J[0,0].diagonal() # select first drone in first world
     J = cs.blockcat([[Ixx, 0.0, 0.0], [0.0, Iyy, 0.0], [0.0, 0.0, Izz]])
     Jinv = cs.blockcat([[1.0 / Ixx, 0.0, 0.0], [0.0, 1.0 / Iyy, 0.0], [0.0, 0.0, 1.0 / Izz]])
     gamma = KM / KF
