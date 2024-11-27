@@ -1,16 +1,16 @@
 import math
 import warnings
 from functools import partial
-from typing import Dict, Literal, Optional, Tuple
+from typing import Literal
 
 import jax
 import jax.numpy as jnp
-import numpy as np
 from flax.struct import dataclass
 from gymnasium import spaces
 from gymnasium.vector import VectorEnv
 from gymnasium.vector.utils import batch_space
 from jax import Array
+from numpy.typing import NDArray
 
 from crazyflow.control.controller import MAX_THRUST, MIN_THRUST, Control
 from crazyflow.sim.core import Sim
@@ -19,8 +19,8 @@ from crazyflow.sim.structs import SimState
 
 @dataclass
 class RescaleParams:
-    scale_factor: jnp.ndarray
-    mean: jnp.ndarray
+    scale_factor: Array
+    mean: Array
 
 
 CONTROL_RESCALE_PARAMS = {
@@ -33,6 +33,12 @@ CONTROL_RESCALE_PARAMS = {
         mean=jnp.array([4 * (MIN_THRUST + MAX_THRUST) / 2, 0.0, 0.0, 0.0]),
     ),
 }
+
+
+@partial(jax.jit, static_argnames=["convert"])
+def maybe_to_numpy(data: Array, convert: bool) -> NDArray | Array:
+    """Converts data to numpy array if convert is True."""
+    return jax.lax.cond(convert, lambda: jax.device_get(data), lambda: data)
 
 
 class CrazyflowBaseEnv(VectorEnv):
@@ -103,7 +109,7 @@ class CrazyflowBaseEnv(VectorEnv):
         )
         self.observation_space = batch_space(self.single_observation_space, self.sim.n_worlds)
 
-    def step(self, action: Array) -> Tuple[Array, Array, Array, Array, Dict]:
+    def step(self, action: Array) -> tuple[Array, Array, Array, Array, dict]:
         assert self.action_space.contains(action), f"{action!r} ({type(action)}) invalid"
         action = jnp.array(action, device=self.device).reshape(
             (self.sim.n_worlds, self.sim.n_drones, -1)
@@ -139,8 +145,8 @@ class CrazyflowBaseEnv(VectorEnv):
         return (
             self._get_obs(),
             reward,
-            self._maybe_to_numpy(terminated),
-            self._maybe_to_numpy(truncated),
+            maybe_to_numpy(terminated, self.return_datatype == "numpy"),
+            maybe_to_numpy(truncated, self.return_datatype == "numpy"),
             {},
         )
 
@@ -165,7 +171,7 @@ class CrazyflowBaseEnv(VectorEnv):
         return action * params.scale_factor + params.mean
 
     def reset_all(
-        self, *, seed: Optional[int] = None, options: Optional[dict] = None
+        self, *, seed: int | None = None, options: dict | None = None
     ) -> tuple[dict[str, Array], dict]:
         super().reset(seed=seed)
 
@@ -226,41 +232,36 @@ class CrazyflowBaseEnv(VectorEnv):
 
     @staticmethod
     @jax.jit
-    def _terminated(dones: jax.Array, states: SimState, contacts: jax.Array) -> jnp.ndarray:
+    def _terminated(dones: Array, states: SimState, contacts: Array) -> Array:
         contact = jnp.any(contacts, axis=1)
         z_coords = states.pos[..., 2]
-        below_ground = jnp.any(
-            z_coords < -0.1, axis=1
-        )  # Should not be triggered due to collision checking
+        # Sanity check if we are below the ground. Should not be triggered due to collision checking
+        below_ground = jnp.any(z_coords < -0.1, axis=1)
         terminated = jnp.logical_or(below_ground, contact)  # no termination condition
         return jnp.where(dones, False, terminated)
 
     @staticmethod
     @jax.jit
     def _truncated(
-        dones: jax.Array, steps: jax.Array, max_episode_steps: jax.Array, n_substeps: jax.Array
-    ) -> jnp.ndarray:
+        dones: Array, steps: Array, max_episode_steps: Array, n_substeps: Array
+    ) -> Array:
         truncated = steps / n_substeps >= max_episode_steps
         return jnp.where(dones, False, truncated)
 
     def render(self):
         self.sim.render()
 
-    def _get_obs(self) -> Dict[str, jnp.ndarray]:
+    def _get_obs(self) -> dict[str, Array]:
         obs = {
-            state: self._maybe_to_numpy(
+            state: maybe_to_numpy(
                 getattr(self.sim.states, state)[..., 2]
                 if state == "pos"
-                else getattr(self.sim.states, state)
+                else getattr(self.sim.states, state),
+                self.return_datatype == "numpy",
             )
             for state in self.states_to_include_in_obs
         }
         return obs
-
-    def _maybe_to_numpy(self, data: Array) -> np.ndarray:
-        if self.return_datatype == "numpy" and not isinstance(data, np.ndarray):
-            return jax.device_get(data)
-        return data
 
 
 class CrazyflowEnvReachGoal(CrazyflowBaseEnv):
@@ -284,7 +285,7 @@ class CrazyflowEnvReachGoal(CrazyflowBaseEnv):
 
     @staticmethod
     @jax.jit
-    def _reward(terminated: jax.Array, states: SimState, goal: jax.Array) -> jnp.ndarray:
+    def _reward(terminated: Array, states: SimState, goal: Array) -> Array:
         norm_distance = jnp.linalg.norm(states.pos - goal, axis=2)
         reward = jnp.exp(-2.0 * norm_distance)
         return jnp.where(terminated, -1.0, reward)
@@ -302,7 +303,7 @@ class CrazyflowEnvReachGoal(CrazyflowBaseEnv):
         )
         self.goal = self.goal.at[mask].set(new_goals[mask])
 
-    def _get_obs(self) -> Dict[str, jnp.ndarray]:
+    def _get_obs(self) -> dict[str, Array]:
         obs = super()._get_obs()
         obs["difference_to_goal"] = [self.goal - self.sim.states.pos]
         return obs
@@ -329,7 +330,7 @@ class CrazyflowEnvTargetVelocity(CrazyflowBaseEnv):
 
     @staticmethod
     @jax.jit
-    def _reward(terminated: jax.Array, states: SimState, target_vel: jax.Array) -> jnp.ndarray:
+    def _reward(terminated: Array, states: SimState, target_vel: Array) -> Array:
         norm_distance = jnp.linalg.norm(states.vel - target_vel, axis=2)
         reward = jnp.exp(-norm_distance)
         return jnp.where(terminated, -1.0, reward)
@@ -347,7 +348,7 @@ class CrazyflowEnvTargetVelocity(CrazyflowBaseEnv):
         )
         self.target_vel = self.target_vel.at[mask].set(new_target_vel[mask])
 
-    def _get_obs(self) -> Dict[str, jnp.ndarray]:
+    def _get_obs(self) -> dict[str, Array]:
         obs = super()._get_obs()
         obs["difference_to_target_vel"] = [self.target_vel - self.sim.states.vel]
         return obs
