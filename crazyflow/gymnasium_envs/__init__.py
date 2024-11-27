@@ -1,11 +1,15 @@
 from gymnasium.envs.registration import register
 
+from crazyflow.gymnasium_envs.crazyflow import CrazyflowEnvReachGoal, CrazyflowEnvTargetVelocity
+
+__all__ = ["CrazyflowEnvReachGoal", "CrazyflowEnvTargetVelocity"]
+
 register(
-    id="CrazyflowEnvReachGoal-v0",
-    vector_entry_point="crazyflow.gymnasium_envs:CrazyflowEnvReachGoal",
+    id="DroneReachPos-v0",
+    vector_entry_point="crazyflow.gymnasium_envs.crazyflow:CrazyflowEnvReachGoal",
 )
 
 register(
-    id="CrazyflowEnvTargetVelocity-v0",
-    vector_entry_point="crazyflow.gymnasium_envs:CrazyflowEnvTargetVelocity",
+    id="DroneReachVel-v0",
+    vector_entry_point="crazyflow.gymnasium_envs.crazyflow:CrazyflowEnvTargetVelocity",
 )
