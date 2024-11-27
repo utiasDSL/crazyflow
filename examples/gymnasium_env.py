@@ -18,8 +18,8 @@ sim_config.n_worlds = 20
 SEED = 42
 
 envs = gymnasium.make_vec(
-    "CrazyflowEnvReachGoal-v0",
-    max_episode_steps=1000,
+    "DroneLanding-v0",
+    time_horizon_in_seconds=2,
     return_datatype="numpy",
     num_envs=sim_config.n_worlds,
     jax_random_key=SEED,

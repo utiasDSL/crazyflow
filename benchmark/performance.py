@@ -49,7 +49,7 @@ def profile_gym_env_step(sim_config: config_dict.ConfigDict, n_steps: int, devic
 
     envs: CrazyflowEnvReachGoal = gymnasium.make_vec(
         "DroneReachPos-v0",
-        max_episode_steps=200,
+        time_horizon_in_seconds=2,
         return_datatype="numpy",
         num_envs=sim_config.n_worlds,
         jax_random_key=42,
