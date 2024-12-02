@@ -87,11 +87,12 @@ def profile_step(sim_config: config_dict.ConfigDict, n_steps: int, device: str):
     sim.step()
     jax.block_until_ready(sim.states.pos)  # Ensure JIT compiled dynamics
 
-    for _ in range(n_steps):
+    for i in range(n_steps):
         tstart = time.perf_counter()
         sim.attitude_control(cmd)
         sim.step()
-        jax.block_until_ready(sim.states.pos)
+        if i == n_steps - 1:
+            jax.block_until_ready(sim.states.pos)
         times.append(time.perf_counter() - tstart)
 
     analyze_timings(times, n_steps, sim.n_worlds, sim.freq)

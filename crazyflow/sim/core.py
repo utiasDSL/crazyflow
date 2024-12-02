@@ -1,6 +1,6 @@
 from functools import partial
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import jax
 import jax.numpy as jnp
@@ -20,8 +20,17 @@ from crazyflow.sim.fused import (
     fused_masked_state2attitude,
     fused_rpms2collective_wrench,
 )
+from crazyflow.sim.integration import Integrator
 from crazyflow.sim.physics import Physics
-from crazyflow.sim.structs import SimControls, SimParams, SimState
+from crazyflow.sim.structs import (
+    SimControls,
+    SimData,
+    SimParams,
+    SimState,
+    default_controls,
+    default_params,
+    default_state,
+)
 from crazyflow.utils import clone_body, grid_2d
 
 
@@ -35,6 +44,7 @@ class Sim:
         physics: Physics = Physics.default,
         control: Control = Control.default,
         controller: Controller = Controller.default,
+        integrator: Integrator = Integrator.default,
         freq: int = 500,
         control_freq: int = 500,
         device: str = "cpu",
@@ -46,6 +56,7 @@ class Sim:
         self.physics = physics
         self.control = control
         self.controller = controller
+        self.integrator = integrator
         self.device = jax.devices(device)[0]
         self.freq = freq
         self.control_freq = control_freq
@@ -63,39 +74,16 @@ class Sim:
         # We need to set the last control step to -freq to ensure that the first control
         # command is applied at t=0
         self.last_ctrl_steps = jnp.ones((n_worlds,), dtype=int, device=self.device) * -freq
-        self.states = SimState(
-            pos=jnp.zeros((n_worlds, n_drones, 3), device=self.device),
-            quat=jnp.zeros((n_worlds, n_drones, 4), device=self.device),
-            vel=jnp.zeros((n_worlds, n_drones, 3), device=self.device),
-            ang_vel=jnp.zeros((n_worlds, n_drones, 3), device=self.device),
-            rpy_rates=jnp.zeros((n_worlds, n_drones, 3), device=self.device),
-        )
-        self.states = self.states.replace(quat=self.states.quat.at[..., -1].set(1.0))
-        # Allocate internal control variables and physics parameters.
-        self.controls = SimControls(
-            state=jnp.zeros((n_worlds, n_drones, 13), device=self.device),
-            staged_state=jnp.zeros((n_worlds, n_drones, 13), device=self.device),
-            attitude=jnp.zeros((n_worlds, n_drones, 4), device=self.device),
-            staged_attitude=jnp.zeros((n_worlds, n_drones, 4), device=self.device),
-            thrust=jnp.zeros((n_worlds, n_drones, 4), device=self.device),
-            rpms=jnp.zeros((n_worlds, n_drones, 4), device=self.device),
-            rpy_err_i=jnp.zeros((n_worlds, n_drones, 3), device=self.device),
-            pos_err_i=jnp.zeros((n_worlds, n_drones, 3), device=self.device),
-            last_rpy=jnp.zeros((n_worlds, n_drones, 3), device=self.device),
-        )
-        # Allocate physics parameter buffers.
-        j, j_inv = jnp.array(J, device=self.device), jnp.array(J_INV, device=self.device)
-        self.params = SimParams(
-            mass=jnp.ones((n_worlds, n_drones, 1), device=self.device) * 0.025,
-            J=jnp.tile(j[None, None, :, :], (n_worlds, n_drones, 1, 1)),
-            J_INV=jnp.tile(j_inv[None, None, :, :], (n_worlds, n_drones, 1, 1)),
-        )
+        # Allocate internal states and controls
+        self.states = default_state(n_worlds, n_drones, self.device)
+        self.controls = default_controls(n_worlds, n_drones, self.device)
+        self.params = default_params(n_worlds, n_drones, 0.025, J, J_INV, self.device)
         # Initialize MuJoCo world and data
         self._xml_path = xml_path or self.default_path
-        self._spec, self._mj_model, self._mj_data, self._mjx_model, self._mjx_data = self.setup()
+        self._spec, self._mj_model, self._mj_data, self._mjx_model, self._mjx_data = self.setup_mj()
         self.viewer: MujocoRenderer | None = None
 
-    def setup(self) -> tuple[Any, Any, Any, Model, Data]:
+    def setup_mj(self) -> tuple[Any, Any, Any, Model, Data]:
         assert self._xml_path.exists(), f"Model file {self._xml_path} does not exist"
         spec = mujoco.MjSpec.from_file(str(self._xml_path))
         # Add additional drones to the world
@@ -118,6 +106,42 @@ class Sim:
         self.defaults["controls"] = self.controls.replace()
         self.defaults["params"] = self.params.replace()
         return spec, mj_model, mj_data, mjx_model, mjx_data
+
+    def setup_pipeline(self) -> Callable[[int, SimData], SimData]:
+        """Setup the chain of functions that are called in Sim.step().
+
+        We know all the functions that are called in succession since the simulation is configured
+        at initialization time. Instead of branching through options at runtime, we construct a step
+        function at initialization that selects the correct functions based on the settings.
+
+        Warning:
+            If any settings change, the pipeline of functions needs to be reconstructed.
+        """
+        # The ``xxx_fn`` methods return functions, not the results of calling those functions. They
+        # act as factories that produce building blocks for the construction of our simulation
+        # pipeline.
+        # We use jax.vmap twice to apply functions over all simulated worlds (axis 0) and all
+        # drones (axis 1) in parallel.
+        ctrl_fn = jax.vmap(jax.vmap(self._control_fn()))
+        physics_fn = jax.vmap(jax.vmap(self._physics_fn()))
+        integrator_fn = jax.vmap(jax.vmap(self._integrator_fn()))
+
+        def _step(sim_data: SimData) -> SimData:
+            sim_data = ctrl_fn(sim_data)
+            sim_data = physics_fn(sim_data)
+            sim_data = integrator_fn(sim_data)
+            return sim_data
+
+        # ``scan`` can be lowered to a single WhileOp, reducing compilation times while still fusing
+        # the loops and giving XLA maximum freedom to reorder operations and jointly optimize the
+        # pipeline. This is especially relevant for the common use case of running multiple sim
+        # steps in an outer loop, e.g. in gym environments.
+        @jax.jit
+        def step(n_steps: int, sim_data: SimData) -> SimData:
+            sim_data, _ = jax.lax.scan(_step, sim_data, length=n_steps)
+            return sim_data
+
+        return step
 
     def reset(self, mask: Array | None = None):
         """Reset the simulation to the initial state.
@@ -205,6 +229,31 @@ class Sim:
         geom_count = self._mj_model.body_geomnum[body_id]
         return contacts(geom_start, geom_count, self._mjx_data)
 
+    def _control_fn(self) -> Callable[[SimData], SimData]:
+        match self.control:
+            case Control.state:
+                return self._step_state_controller
+            case Control.attitude:
+                return self._step_attitude_controller
+            case _:
+                raise NotImplementedError(f"Control mode {self.control} not implemented")
+
+    def _physics_fn(self) -> Callable[[SimData], SimData]:
+        match self.physics:
+            case Physics.analytical:
+                return self._step_analytical
+            case Physics.sys_id:
+                return self._step_sys_id
+            case _:
+                raise NotImplementedError(f"Physics mode {self.physics} not implemented")
+
+    def _integrator_fn(self) -> Callable[[SimData], SimData]:
+        match self.integrator:
+            case Integrator.euler:
+                return self._step_euler
+            case _:
+                raise NotImplementedError(f"Integrator {self.integrator} not implemented")
+
     def _step_sys_id(self):
         mask = self.controllable
         # Optional optimization: check if mask.any() before updating the controls. This breaks jax's
@@ -226,10 +275,8 @@ class Sim:
         match self.controller:
             case Controller.emulatefirmware:
                 self.controls = self._step_emulate_firmware()
-            case Controller.pycffirmware:
-                raise NotImplementedError
             case _:
-                raise ValueError(f"Controller {self.controller} not implemented")
+                raise NotImplementedError(f"Controller {self.controller} not implemented")
         self.last_ctrl_steps = self._masked_controls_step_update(
             mask, self.steps, self.last_ctrl_steps
         )
