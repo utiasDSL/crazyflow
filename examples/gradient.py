@@ -11,7 +11,7 @@ from crazyflow.sim.core import Sim
 def main():
     sim = Sim(control=Control.state)
 
-    def step(cmd: NDArray):
+    def step(cmd: NDArray) -> jax.Array:
         sim.reset()
         sim.state_control(cmd)
         sim.step()

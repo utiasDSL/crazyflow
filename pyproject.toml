@@ -25,10 +25,11 @@ dependencies = [
     "mujoco-mjx",
     "einops",
     "flax",
+    "ml_collections",
 ]
 
 [project.optional-dependencies]
-test = ["pytest>=8.0.0"]
+test = ["pytest>=8.0.0", "pytest-cov"]
 gpu = ["jax[cuda12]"]
 
 [tool.setuptools.packages]
@@ -68,13 +69,16 @@ target-version = "py38"
 
 [tool.ruff.lint]
 select = ["E4", "E7", "E9", "F", "I", "D", "TCH", "ANN"]
-ignore = ["ANN101", "ANN401"]
+ignore = ["ANN401"]
 fixable = ["ALL"]
 unfixable = []
 
 [tool.ruff.lint.per-file-ignores]
-"benchmarks/*" = ["D100", "D103"]
+"benchmark/*" = ["D100", "D103"]
 "tests/*" = ["D100", "D103", "D104"]
+"examples/*" = ["D100", "D103"]
+# TODO: Remove once everything is stable and document
+"crazyflow/*" = ["D100", "D101", "D102", "D104", "D107"]  
 
 
 [tool.ruff.lint.pydocstyle]
