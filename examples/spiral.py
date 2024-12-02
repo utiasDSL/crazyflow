@@ -1,21 +1,11 @@
 import numpy as np
 
-from crazyflow.control.controller import Control, Controller
+from crazyflow.control.controller import Control
 from crazyflow.sim.core import Sim
-from crazyflow.sim.physics import Physics
 
 
 def main():
-    sim = Sim(
-        n_worlds=1,
-        n_drones=4,
-        physics=Physics.analytical,
-        control=Control.state,
-        controller=Controller.emulatefirmware,
-        freq=500,
-        control_freq=500,
-        device="cpu",
-    )
+    sim = Sim(n_worlds=1, n_drones=4, control=Control.state, device="cpu")
     sim.reset()
     duration = 5.0
     fps = 60
