@@ -1,1 +1,2 @@
 from crazyflow.randomize.randomize import randomize_mass
+from crazyflow.randomize.randomize import randomize_inertia
