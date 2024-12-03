@@ -25,6 +25,7 @@ def randomize_inertia(sim, new_js, new_j_invs):
         Args:
             sim: The simulation object.
             new_js: The new inertia tensors.
+            new_j_invs: The new inverse inertia tensors.
         
         Warning:
             This currently only works for analytical dynamics.
