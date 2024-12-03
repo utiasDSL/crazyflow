@@ -1,32 +1,43 @@
 import jax
 from jax import Array
-from mujoco.mjx import Model
-
+from crazyflow.sim.structs import SimParams
 
 def randomize_mass(sim, new_masses):
-    """This is some docstring.
-
-    Warning:
-        This currently only works for analytical dynamics.
+    """Randomize mass from a new masses. 
+    
+        Args:
+            sim: The simulation object.
+            new_masses: The new masses.
+        
+        Warning:
+            This currently only works for analytical dynamics.
     """
-    # TODO: Do we need to recompile sim._sync_mjx after this?
-    # Needed if we use MuJoCo as dynamics engine (currently not implemented)
-    sim._mjx_model = _randomize_mass(sim._mjx_model, new_masses)
-    # Needed if we use analytical dynamics. This is what we use right now.
-    sim.params = sim.params.replace(mass=new_masses)  # TODO: Can this be JITed?
-    # sys_id model: You cannot change the mass in the sys_id model, it's given by the identified
-    # parameters.
+    #TODO: Domain randomization when using MuJoCo as dynamics engine
+    #TODO: recompile sim._sync_mjx? sim._mjx_model = _randomize_mass(sim._mjx_model, new_masses)
+    #TODO: Parameters randomization for sys_id model
+    randomized_params = _randomize_mass_params(sim.params, new_masses)
+    sim.defaults["params"] = randomized_params
+    sim.params = randomized_params
 
+def randomize_inertia(sim, new_js, new_j_invs):
+    """Randomize inertia tensor from a new inertia tensors. 
+    
+        Args:
+            sim: The simulation object.
+            new_js: The new inertia tensors.
+        
+        Warning:
+            This currently only works for analytical dynamics.
+    """
+    #TODO: same as randomize_mass
+    randomized_params = _randomize_inertia_params(sim.params, new_js, new_j_invs)
+    sim.defaults["params"] = randomized_params
+    sim.params = randomized_params
 
 @jax.jit
-@jax.vmap
-def _randomize_mass(model: Model, new_mass: Array):
-    # Double check that at 1 is the correct thing to set. Is this being vmapped correctly? Possibly
-    # base plate it at 0, drone0 is at 1, drone2 is at 2, etc.
-    model.body_mass = model.body_mass.at[1].set(new_mass)
-    return model
-
-
-@jax.jit
-def _randomize_mass_params(params: Params, new_masses: Array):
+def _randomize_mass_params(params: SimParams, new_masses: Array):
     return params.replace(mass=new_masses)
+
+@jax.jit
+def _randomize_inertia_params(params: SimParams, new_js: Array, new_j_invs: Array):
+    return params.replace(J=new_js, J_INV=new_j_invs)
