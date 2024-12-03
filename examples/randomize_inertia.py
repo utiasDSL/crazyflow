@@ -5,8 +5,7 @@ import jax
 from crazyflow.control.controller import Control, Controller
 from crazyflow.sim.core import Sim
 from crazyflow.sim.physics import Physics
-from crazyflow.sim.structs import SimParams
-from crazyflow.control.controller import J_INV, J
+from crazyflow.control.controller import J
 from crazyflow.utils import grid_2d
 from crazyflow.randomize import randomize_inertia
 
