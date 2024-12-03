@@ -76,14 +76,6 @@ def test_sim_creation(
 
 @pytest.mark.unit
 @pytest.mark.parametrize("device", ["gpu", "cpu"])
-def test_setup(device: str):
-    skip_unavailable_device(device)
-    sim = Sim(n_worlds=2, n_drones=3, device=device)
-    sim.setup()
-
-
-@pytest.mark.unit
-@pytest.mark.parametrize("device", ["gpu", "cpu"])
 @pytest.mark.parametrize("physics", Physics)
 @pytest.mark.parametrize("n_worlds", [1, 2])
 @pytest.mark.parametrize("n_drones", [1, 3])

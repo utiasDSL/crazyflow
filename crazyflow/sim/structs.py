@@ -63,8 +63,9 @@ def default_params(
 ) -> SimParams:
     """Create a default set of parameters for the simulation."""
     mass = jnp.ones((n_worlds, n_drones, 1), device=device) * mass
-    J = jnp.tile(J[None, None, :, :], (n_worlds, n_drones, 1, 1))
-    J_INV = jnp.tile(J_INV[None, None, :, :], (n_worlds, n_drones, 1, 1))
+    j, j_inv = jnp.array(J, device=device), jnp.array(J_INV, device=device)
+    J = jnp.tile(j[None, None, :, :], (n_worlds, n_drones, 1, 1))
+    J_INV = jnp.tile(j_inv[None, None, :, :], (n_worlds, n_drones, 1, 1))
     return SimParams(mass=mass, J=J, J_INV=J_INV)
 
 
