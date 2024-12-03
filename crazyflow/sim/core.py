@@ -78,6 +78,7 @@ class Sim:
         self.states = default_state(n_worlds, n_drones, self.device)
         self.controls = default_controls(n_worlds, n_drones, self.device)
         self.params = default_params(n_worlds, n_drones, 0.025, J, J_INV, self.device)
+        self.data = SimData(states=self.states, controls=self.controls, params=self.params)
         # Initialize MuJoCo world and data
         self._xml_path = xml_path or self.default_path
         self._spec, self._mj_model, self._mj_data, self._mjx_model, self._mjx_data = self.setup_mj()
@@ -232,9 +233,9 @@ class Sim:
     def _control_fn(self) -> Callable[[SimData], SimData]:
         match self.control:
             case Control.state:
-                return self._step_state_controller
+                return step_state_controller
             case Control.attitude:
-                return self._step_attitude_controller
+                return step_attitude_controller
             case _:
                 raise NotImplementedError(f"Control mode {self.control} not implemented")
 
@@ -293,7 +294,7 @@ class Sim:
         return fused_masked_attitude2rpm(mask, self.states, self.controls, self.dt)
 
     @staticmethod
-    def _sync_mjx(states: SimState, mjx_data: Data) -> Data:
+    def _sync_mjx(states: SimState, mjx_data: Data, mjx_model: Model) -> Data:
         """Sync the states to the MuJoCo data.
 
         We initialize this function in Sim.setup() to compile it with the finalized MuJoCo model.
@@ -399,6 +400,27 @@ def contacts(geom_start: int, geom_count: int, data: Data) -> Array:
     geom2_valid = data.contact.geom2 >= geom_start
     geom2_valid &= data.contact.geom2 < geom_start + geom_count
     return data.contact.dist < 0 & (geom1_valid | geom2_valid)
+
+
+def step_state_controller(data: SimData) -> SimData:
+    controls = data.controls
+    mask = controllable(data.steps, controls.steps, data.freq, controls.state_freq)
+    controls = commit_state_controls(mask, controls)
+    controls = state2attitude(mask, data.states, controls, 1 / data.freq)
+    return data.replace(controls=controls)
+
+
+def controllable(step: Array, ctrl_step: Array, ctrl_freq: int, freq: int) -> Array:
+    return (step - ctrl_step) >= (freq / ctrl_freq)
+
+
+def commit_state_controls(mask: Array, controls: SimControls) -> SimControls:
+    cmd, staged_cmd = controls.state, controls.staged_state
+    return controls.replace(state=jnp.where(mask[:, None, None], staged_cmd, cmd))
+
+
+def step_attitude_controller(data: SimData) -> SimData:
+    pass
 
 
 mjx_kinematics = jax.vmap(mjx.kinematics, in_axes=(None, 0))
