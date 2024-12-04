@@ -1,6 +1,10 @@
 from gymnasium.envs.registration import register
 
-from crazyflow.gymnasium_envs.crazyflow import CrazyflowEnvReachGoal, CrazyflowEnvTargetVelocity, CrazyflowEnvLanding
+from crazyflow.gymnasium_envs.crazyflow import (
+    CrazyflowEnvLanding,
+    CrazyflowEnvReachGoal,
+    CrazyflowEnvTargetVelocity,
+)
 
 __all__ = ["CrazyflowEnvReachGoal", "CrazyflowEnvTargetVelocity", "CrazyflowEnvLanding"]
 
