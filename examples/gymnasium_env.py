@@ -19,7 +19,7 @@ SEED = 42
 
 envs = gymnasium.make_vec(
     "DroneReachPos-v0",
-    max_episode_steps=1000,
+    time_horizon_in_seconds=2,
     return_datatype="numpy",
     num_envs=sim_config.n_worlds,
     **sim_config,
