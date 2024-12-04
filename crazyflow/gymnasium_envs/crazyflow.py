@@ -136,6 +136,8 @@ class CrazyflowBaseEnv(VectorEnv):
 
         terminated = self.terminated
         truncated = self.truncated
+        # We need to calculate the reward before setting `self.prev_done`, because reward depends on
+        # prev_done. Moving this line to after the write to prev_done results in wrong rewards.
         reward = self.reward
         self.prev_done = self._done(terminated, truncated)
 
@@ -227,9 +229,7 @@ class CrazyflowBaseEnv(VectorEnv):
 
     @property
     def truncated(self) -> Array:
-        return self._truncated(
-            self.prev_done, self.sim.time, self.time_horizon_in_seconds, self.n_substeps
-        )
+        return self._truncated(self.prev_done, self.sim.time, self.time_horizon_in_seconds)
 
     def _reward() -> None:
         raise NotImplementedError
@@ -239,17 +239,14 @@ class CrazyflowBaseEnv(VectorEnv):
     def _terminated(dones: Array, states: SimState, contacts: Array) -> Array:
         contact = jnp.any(contacts, axis=1)
         z_coords = states.pos[..., 2]
-        below_ground = jnp.any(
-            z_coords < -0.1, axis=1
-        )  # Sanity check if we are below the ground. Should not be triggered due to collision checking
+        # Sanity check if we are below the ground. Should not be triggered due to collision checking
+        below_ground = jnp.any(z_coords < -0.1, axis=1)
         terminated = jnp.logical_or(below_ground, contact)
         return jnp.where(dones, False, terminated)
 
     @staticmethod
     @jax.jit
-    def _truncated(
-        dones: Array, time: Array, time_horizon_in_seconds: Array, n_substeps: Array
-    ) -> Array:
+    def _truncated(dones: Array, time: Array, time_horizon_in_seconds: Array) -> Array:
         truncated = time >= time_horizon_in_seconds
         return jnp.where(dones, False, truncated)
 
@@ -286,7 +283,7 @@ class CrazyflowEnvReachGoal(CrazyflowBaseEnv):
 
     @staticmethod
     @jax.jit
-    def _reward(prev_done: Array,terminated: Array, states: SimState, goal: Array) -> Array:
+    def _reward(prev_done: Array, terminated: Array, states: SimState, goal: Array) -> Array:
         norm_distance = jnp.linalg.norm(states.pos - goal, axis=2)
         reward = jnp.exp(-2.0 * norm_distance)
         reward = jnp.where(terminated, -1.0, reward)
@@ -357,6 +354,7 @@ class CrazyflowEnvTargetVelocity(CrazyflowBaseEnv):
         obs = super()._obs()
         obs["difference_to_target_vel"] = [self.target_vel - self.sim.states.vel]
         return obs
+
 
 class CrazyflowEnvLanding(CrazyflowBaseEnv):
     """JAX Gymnasium environment for Crazyflie simulation."""
