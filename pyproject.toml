@@ -69,7 +69,7 @@ target-version = "py38"
 
 [tool.ruff.lint]
 select = ["E4", "E7", "E9", "F", "I", "D", "TCH", "ANN"]
-ignore = ["ANN401"]
+ignore = ["ANN401", "ANN101"]
 fixable = ["ALL"]
 unfixable = []
 
@@ -78,7 +78,7 @@ unfixable = []
 "tests/*" = ["D100", "D103", "D104"]
 "examples/*" = ["D100", "D103"]
 # TODO: Remove once everything is stable and document
-"crazyflow/*" = ["D100", "D101", "D102", "D104", "D107"]  
+"crazyflow/*" = ["D100", "D101", "D102", "D104", "D107"]
 
 
 [tool.ruff.lint.pydocstyle]
