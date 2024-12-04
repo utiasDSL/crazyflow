@@ -357,12 +357,6 @@ class CrazyflowEnvTargetVelocity(CrazyflowBaseEnv):
         obs = super()._obs()
         obs["difference_to_target_vel"] = [self.target_vel - self.sim.states.vel]
         return obs
-<<<<<<< Updated upstream
-=======
-<<<<<<< Updated upstream
-=======
->>>>>>> Stashed changes
-
 
 class CrazyflowEnvLanding(CrazyflowBaseEnv):
     """JAX Gymnasium environment for Crazyflie simulation."""
@@ -382,17 +376,6 @@ class CrazyflowEnvLanding(CrazyflowBaseEnv):
 
     @property
     def reward(self) -> Array:
-<<<<<<< Updated upstream
-        return self._reward(self.terminated, self.sim.states, self.goal)
-
-    @staticmethod
-    @jax.jit
-    def _reward(terminated: Array, states: SimState, goal: Array) -> Array:
-        norm_distance = jnp.linalg.norm(states.pos - goal, axis=2)
-        speed = jnp.linalg.norm(states.vel, axis=2)
-        reward = jnp.exp(-2.0 * norm_distance) * jnp.exp(-2.0 * speed)
-        return jnp.where(terminated, -1.0, reward)
-=======
         return self._reward(self.prev_done, self.terminated, self.sim.states, self.goal)
 
     @staticmethod
@@ -404,7 +387,6 @@ class CrazyflowEnvLanding(CrazyflowBaseEnv):
         reward = jnp.where(terminated, -1.0, reward)
         reward = jnp.where(prev_done, 0.0, reward)
         return reward
->>>>>>> Stashed changes
 
     def reset(self, mask: Array) -> None:
         super().reset(mask)
@@ -413,7 +395,3 @@ class CrazyflowEnvLanding(CrazyflowBaseEnv):
         obs = super()._get_obs()
         obs["difference_to_goal"] = [self.goal - self.sim.states.pos]
         return obs
-<<<<<<< Updated upstream
-=======
->>>>>>> Stashed changes
->>>>>>> Stashed changes
