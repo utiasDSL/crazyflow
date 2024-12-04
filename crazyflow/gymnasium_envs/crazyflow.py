@@ -47,7 +47,6 @@ class CrazyflowBaseEnv(VectorEnv):
     def __init__(
         self,
         *,
-        jax_random_key: int,  # required for jax random number generator
         num_envs: int = 1,  # required for VectorEnv
         time_horizon_in_seconds: int = 10,
         return_datatype: Literal["numpy", "jax"] = "jax",
@@ -56,7 +55,6 @@ class CrazyflowBaseEnv(VectorEnv):
         """Summary: Initializes the CrazyflowEnv.
 
         Args:
-            jax_random_key: The random key for the jax random number generator.
             num_envs: The number of environments to run in parallel.
             time_horizon_in_seconds: The time horizon after which episodes are truncated.
             return_datatype: The data type for returned arrays, either "numpy" or "jax". If "numpy",
@@ -66,7 +64,9 @@ class CrazyflowBaseEnv(VectorEnv):
         """
         assert num_envs == kwargs["n_worlds"], "num_envs must be equal to n_worlds"
 
-        self.jax_key = jax.random.key(jax_random_key)
+        # Set random initial seed for JAX. For seeding, people should use the reset function
+        jax_seed = int(self.np_random.random() * 2**32)
+        self.jax_key = jax.random.key(jax_seed)
 
         self.num_envs = num_envs
         self.return_datatype = return_datatype
@@ -85,7 +85,7 @@ class CrazyflowBaseEnv(VectorEnv):
                 "Simulation frequency should be a multiple of control frequency. We can handle the other case, but we highly recommend to change the simulation frequency to a multiple of the control frequency."
             )
 
-        self.n_substeps = jnp.array(self.sim.freq // self.sim.control_freq)
+        self.n_substeps = self.sim.freq // self.sim.control_freq
 
         self.prev_done = jnp.zeros((self.sim.n_worlds), dtype=jnp.bool_, device=self.device)
 
@@ -113,44 +113,40 @@ class CrazyflowBaseEnv(VectorEnv):
 
     def step(self, action: Array) -> tuple[Array, Array, Array, Array, dict]:
         assert self.action_space.contains(action), f"{action!r} ({type(action)}) invalid"
-        action = jnp.array(action, device=self.device).reshape(
-            (self.sim.n_worlds, self.sim.n_drones, -1)
-        )
-
+        action = self._sanitize_action(action, self.sim.n_worlds, self.sim.n_drones, self.device)
         action = self._rescale_action(action, self.sim.control)
 
-        if self.sim.control == Control.state:
-            raise NotImplementedError(
-                "Possibly you want to control state differences instead of absolute states"
-            )
-            self.sim.state_control(action)
-        elif self.sim.control == Control.attitude:
-            self.sim.attitude_control(action)
-        elif self.sim.control == Control.thrust:
-            self.sim.thrust_control(action)
-        else:
-            raise ValueError(f"Invalid control type {self.sim.control}")
+        match self.sim.control:
+            case Control.state:
+                raise NotImplementedError(
+                    "Possibly you want to control state differences instead of absolute states"
+                )
+            case Control.attitude:
+                self.sim.attitude_control(action)
+            case Control.thrust:
+                self.sim.thrust_control(action)
+            case _:
+                raise ValueError(f"Invalid control type {self.sim.control}")
 
         for _ in range(self.n_substeps):
             self.sim.step()
-
         # Reset all environments which terminated or were truncated in the last step
         if jnp.any(self.prev_done):
             self.reset(mask=self.prev_done)
 
-        reward = self.reward
         terminated = self.terminated
         truncated = self.truncated
+        self.prev_done = self._done(terminated, truncated)
 
-        self.prev_done = jnp.logical_or(terminated, truncated)
+        convert = self.return_datatype == "numpy"
+        terminated = maybe_to_numpy(terminated, convert)
+        truncated = maybe_to_numpy(truncated, convert)
+        return self._obs(), self.reward, terminated, truncated, {}
 
-        return (
-            self._get_obs(),
-            reward,
-            maybe_to_numpy(terminated, self.return_datatype == "numpy"),
-            maybe_to_numpy(truncated, self.return_datatype == "numpy"),
-            {},
-        )
+    @staticmethod
+    @partial(jax.jit, static_argnames=["n_worlds", "n_drones", "device"])
+    def _sanitize_action(action: Array, n_worlds: int, n_drones: int, device: str) -> Array:
+        return jnp.array(action, device=device).reshape((n_worlds, n_drones, -1))
 
     @staticmethod
     @partial(jax.jit, static_argnames=["control_type"])
@@ -169,14 +165,19 @@ class CrazyflowBaseEnv(VectorEnv):
             raise NotImplementedError(
                 f"Rescaling not implemented for control type '{control_type}'"
             )
-
         return action * params.scale_factor + params.mean
+
+    @staticmethod
+    @jax.jit
+    def _done(terminated: Array, truncated: Array) -> Array:
+        return jnp.logical_or(terminated, truncated)
 
     def reset_all(
         self, *, seed: int | None = None, options: dict | None = None
     ) -> tuple[dict[str, Array], dict]:
         super().reset(seed=seed)
-
+        if seed is not None:
+            self.jax_key = jax.random.key(seed)
         # Resets ALL (!) environments
         if options is None:
             options = {}
@@ -185,7 +186,7 @@ class CrazyflowBaseEnv(VectorEnv):
 
         self.prev_done = jnp.zeros((self.sim.n_worlds), dtype=jnp.bool_)
 
-        return self._get_obs(), {}
+        return self._obs(), {}
 
     def reset(self, mask: Array) -> None:
         self.sim.reset(mask=mask)
@@ -254,16 +255,13 @@ class CrazyflowBaseEnv(VectorEnv):
     def render(self):
         self.sim.render()
 
-    def _get_obs(self) -> dict[str, Array]:
-        obs = {
-            state: maybe_to_numpy(
-                getattr(self.sim.states, state)[..., 2]
-                if state == "pos"
-                else getattr(self.sim.states, state),
-                self.return_datatype == "numpy",
-            )
-            for state in self.states_to_include_in_obs
-        }
+    def _obs(self) -> dict[str, Array]:
+        convert = self.return_datatype == "numpy"
+        fields = self.states_to_include_in_obs
+        states = [maybe_to_numpy(getattr(self.sim.states, field), convert) for field in fields]
+        obs = {k: v for k, v in zip(fields, states)}
+        if "pos" in obs:
+            obs["pos"] = obs["pos"][..., 2]
         return obs
 
 
@@ -279,8 +277,7 @@ class CrazyflowEnvReachGoal(CrazyflowBaseEnv):
             -jnp.inf, jnp.inf, shape=(self._obs_size,), dtype=jnp.float32
         )
         self.observation_space = batch_space(self.single_observation_space, self.sim.n_worlds)
-
-        self.goal = jnp.zeros((kwargs["n_worlds"], 3), dtype=jnp.float32)
+        self.goal = jnp.zeros((kwargs["n_worlds"], 3), dtype=jnp.float32, device=self.device)
 
     @property
     def reward(self) -> Array:
@@ -306,8 +303,8 @@ class CrazyflowEnvReachGoal(CrazyflowBaseEnv):
         )
         self.goal = self.goal.at[mask].set(new_goals[mask])
 
-    def _get_obs(self) -> dict[str, Array]:
-        obs = super()._get_obs()
+    def _obs(self) -> dict[str, Array]:
+        obs = super()._obs()
         obs["difference_to_goal"] = [self.goal - self.sim.states.pos]
         return obs
 
@@ -351,8 +348,8 @@ class CrazyflowEnvTargetVelocity(CrazyflowBaseEnv):
         )
         self.target_vel = self.target_vel.at[mask].set(new_target_vel[mask])
 
-    def _get_obs(self) -> dict[str, Array]:
-        obs = super()._get_obs()
+    def _obs(self) -> dict[str, Array]:
+        obs = super()._obs()
         obs["difference_to_target_vel"] = [self.target_vel - self.sim.states.vel]
         return obs
 
