@@ -6,6 +6,7 @@ from jax.scipy.spatial.transform import Rotation as R
 
 from crazyflow.constants import ARM_LEN, GRAVITY, SIGN_MIX_MATRIX
 from crazyflow.control.controller import KF, KM
+from crazyflow.sim.structs import SimControls, SimParams, SimState
 
 SYS_ID_PARAMS = {
     "acc_k1": 20.91,
@@ -69,6 +70,30 @@ def identified_dynamics(
     return next_pos, next_quat, next_vel, next_rpy_rates
 
 
+def identified_dynamics_dx(
+    state: SimState, controls: SimControls, dt: float
+) -> tuple[Array, Array]:
+    """Derivative of the identified dynamics state."""
+    collective_thrust, attitude = controls.attitude[0], controls.attitude[1:]
+    rot = R.from_quat(state.quat)
+    thrust = rot.apply(jnp.array([0, 0, collective_thrust]))
+    drift = rot.apply(jnp.array([0, 0, 1]))
+    a1, a2 = SYS_ID_PARAMS["acc_k1"], SYS_ID_PARAMS["acc_k2"]
+    acc = thrust * a1 + drift * a2 - jnp.array([0, 0, GRAVITY])
+    # rpy_rates_deriv have no real meaning in this context, since the identified dynamics set the
+    # rpy_rates to the commanded values directly. However, since we use a unified integration
+    # interface for all physics models, we cannot access states directly. Instead, we calculate
+    # which rpy_rates_deriv would have resulted in the desired rpy_rates, and return that.
+    roll_cmd, pitch_cmd, yaw_cmd = attitude
+    rpy = rot.as_euler("xyz")
+    roll_rate = SYS_ID_PARAMS["roll_alpha"] * rpy[0] + SYS_ID_PARAMS["roll_beta"] * roll_cmd
+    pitch_rate = SYS_ID_PARAMS["pitch_alpha"] * rpy[1] + SYS_ID_PARAMS["pitch_beta"] * pitch_cmd
+    yaw_rate = SYS_ID_PARAMS["yaw_alpha"] * rpy[2] + SYS_ID_PARAMS["yaw_beta"] * yaw_cmd
+    rpy_rates = jnp.array([roll_rate, pitch_rate, yaw_rate])
+    rpy_rates_deriv = (rpy_rates - rot.apply(state.rpy_rates, inverse=True)) / dt
+    return acc, rpy_rates_deriv
+
+
 def analytical_dynamics(
     forces: Array,
     torques: Array,
@@ -91,12 +116,23 @@ def analytical_dynamics(
     # Update state.
     next_pos = pos + vel * dt
     next_vel = vel + acc * dt
-    next_rot = R.from_euler("xyz", R.from_quat(quat).as_euler("xyz") + rpy_rates_local * dt)
+    next_rot = R.from_euler("xyz", rot.as_euler("xyz") + rpy_rates_local * dt)
     next_quat = next_rot.as_quat()
     # Convert rpy rates back to global frame
     next_rpy_rates_local = rpy_rates_local + rpy_rates_deriv_local * dt
     next_rpy_rates = next_rot.apply(next_rpy_rates_local)  # Always give rpy rates in world frame
     return next_pos, next_quat, next_vel, next_rpy_rates
+
+
+def analytical_dynamics_dx(
+    forces: Array, torques: Array, state: SimState, params: SimParams
+) -> tuple[Array, Array]:
+    """Derivative of the analytical dynamics state."""
+    rot = R.from_quat(state.quat)
+    torques_local = rot.apply(torques, inverse=True)
+    acc = forces / params.mass - jnp.array([0, 0, GRAVITY])
+    rpy_rates_deriv = rot.apply(params.J_INV @ torques_local)
+    return acc, rpy_rates_deriv
 
 
 def rpms2collective_wrench(
