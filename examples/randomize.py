@@ -21,6 +21,8 @@ def main():
     randomized_mass = mass + np.random.uniform(-0.005, 0.005, size=(sim.n_worlds, sim.n_drones))
 
     randomize_mass(sim, randomized_mass, mask)
+    # Note: The mask is optional. We can also randomize all worlds at once
+    randomize_mass(sim, randomized_mass)
     randomize_inertia(sim, randomized_j, mask)
 
     cmd = np.zeros((sim.n_worlds, sim.n_drones, 13))
