@@ -48,7 +48,7 @@ class CrazyflowBaseEnv(VectorEnv):
         self,
         *,
         num_envs: int = 1,  # required for VectorEnv
-        max_episode_steps: int = 1000,
+        time_horizon_in_seconds: int = 10,
         return_datatype: Literal["numpy", "jax"] = "jax",
         **kwargs: dict,
     ):
@@ -56,7 +56,7 @@ class CrazyflowBaseEnv(VectorEnv):
 
         Args:
             num_envs: The number of environments to run in parallel.
-            max_episode_steps: The maximum number of steps per episode.
+            time_horizon_in_seconds: The time horizon after which episodes are truncated.
             return_datatype: The data type for returned arrays, either "numpy" or "jax". If "numpy",
                 the returned arrays will be numpy arrays on the CPU. If "jax", the returned arrays
                 will be jax arrays on the "device" specified for the simulation.
@@ -71,7 +71,9 @@ class CrazyflowBaseEnv(VectorEnv):
         self.num_envs = num_envs
         self.return_datatype = return_datatype
         self.device = jax.devices(kwargs["device"])[0]
-        self.max_episode_steps = max_episode_steps
+        self.time_horizon_in_seconds = jnp.array(
+            time_horizon_in_seconds, dtype=jnp.int32, device=self.device
+        )
 
         self.sim = Sim(**kwargs)
 
@@ -134,12 +136,15 @@ class CrazyflowBaseEnv(VectorEnv):
 
         terminated = self.terminated
         truncated = self.truncated
+        # We need to calculate the reward before setting `self.prev_done`, because reward depends on
+        # prev_done. Moving this line to after the write to prev_done results in wrong rewards.
+        reward = self.reward
         self.prev_done = self._done(terminated, truncated)
 
         convert = self.return_datatype == "numpy"
         terminated = maybe_to_numpy(terminated, convert)
         truncated = maybe_to_numpy(truncated, convert)
-        return self._obs(), self.reward, terminated, truncated, {}
+        return self._obs(), reward, terminated, truncated, {}
 
     @staticmethod
     @partial(jax.jit, static_argnames=["n_worlds", "n_drones", "device"])
@@ -216,7 +221,7 @@ class CrazyflowBaseEnv(VectorEnv):
 
     @property
     def reward(self) -> Array:
-        return self._reward(self.terminated, self.sim.states)
+        return self._reward(self.prev_done, self.terminated, self.sim.states)
 
     @property
     def terminated(self) -> Array:
@@ -224,9 +229,7 @@ class CrazyflowBaseEnv(VectorEnv):
 
     @property
     def truncated(self) -> Array:
-        return self._truncated(
-            self.prev_done, self.sim.steps, self.max_episode_steps, self.n_substeps
-        )
+        return self._truncated(self.prev_done, self.sim.time, self.time_horizon_in_seconds)
 
     def _reward() -> None:
         raise NotImplementedError
@@ -238,13 +241,13 @@ class CrazyflowBaseEnv(VectorEnv):
         z_coords = states.pos[..., 2]
         # Sanity check if we are below the ground. Should not be triggered due to collision checking
         below_ground = jnp.any(z_coords < -0.1, axis=1)
-        terminated = jnp.logical_or(below_ground, contact)  # no termination condition
+        terminated = jnp.logical_or(below_ground, contact)
         return jnp.where(dones, False, terminated)
 
     @staticmethod
-    @partial(jax.jit, static_argnames=["max_episode_steps", "n_substeps"])
-    def _truncated(dones: Array, steps: Array, max_episode_steps: int, n_substeps: int) -> Array:
-        truncated = steps / n_substeps >= max_episode_steps
+    @jax.jit
+    def _truncated(dones: Array, time: Array, time_horizon_in_seconds: Array) -> Array:
+        truncated = time >= time_horizon_in_seconds
         return jnp.where(dones, False, truncated)
 
     def render(self):
@@ -276,14 +279,16 @@ class CrazyflowEnvReachGoal(CrazyflowBaseEnv):
 
     @property
     def reward(self) -> Array:
-        return self._reward(self.terminated, self.sim.states, self.goal)
+        return self._reward(self.prev_done, self.terminated, self.sim.states, self.goal)
 
     @staticmethod
     @jax.jit
-    def _reward(terminated: Array, states: SimState, goal: Array) -> Array:
+    def _reward(prev_done: Array, terminated: Array, states: SimState, goal: Array) -> Array:
         norm_distance = jnp.linalg.norm(states.pos - goal, axis=2)
         reward = jnp.exp(-2.0 * norm_distance)
-        return jnp.where(terminated, -1.0, reward)
+        reward = jnp.where(terminated, -1.0, reward)
+        reward = jnp.where(prev_done, 0.0, reward)
+        return reward
 
     def reset(self, mask: Array) -> None:
         super().reset(mask)
@@ -321,14 +326,16 @@ class CrazyflowEnvTargetVelocity(CrazyflowBaseEnv):
 
     @property
     def reward(self) -> Array:
-        return self._reward(self.terminated, self.sim.states, self.target_vel)
+        return self._reward(self.prev_done, self.terminated, self.sim.states, self.target_vel)
 
     @staticmethod
     @jax.jit
-    def _reward(terminated: Array, states: SimState, target_vel: Array) -> Array:
+    def _reward(prev_done: Array, terminated: Array, states: SimState, target_vel: Array) -> Array:
         norm_distance = jnp.linalg.norm(states.vel - target_vel, axis=2)
         reward = jnp.exp(-norm_distance)
-        return jnp.where(terminated, -1.0, reward)
+        reward = jnp.where(terminated, -1.0, reward)
+        reward = jnp.where(prev_done, 0.0, reward)
+        return reward
 
     def reset(self, mask: Array) -> None:
         super().reset(mask)
@@ -346,4 +353,43 @@ class CrazyflowEnvTargetVelocity(CrazyflowBaseEnv):
     def _obs(self) -> dict[str, Array]:
         obs = super()._obs()
         obs["difference_to_target_vel"] = [self.target_vel - self.sim.states.vel]
+        return obs
+
+
+class CrazyflowEnvLanding(CrazyflowBaseEnv):
+    """JAX Gymnasium environment for Crazyflie simulation."""
+
+    def __init__(self, **kwargs: dict):
+        assert kwargs["n_drones"] == 1, "Currently only supported for one drone"
+
+        super().__init__(**kwargs)
+        self._obs_size += 3  # difference to goal position
+        self.single_observation_space = spaces.Box(
+            -jnp.inf, jnp.inf, shape=(self._obs_size,), dtype=jnp.float32
+        )
+        self.observation_space = batch_space(self.single_observation_space, self.sim.n_worlds)
+
+        self.goal = jnp.zeros((kwargs["n_worlds"], 3), dtype=jnp.float32)
+        self.goal = self.goal.at[..., 2].set(0.1)  # 10cm above ground
+
+    @property
+    def reward(self) -> Array:
+        return self._reward(self.prev_done, self.terminated, self.sim.states, self.goal)
+
+    @staticmethod
+    @jax.jit
+    def _reward(prev_done: Array, terminated: Array, states: SimState, goal: Array) -> Array:
+        norm_distance = jnp.linalg.norm(states.pos - goal, axis=2)
+        speed = jnp.linalg.norm(states.vel, axis=2)
+        reward = jnp.exp(-2.0 * norm_distance) * jnp.exp(-2.0 * speed)
+        reward = jnp.where(terminated, -1.0, reward)
+        reward = jnp.where(prev_done, 0.0, reward)
+        return reward
+
+    def reset(self, mask: Array) -> None:
+        super().reset(mask)
+
+    def _get_obs(self) -> dict[str, Array]:
+        obs = super()._get_obs()
+        obs["difference_to_goal"] = [self.goal - self.sim.states.pos]
         return obs
