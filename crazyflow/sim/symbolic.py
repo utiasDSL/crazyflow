@@ -18,6 +18,7 @@ differentiation and optimization.
 
 import casadi as cs
 from casadi import MX
+from numpy.typing import NDArray
 
 from crazyflow.constants import ARM_LEN, GRAVITY
 from crazyflow.control.controller import KF, KM
@@ -91,8 +92,8 @@ class SymbolicModel:
             "dg", [self.x_sym, self.u_sym], [self.dgdx, self.dgdu], ["x", "u"], ["dgdx", "dgdu"]
         )
         # Evaluation point for linearization.
-        self.x_eval = cs.MX.sym("x_eval", self.nx, 1)
-        self.u_eval = cs.MX.sym("u_eval", self.nu, 1)
+        self.x_eval = MX.sym("x_eval", self.nx, 1)
+        self.u_eval = MX.sym("u_eval", self.nu, 1)
         # Linearized dynamics model.
         self.x_dot_linear = (
             self.x_dot
@@ -143,43 +144,34 @@ class SymbolicModel:
         self.loss = cs.Function("loss", l_inputs, l_outputs, l_inputs_str, l_outputs_str)
 
 
-def symbolic(sim: Sim, dt: float) -> SymbolicModel:
+def symbolic(mass: float, J: NDArray, dt: float) -> SymbolicModel:
     """Create symbolic (CasADi) models for dynamics, observation, and cost of a quadcopter.
 
     Returns:
         The CasADi symbolic model of the environment.
     """
-    m, g = sim.params.mass[0,0,1], GRAVITY # select first drone in first world
     # Define states.
-    z = cs.MX.sym("z")
-    z_dot = cs.MX.sym("z_dot")
+    z = MX.sym("z")
+    z_dot = MX.sym("z_dot")
 
     # Set up the dynamics model for a 3D quadrotor.
     nx, nu = 12, 4
-    Ixx, Iyy, Izz = sim.params.J[0,0].diagonal() # select first drone in first world
+    Ixx, Iyy, Izz = J.diagonal()
     J = cs.blockcat([[Ixx, 0.0, 0.0], [0.0, Iyy, 0.0], [0.0, 0.0, Izz]])
     Jinv = cs.blockcat([[1.0 / Ixx, 0.0, 0.0], [0.0, 1.0 / Iyy, 0.0], [0.0, 0.0, 1.0 / Izz]])
     gamma = KM / KF
-    x = cs.MX.sym("x")
-    y = cs.MX.sym("y")
-    phi = cs.MX.sym("phi")  # Roll
-    theta = cs.MX.sym("theta")  # Pitch
-    psi = cs.MX.sym("psi")  # Yaw
-    x_dot = cs.MX.sym("x_dot")
-    y_dot = cs.MX.sym("y_dot")
-    p = cs.MX.sym("p")  # Body frame roll rate
-    q = cs.MX.sym("q")  # body frame pith rate
-    r = cs.MX.sym("r")  # body frame yaw rate
+    # System state variables
+    x, y = MX.sym("x"), MX.sym("y")
+    x_dot, y_dot = MX.sym("x_dot"), MX.sym("y_dot")
+    phi, theta, psi = MX.sym("phi"), MX.sym("theta"), MX.sym("psi")
+    p, q, r = MX.sym("p"), MX.sym("q"), MX.sym("r")
     # Rotation matrix transforming a vector in the body frame to the world frame. PyBullet Euler
     # angles use the SDFormat for rotation matrices.
     Rob = csRotXYZ(phi, theta, psi)
     # Define state variables.
     X = cs.vertcat(x, x_dot, y, y_dot, z, z_dot, phi, theta, psi, p, q, r)
     # Define inputs.
-    f1 = cs.MX.sym("f1")
-    f2 = cs.MX.sym("f2")
-    f3 = cs.MX.sym("f3")
-    f4 = cs.MX.sym("f4")
+    f1, f2, f3, f4 = MX.sym("f1"), MX.sym("f2"), MX.sym("f3"), MX.sym("f4")
     U = cs.vertcat(f1, f2, f3, f4)
 
     # From Ch. 2 of Luis, Carlos, and Jérôme Le Ny. "Design of a trajectory tracking
@@ -188,7 +180,7 @@ def symbolic(sim: Sim, dt: float) -> SymbolicModel:
     # Defining the dynamics function.
     # We are using the velocity of the base wrt to the world frame expressed in the world frame.
     # Note that the reference expresses this in the body frame.
-    oVdot_cg_o = Rob @ cs.vertcat(0, 0, f1 + f2 + f3 + f4) / m - cs.vertcat(0, 0, g)
+    oVdot_cg_o = Rob @ cs.vertcat(0, 0, f1 + f2 + f3 + f4) / mass - cs.vertcat(0, 0, GRAVITY)
     pos_ddot = oVdot_cg_o
     pos_dot = cs.vertcat(x_dot, y_dot, z_dot)
     Mb = cs.vertcat(
@@ -211,10 +203,8 @@ def symbolic(sim: Sim, dt: float) -> SymbolicModel:
     Y = cs.vertcat(x, x_dot, y, y_dot, z, z_dot, phi, theta, psi, p, q, r)
 
     # Define cost (quadratic form).
-    Q = cs.MX.sym("Q", nx, nx)
-    R = cs.MX.sym("R", nu, nu)
-    Xr = cs.MX.sym("Xr", nx, 1)
-    Ur = cs.MX.sym("Ur", nu, 1)
+    Q, R = MX.sym("Q", nx, nx), MX.sym("R", nu, nu)
+    Xr, Ur = MX.sym("Xr", nx, 1), MX.sym("Ur", nu, 1)
     cost_func = 0.5 * (X - Xr).T @ Q @ (X - Xr) + 0.5 * (U - Ur).T @ R @ (U - Ur)
     # Define dynamics and cost dictionaries.
     dynamics = {"dyn_eqn": X_dot, "obs_eqn": Y, "vars": {"X": X, "U": U}}
@@ -222,7 +212,24 @@ def symbolic(sim: Sim, dt: float) -> SymbolicModel:
     return SymbolicModel(dynamics=dynamics, cost=cost, dt=dt)
 
 
-def csRotXYZ(phi: float, theta: float, psi: float) -> cs.MX:
+def symbolic_from_sim(sim: Sim) -> SymbolicModel:
+    """Create a symbolic model from a Sim instance.
+
+    Args:
+        sim: A Sim instance.
+
+    Note:
+        This only returns a model for a single drone with nominal parameters.
+
+    Warning:
+        The model is expected to deviate from the true dynamics when the sim parameters are
+        randomized.
+    """
+    mass, J = sim.defaults["params"].mass[0, 0], sim.defaults["params"].J[0, 0]
+    return symbolic(mass, J, 1 / sim.freq)
+
+
+def csRotXYZ(phi: float, theta: float, psi: float) -> MX:
     """Create a rotation matrix from euler angles.
 
     This represents the extrinsic X-Y-Z (or quivalently the intrinsic Z-Y-X (3-2-1)) euler angle

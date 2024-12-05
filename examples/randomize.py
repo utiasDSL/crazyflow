@@ -1,6 +1,7 @@
 import numpy as np
 
-from crazyflow.control.controller import MASS, Control, J
+from crazyflow.constants import MASS, J
+from crazyflow.control.controller import Control
 from crazyflow.randomize import randomize_inertia, randomize_mass
 from crazyflow.sim.core import Sim
 from crazyflow.utils import grid_2d
