@@ -26,7 +26,6 @@ def default_state(n_worlds: int, n_drones: int, device: Device) -> SimState:
 @dataclass
 class SimControls:
     state: Array  # (N, M, 13)
-    staged_state: Array  # (N, M, 13)
     attitude: Array  # (N, M, 4)
     staged_attitude: Array  # (N, M, 4)
     thrust: Array  # (N, M, 4)
@@ -40,7 +39,6 @@ def default_controls(n_worlds: int, n_drones: int, device: Device) -> SimControl
     """Create a default set of controls for the simulation."""
     return SimControls(
         state=jnp.zeros((n_worlds, n_drones, 13), device=device),
-        staged_state=jnp.zeros((n_worlds, n_drones, 13), device=device),
         attitude=jnp.zeros((n_worlds, n_drones, 4), device=device),
         staged_attitude=jnp.zeros((n_worlds, n_drones, 4), device=device),
         thrust=jnp.zeros((n_worlds, n_drones, 4), device=device),

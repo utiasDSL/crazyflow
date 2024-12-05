@@ -11,7 +11,8 @@ import jax.numpy as jnp
 from jax import Array
 from jax.scipy.spatial.transform import Rotation as R
 
-from crazyflow.control.controller import attitude2rpm, state2attitude
+from crazyflow.control.controller import attitude2rpm as attitude2rpm_ctrl
+from crazyflow.control.controller import state2attitude as state2attitude_ctrl
 from crazyflow.sim.physics import analytical_dynamics, identified_dynamics, rpms2collective_wrench
 from crazyflow.sim.structs import SimControls, SimParams, SimState
 
@@ -66,9 +67,7 @@ def fused_analytical_dynamics(
 @jax.jit
 @partial(jax.vmap, in_axes=(0, 0, 0, None))
 @partial(jax.vmap, in_axes=(None, 0, 0, None))
-def fused_masked_state2attitude(
-    mask: Array, state: SimState, cmd: SimControls, dt: float
-) -> SimControls:
+def state2attitude(mask: Array, state: SimState, cmd: SimControls, dt: float) -> SimControls:
     """Compute the next desired collective thrust and roll/pitch/yaw of the drone.
 
     Note:
@@ -86,7 +85,7 @@ def fused_masked_state2attitude(
         dt: The simulation time step.
     """
     des_pos, des_vel, des_yaw = cmd.state[:3], cmd.state[3:6], cmd.state[9].reshape((1,))
-    attitude, pos_err_i = state2attitude(
+    attitude, pos_err_i = state2attitude_ctrl(
         state.pos, state.vel, state.quat, des_pos, des_vel, des_yaw, cmd.pos_err_i, dt
     )
     # Non-branching selection depending on the mask. XLA should be able to optimize a short path
@@ -99,9 +98,7 @@ def fused_masked_state2attitude(
 @jax.jit
 @partial(jax.vmap, in_axes=(0, 0, 0, None))
 @partial(jax.vmap, in_axes=(None, 0, 0, None))
-def fused_masked_attitude2rpm(
-    mask: Array, state: SimState, cmd: SimControls, dt: float
-) -> SimControls:
+def attitude2rpm(mask: Array, state: SimState, cmd: SimControls, dt: float) -> SimControls:
     """Compute the next desired RPMs of the drone.
 
     Note:
@@ -114,7 +111,7 @@ def fused_masked_attitude2rpm(
         cmd: The current simulation controls.
         dt: The simulation time step.
     """
-    rpms, rpy_err_i = attitude2rpm(cmd.attitude, state.quat, cmd.last_rpy, cmd.rpy_err_i, dt)
+    rpms, rpy_err_i = attitude2rpm_ctrl(cmd.attitude, state.quat, cmd.last_rpy, cmd.rpy_err_i, dt)
     # Non-branching selection depending on the mask. See fused_masked_state2attitude for more info.
     rpms = jnp.where(mask, rpms, cmd.rpms)
     rpy_err_i = jnp.where(mask, rpy_err_i, cmd.rpy_err_i)
