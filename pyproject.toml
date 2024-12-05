@@ -26,6 +26,7 @@ dependencies = [
     "einops",
     "flax",
     "ml_collections",
+    "casadi",
 ]
 
 [project.optional-dependencies]
