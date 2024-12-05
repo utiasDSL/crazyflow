@@ -11,7 +11,8 @@ from gymnasium.envs.mujoco.mujoco_rendering import MujocoRenderer
 from jax import Array
 from mujoco.mjx import Data, Model
 
-from crazyflow.control.controller import J_INV, Control, Controller, J
+from crazyflow.constants import J_INV, J
+from crazyflow.control.controller import Control, Controller
 from crazyflow.exception import ConfigError, NotInitializedError
 from crazyflow.sim.fused import (
     fused_analytical_dynamics,

@@ -3,7 +3,8 @@ import numpy as np
 import pytest
 from flax.serialization import to_state_dict
 
-from crazyflow.control.controller import Control, J
+from crazyflow.constants import J
+from crazyflow.control.controller import Control
 from crazyflow.randomize import randomize_inertia, randomize_mass
 from crazyflow.sim.core import Sim
 from tests.unit.test_sim import skip_unavailable_device
