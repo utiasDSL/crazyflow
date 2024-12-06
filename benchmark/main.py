@@ -52,8 +52,7 @@ def profile_gym_env_step(sim_config: config_dict.ConfigDict, n_steps: int, devic
 
     # Action for going up (in attitude control)
     action = np.zeros((sim_config.n_worlds, 4), dtype=np.float32)
-    action[..., 0] = -0.3
-
+    action[..., 0] = 0.3
     # Step through env once to ensure JIT compilation
     envs.reset_all(seed=42)
     envs.step(action)

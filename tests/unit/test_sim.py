@@ -34,7 +34,7 @@ def skip_unavailable_device(device: str):
 @pytest.mark.parametrize("control", Control)
 @pytest.mark.parametrize("controller", Controller)
 @pytest.mark.parametrize("n_worlds", [1, 2])
-def test_sim_creation(
+def test_sim_init(
     physics: Physics, device: str, control: Control, controller: Controller, n_worlds: int
 ):
     n_drones = 1
@@ -52,6 +52,10 @@ def test_sim_creation(
 
     if n_drones * n_worlds > 1 and controller == Controller.pycffirmware:
         with pytest.raises(ConfigError):
+            create_sim()
+        return
+    if physics != Physics.analytical and control == Control.thrust:
+        with pytest.raises(ConfigError):  # TODO: Remove when supported with sys_id
             create_sim()
         return
     sim = create_sim()
@@ -194,6 +198,8 @@ def test_sim_step(
     skip_unavailable_device(device)
     if n_drones * n_worlds > 1 and controller == Controller.pycffirmware:
         return  # PyCFFirmware does not support multiple drones
+    if physics != Physics.analytical and control == Control.thrust:
+        return  # TODO: Remove when supported with sys_id
     sim = Sim(
         n_worlds=n_worlds,
         n_drones=n_drones,
@@ -205,8 +211,8 @@ def test_sim_step(
     try:
         for _ in range(2):
             sim.step()
-    except NotImplementedError:
-        pytest.skip("Physics not implemented")  # TODO: Remove once MuJoCo is supported
+    except NotImplementedError:  # TODO: Remove once MuJoCo is supported
+        pytest.skip("Physics not implemented")
 
 
 @pytest.mark.unit

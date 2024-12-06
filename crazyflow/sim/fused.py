@@ -11,7 +11,7 @@ import jax.numpy as jnp
 from jax import Array
 from jax.scipy.spatial.transform import Rotation as R
 
-from crazyflow.control.controller import attitude2rpm, state2attitude
+from crazyflow.control.controller import attitude2rpm, pwm2rpm, state2attitude, thrust2pwm
 from crazyflow.sim.physics import analytical_dynamics, identified_dynamics, rpms2collective_wrench
 from crazyflow.sim.structs import SimControls, SimParams, SimState
 
@@ -141,3 +141,17 @@ def fused_rpms2collective_wrench(
     """
     forces, torques = rpms2collective_wrench(cmd.rpms, states.quat, states.rpy_rates, params.J)
     return forces, torques
+
+
+@jax.jit
+@partial(jax.vmap, in_axes=(0, 0))
+@partial(jax.vmap, in_axes=(None, 0))
+def fused_masked_thrust2rpm(mask: Array, cmd: SimControls) -> SimControls:
+    """Convert thrust to RPMs.
+
+    Note:
+        Fused version of `crazyflow.control.controller.thrust2rpm`. See `crazyflow.sim.fused` for
+        more details.
+    """
+    rpms = jnp.where(mask, pwm2rpm(thrust2pwm(cmd.thrust)), cmd.rpms)
+    return cmd.replace(rpms=rpms)

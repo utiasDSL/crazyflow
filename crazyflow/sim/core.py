@@ -19,6 +19,7 @@ from crazyflow.sim.fused import (
     fused_identified_dynamics,
     fused_masked_attitude2rpm,
     fused_masked_state2attitude,
+    fused_masked_thrust2rpm,
     fused_rpms2collective_wrench,
 )
 from crazyflow.sim.physics import Physics
@@ -55,6 +56,8 @@ class Sim:
         # the same time. We raise if the user tries a combination of pycffirmware and drones > 1.
         if controller == Controller.pycffirmware and n_worlds * n_drones != 1:
             raise ConfigError("pycffirmware controller is only supported for single drone sims")
+        if control == Control.thrust and physics != Physics.analytical:
+            raise ConfigError("Thrust control is only supported for analytical physics")
         # Allocate internal states and controls for analytical and sys_id physics.
         self.n_worlds = n_worlds
         self.n_drones = n_drones
@@ -162,7 +165,10 @@ class Sim:
         self.controls = self._state_control(cmd, self.controls, self.device)
 
     def thrust_control(self, cmd: Array):
-        raise NotImplementedError
+        """Set the desired thrust for all drones in all worlds."""
+        assert cmd.shape == (self.n_worlds, self.n_drones, 4), "Command shape mismatch"
+        assert self.control == Control.thrust, "Thrust control is not enabled by the sim config"
+        self.controls = self._thrust_control(cmd, self.controls, self.device)
 
     def render(self):
         if self.viewer is None:
@@ -240,6 +246,8 @@ class Sim:
 
     def _step_emulate_firmware(self) -> SimControls:
         mask = self.controllable
+        if self.control == Control.thrust:
+            return fused_masked_thrust2rpm(mask, self.controls)
         if self.control == Control.state:
             self.controls = self._masked_state_controls_update(mask, self.controls)
             self.controls = fused_masked_state2attitude(mask, self.states, self.controls, self.dt)
@@ -321,6 +329,11 @@ class Sim:
     @partial(jax.jit, static_argnames="device")
     def _state_control(cmd: Array, controls: SimControls, device: str) -> SimControls:
         return controls.replace(staged_state=jnp.array(cmd, device=device))
+
+    @staticmethod
+    @partial(jax.jit, static_argnames="device")
+    def _thrust_control(cmd: Array, controls: SimControls, device: str) -> SimControls:
+        return controls.replace(thrust=jnp.array(cmd, device=device))
 
     @staticmethod
     @jax.jit
