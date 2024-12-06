@@ -1,5 +1,6 @@
 import jax.numpy as jnp
-from flax.struct import dataclass
+from flax.struct import dataclass, field
+import jax
 from jax import Array, Device
 
 
@@ -10,6 +11,8 @@ class SimState:
     vel: Array  # (N, M, 3)
     ang_vel: Array  # (N, M, 3)
     rpy_rates: Array  # (N, M, 3)
+    forces: Array  # (N, M, 5, 3)  # 5 force points: CoM and 4 motor positions
+    torques: Array  # (N, M, 5, 3)  # 5 torque points: CoM and 4 motor positions
 
 
 def default_state(n_worlds: int, n_drones: int, device: Device) -> SimState:
@@ -20,7 +23,17 @@ def default_state(n_worlds: int, n_drones: int, device: Device) -> SimState:
     rpy_rates = jnp.zeros((n_worlds, n_drones, 3), device=device)
     vel = jnp.zeros((n_worlds, n_drones, 3), device=device)
     ang_vel = jnp.zeros((n_worlds, n_drones, 3), device=device)
-    return SimState(pos=pos, quat=quat, vel=vel, ang_vel=ang_vel, rpy_rates=rpy_rates)
+    forces = jnp.zeros((n_worlds, n_drones, 5, 3), device=device)
+    torques = jnp.zeros((n_worlds, n_drones, 5, 3), device=device)
+    return SimState(
+        pos=pos,
+        quat=quat,
+        forces=forces,
+        torques=torques,
+        vel=vel,
+        ang_vel=ang_vel,
+        rpy_rates=rpy_rates,
+    )
 
 
 @dataclass
@@ -28,6 +41,10 @@ class SimControls:
     state: Array  # (N, M, 13)
     attitude: Array  # (N, M, 4)
     staged_attitude: Array  # (N, M, 4)
+    attitude_steps: Array  # (N, 1)
+    attitude_freq: int = field(pytree_node=False)
+    state_steps: Array  # (N, 1)
+    state_freq: int = field(pytree_node=False)
     thrust: Array  # (N, M, 4)
     rpms: Array  # (N, M, 4)
     rpy_err_i: Array  # (N, M, 3)
@@ -35,12 +52,23 @@ class SimControls:
     last_rpy: Array  # (N, M, 3)
 
 
-def default_controls(n_worlds: int, n_drones: int, device: Device) -> SimControls:
+def default_controls(
+    n_worlds: int,
+    n_drones: int,
+    attitude_freq: int,
+    state_freq: int = 100,
+    device: Device | str = "cpu",
+) -> SimControls:
     """Create a default set of controls for the simulation."""
+    device = jax.devices(device)[0] if isinstance(device, str) else device
     return SimControls(
         state=jnp.zeros((n_worlds, n_drones, 13), device=device),
         attitude=jnp.zeros((n_worlds, n_drones, 4), device=device),
         staged_attitude=jnp.zeros((n_worlds, n_drones, 4), device=device),
+        attitude_steps=jnp.zeros((n_worlds, 1), device=device),
+        attitude_freq=attitude_freq,
+        state_steps=jnp.zeros((n_worlds, 1), device=device),
+        state_freq=state_freq,
         thrust=jnp.zeros((n_worlds, n_drones, 4), device=device),
         rpms=jnp.zeros((n_worlds, n_drones, 4), device=device),
         rpy_err_i=jnp.zeros((n_worlds, n_drones, 3), device=device),
@@ -68,7 +96,19 @@ def default_params(
 
 
 @dataclass
+class SimCore:
+    freq: int = field(pytree_node=False)
+    steps: int = field(default=0, pytree_node=False)
+
+
+def default_core(freq: int, steps: int = 0) -> SimCore:
+    """Create a default set of core simulation parameters."""
+    return SimCore(freq=freq, steps=steps)
+
+
+@dataclass
 class SimData:
     states: SimState
     controls: SimControls
     params: SimParams
+    sim: SimCore

@@ -14,7 +14,7 @@ from jax.scipy.spatial.transform import Rotation as R
 from crazyflow.control.controller import attitude2rpm as attitude2rpm_ctrl
 from crazyflow.control.controller import state2attitude as state2attitude_ctrl
 from crazyflow.sim.physics import analytical_dynamics, identified_dynamics, rpms2collective_wrench
-from crazyflow.sim.structs import SimControls, SimParams, SimState
+from crazyflow.sim.structs import SimControls, SimParams, SimState, SimData
 
 
 @jax.jit
@@ -38,12 +38,7 @@ def fused_identified_dynamics(state: SimState, cmd: SimControls, dt: float) -> S
     return state.replace(pos=pos, quat=quat, vel=vel, rpy_rates=rpy_rates)
 
 
-@jax.jit
-@partial(jax.vmap, in_axes=(0, 0, 0, 0, None))
-@partial(jax.vmap, in_axes=(0, 0, 0, 0, None))
-def fused_analytical_dynamics(
-    forces: Array, torques: Array, state: SimState, params: SimParams, dt: float
-) -> SimState:
+def fused_analytical_dynamics(data: SimData) -> SimData:
     """Dynamics model based on the physical parameters of the drone.
 
     Note:
@@ -57,17 +52,16 @@ def fused_analytical_dynamics(
         params: The current simulation parameters.
         dt: The simulation time step.
     """
-    pos, quat, vel, rpy_rates = state.pos, state.quat, state.vel, state.rpy_rates
+    states, params = data.states, data.params
+    forces, torques = states.forces[0, ...], states.torques[0, ...]
+    pos, quat, vel, rpy_rates = states.pos, states.quat, states.vel, states.rpy_rates
     pos, quat, vel, rpy_rates = analytical_dynamics(
-        forces, torques, pos, quat, vel, rpy_rates, params.mass, params.J_INV, dt
+        forces, torques, pos, quat, vel, rpy_rates, params.mass, params.J_INV, 1 / data.sim.freq
     )
-    return state.replace(pos=pos, quat=quat, vel=vel, rpy_rates=rpy_rates)
+    return data.replace(states=states.replace(pos=pos, quat=quat, vel=vel, rpy_rates=rpy_rates))
 
 
-@jax.jit
-@partial(jax.vmap, in_axes=(0, 0, 0, None))
-@partial(jax.vmap, in_axes=(None, 0, 0, None))
-def state2attitude(mask: Array, state: SimState, cmd: SimControls, dt: float) -> SimControls:
+def state2attitude(data: SimData) -> SimData:
     """Compute the next desired collective thrust and roll/pitch/yaw of the drone.
 
     Note:
@@ -84,39 +78,17 @@ def state2attitude(mask: Array, state: SimState, cmd: SimControls, dt: float) ->
         cmd: The current simulation controls.
         dt: The simulation time step.
     """
-    des_pos, des_vel, des_yaw = cmd.state[:3], cmd.state[3:6], cmd.state[9].reshape((1,))
-    attitude, pos_err_i = state2attitude_ctrl(
-        state.pos, state.vel, state.quat, des_pos, des_vel, des_yaw, cmd.pos_err_i, dt
+    states, controls = data.states, data.controls
+    des_pos, des_vel, des_yaw = (
+        controls.state[:3],
+        controls.state[3:6],
+        controls.state[9].reshape((1,)),
     )
-    # Non-branching selection depending on the mask. XLA should be able to optimize a short path
-    # that avoids computing the above expressions when the mask is false.
-    attitude = jnp.where(mask, attitude, cmd.attitude)
-    pos_err_i = jnp.where(mask, pos_err_i, cmd.pos_err_i)
-    return cmd.replace(staged_attitude=attitude, pos_err_i=pos_err_i)
-
-
-@jax.jit
-@partial(jax.vmap, in_axes=(0, 0, 0, None))
-@partial(jax.vmap, in_axes=(None, 0, 0, None))
-def attitude2rpm(mask: Array, state: SimState, cmd: SimControls, dt: float) -> SimControls:
-    """Compute the next desired RPMs of the drone.
-
-    Note:
-        Fused version of `crazyflow.control.controller.attitude2rpm`. See `crazyflow.sim.fused` for
-        more details.
-
-    Args:
-        mask: A boolean array of shape (n_worlds, ). Internally, we broadcast over all drones.
-        state: The current simulation state.
-        cmd: The current simulation controls.
-        dt: The simulation time step.
-    """
-    rpms, rpy_err_i = attitude2rpm_ctrl(cmd.attitude, state.quat, cmd.last_rpy, cmd.rpy_err_i, dt)
-    # Non-branching selection depending on the mask. See fused_masked_state2attitude for more info.
-    rpms = jnp.where(mask, rpms, cmd.rpms)
-    rpy_err_i = jnp.where(mask, rpy_err_i, cmd.rpy_err_i)
-    last_rpy = jnp.where(mask, R.from_quat(state.quat).as_euler("xyz"), cmd.last_rpy)
-    return cmd.replace(rpms=rpms, rpy_err_i=rpy_err_i, last_rpy=last_rpy)
+    dt = 1 / data.sim.freq
+    attitude, pos_err_i = state2attitude_ctrl(
+        states.pos, states.vel, states.quat, des_pos, des_vel, des_yaw, controls.pos_err_i, dt
+    )
+    return data.replace(controls=controls.replace(staged_attitude=attitude, pos_err_i=pos_err_i))
 
 
 @jax.jit

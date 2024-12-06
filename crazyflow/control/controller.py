@@ -90,13 +90,12 @@ def state2attitude(
     return jnp.concatenate([jnp.atleast_1d(thrust_desired), euler_desired]), i_error
 
 
-@partial(jnp.vectorize, signature="(4),(4),(3),(3)->(4),(3)", excluded=[4])
 def attitude2rpm(
-    cmd: Array, quat: Array, last_rpy: Array, rpy_err_i: Array, dt: float
+    attitude: Array, quat: Array, last_rpy: Array, rpy_err_i: Array, dt: float
 ) -> tuple[Array, Array]:
     """Convert the desired attitude and quaternion into motor RPMs."""
     rot = R.from_quat(quat)
-    target_rot = R.from_euler("xyz", cmd[..., 1:])
+    target_rot = R.from_euler("xyz", attitude[..., 1:])
     drot = (target_rot.inv() * rot).as_matrix()
 
     # Extract the anti-symmetric part of the relative rotation matrix.
@@ -108,7 +107,8 @@ def attitude2rpm(
     # PID target torques.
     target_torques = -P_T * rot_e + D_T * rpy_rates_e + I_T * rpy_err_i
     target_torques = jnp.clip(target_torques, -3200, 3200)
-    pwm = jnp.clip(collective_thrust2pwm(cmd[0]) + MIX_MATRIX @ target_torques, MIN_PWM, MAX_PWM)
+    thrust_pwm = collective_thrust2pwm(attitude[0])
+    pwm = jnp.clip(thrust_pwm + MIX_MATRIX @ target_torques, MIN_PWM, MAX_PWM)
     return PWM2RPM_CONST + PWM2RPM_SCALE * pwm, rpy_err_i
 
 
