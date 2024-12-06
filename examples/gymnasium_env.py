@@ -13,7 +13,7 @@ sim_config.control = Control.default
 sim_config.controller = Controller.default
 sim_config.control_freq = 50
 sim_config.n_drones = 1
-sim_config.n_worlds = 20
+sim_config.n_worlds = 1
 
 SEED = 42
 
@@ -34,6 +34,7 @@ obs, info = envs.reset_all(seed=SEED)
 # Step through the environment
 for _ in range(1500):
     observation, reward, terminated, truncated, info = envs.step(action)
+    print(observation)
     envs.render()
 
 envs.close()

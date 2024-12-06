@@ -96,6 +96,17 @@ class CrazyflowBaseEnv(VectorEnv):
         self.prev_done = jnp.zeros((self.sim.n_worlds), dtype=jnp.bool_, device=self.device)
 
         self.single_action_space = action_space(self.sim.control)
+        # sim.controls can be "state", "attitude" or "thrust"
+        # "thrust" -> [4] array of individual motor thrusts
+        # "attitude" -> [4] array of [collective_thrust, r, p, y], where rpy is defined as euler angles "xyz" (scipy rotate convention)
+        # action = lqr(...) -> [f1, f2, f3, f4]
+        # rpy = some_controller(action)
+        # collective_thrust = sum(action)
+
+        # RL agent:
+        # action = neural_net(obs)
+
+        # env.step([collective_thrust, *rpy]) -> won't work
         self.action_space = batch_space(self.single_action_space, self.sim.n_worlds)
 
         self.single_observation_space = spaces.Dict(
