@@ -104,7 +104,7 @@ def main():
     sim_config = config_dict.ConfigDict()
     sim_config.n_worlds = 1
     sim_config.n_drones = 1
-    sim_config.physics = "sys_id"
+    sim_config.physics = "analytical"
     sim_config.control = "attitude"
     sim_config.controller = "emulatefirmware"
     sim_config.device = device
