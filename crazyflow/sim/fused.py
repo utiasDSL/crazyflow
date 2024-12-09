@@ -4,23 +4,14 @@ Writing fused versions that directly operate on the state and control structs of
 allows us to avoid indexing into the structs and to update the structs within jit-compiled code.
 """
 
-from functools import partial
-
-import jax
-import jax.numpy as jnp
 from jax import Array
-from jax.scipy.spatial.transform import Rotation as R
 
-from crazyflow.control.controller import attitude2rpm as attitude2rpm_ctrl
 from crazyflow.control.controller import state2attitude as state2attitude_ctrl
 from crazyflow.sim.physics import analytical_dynamics, identified_dynamics, rpms2collective_wrench
-from crazyflow.sim.structs import SimControls, SimParams, SimState, SimData
+from crazyflow.sim.structs import SimControls, SimData, SimParams, SimState
 
 
-@jax.jit
-@partial(jax.vmap, in_axes=(0, 0, None))
-@partial(jax.vmap, in_axes=(0, 0, None))
-def fused_identified_dynamics(state: SimState, cmd: SimControls, dt: float) -> SimState:
+def fused_identified_dynamics(data: SimData) -> SimData:
     """Dynamics model identified from data collected on the real drone.
 
     Note:
@@ -32,10 +23,12 @@ def fused_identified_dynamics(state: SimState, cmd: SimControls, dt: float) -> S
         cmd: The current simulation controls.
         dt: The simulation time step.
     """
+    states, controls = data.states, data.controls
+    pos, quat, vel, rpy_rates = states.pos, states.quat, states.vel, states.rpy_rates
     pos, quat, vel, rpy_rates = identified_dynamics(
-        cmd.attitude, state.pos, state.quat, state.vel, state.rpy_rates, dt
+        controls.attitude, pos, quat, vel, rpy_rates, 1 / data.sim.freq
     )
-    return state.replace(pos=pos, quat=quat, vel=vel, rpy_rates=rpy_rates)
+    return data.replace(states=states.replace(pos=pos, quat=quat, vel=vel, rpy_rates=rpy_rates))
 
 
 def fused_analytical_dynamics(data: SimData) -> SimData:
@@ -52,8 +45,9 @@ def fused_analytical_dynamics(data: SimData) -> SimData:
         params: The current simulation parameters.
         dt: The simulation time step.
     """
-    states, params = data.states, data.params
-    forces, torques = states.forces[0, ...], states.torques[0, ...]
+    states, controls, params = data.states, data.controls, data.params
+    forces, torques = rpms2collective_wrench(controls.rpms, states.quat, states.rpy_rates, params.J)
+    # The dynamics model only considers the force and torque at the center of mass, not the motors.
     pos, quat, vel, rpy_rates = states.pos, states.quat, states.vel, states.rpy_rates
     pos, quat, vel, rpy_rates = analytical_dynamics(
         forces, torques, pos, quat, vel, rpy_rates, params.mass, params.J_INV, 1 / data.sim.freq
@@ -79,11 +73,8 @@ def state2attitude(data: SimData) -> SimData:
         dt: The simulation time step.
     """
     states, controls = data.states, data.controls
-    des_pos, des_vel, des_yaw = (
-        controls.state[:3],
-        controls.state[3:6],
-        controls.state[9].reshape((1,)),
-    )
+    des_pos, des_vel = controls.state[..., :3], controls.state[..., 3:6]
+    des_yaw = controls.state[..., 9]
     dt = 1 / data.sim.freq
     attitude, pos_err_i = state2attitude_ctrl(
         states.pos, states.vel, states.quat, des_pos, des_vel, des_yaw, controls.pos_err_i, dt
@@ -91,9 +82,6 @@ def state2attitude(data: SimData) -> SimData:
     return data.replace(controls=controls.replace(staged_attitude=attitude, pos_err_i=pos_err_i))
 
 
-@jax.jit
-@jax.vmap
-@jax.vmap
 def fused_rpms2collective_wrench(
     states: SimState, cmd: SimControls, params: SimParams
 ) -> tuple[Array, Array]:

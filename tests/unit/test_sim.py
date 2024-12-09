@@ -4,8 +4,7 @@ import numpy as np
 import pytest
 from flax.serialization import to_state_dict
 
-from crazyflow.control.controller import Control, Controller
-from crazyflow.exception import ConfigError
+from crazyflow.control.controller import Control
 from crazyflow.sim.core import Sim
 from crazyflow.sim.physics import Physics
 
@@ -32,28 +31,16 @@ def skip_unavailable_device(device: str):
 @pytest.mark.parametrize("physics", Physics)
 @pytest.mark.parametrize("device", ["gpu", "cpu"])
 @pytest.mark.parametrize("control", Control)
-@pytest.mark.parametrize("controller", Controller)
 @pytest.mark.parametrize("n_worlds", [1, 2])
-def test_sim_creation(
-    physics: Physics, device: str, control: Control, controller: Controller, n_worlds: int
-):
+def test_sim_creation(physics: Physics, device: str, control: Control, n_worlds: int):
     n_drones = 1
     skip_unavailable_device(device)
 
     def create_sim() -> Sim:
         return Sim(
-            n_worlds=n_worlds,
-            n_drones=n_drones,
-            physics=physics,
-            device=device,
-            control=control,
-            controller=controller,
+            n_worlds=n_worlds, n_drones=n_drones, physics=physics, device=device, control=control
         )
 
-    if n_drones * n_worlds > 1 and controller == Controller.pycffirmware:
-        with pytest.raises(ConfigError):
-            create_sim()
-        return
     sim = create_sim()
     assert sim.n_worlds == n_worlds
     assert sim.n_drones == n_drones
@@ -173,27 +160,10 @@ def test_reset_masked(device: str, physics: Physics):
 @pytest.mark.parametrize("n_drones", [1, 3])
 @pytest.mark.parametrize("physics", Physics)
 @pytest.mark.parametrize("control", Control)
-@pytest.mark.parametrize("controller", Controller)
 @pytest.mark.parametrize("device", ["gpu", "cpu"])
-def test_sim_step(
-    n_worlds: int,
-    n_drones: int,
-    physics: Physics,
-    control: Control,
-    controller: Controller,
-    device: str,
-):
+def test_sim_step(n_worlds: int, n_drones: int, physics: Physics, control: Control, device: str):
     skip_unavailable_device(device)
-    if n_drones * n_worlds > 1 and controller == Controller.pycffirmware:
-        return  # PyCFFirmware does not support multiple drones
-    sim = Sim(
-        n_worlds=n_worlds,
-        n_drones=n_drones,
-        physics=physics,
-        device=device,
-        control=control,
-        controller=controller,
-    )
+    sim = Sim(n_worlds=n_worlds, n_drones=n_drones, physics=physics, device=device, control=control)
     try:
         for _ in range(2):
             sim.step()

@@ -2,19 +2,18 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from crazyflow.control.controller import Control, Controller
+from crazyflow.control.controller import Control
 from crazyflow.sim.core import Physics, Sim
 
 
 @pytest.mark.integration
 @pytest.mark.parametrize("physics", Physics)
-@pytest.mark.parametrize("controller", Controller)
-def test_reset_during_simulation(physics: Physics, controller: Controller):
+def test_reset_during_simulation(physics: Physics):
     """Test reset behavior during an active simulation."""
     if physics == Physics.mujoco:
         pytest.skip("Mujoco physics not implemented")  # TODO: Remove once MuJoCo is implemented
 
-    sim = Sim(physics=physics, controller=controller, control=Control.attitude)
+    sim = Sim(physics=physics, control=Control.attitude)
     # Run simulation
     n_steps = 3
     random_cmds = np.random.rand(n_steps, 1, 1, 4)

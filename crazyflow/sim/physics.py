@@ -1,7 +1,9 @@
 from enum import Enum
+from functools import partial
 
 import jax.numpy as jnp
 from jax import Array
+from jax.numpy import vectorize
 from jax.scipy.spatial.transform import Rotation as R
 
 from crazyflow.constants import ARM_LEN, GRAVITY, SIGN_MIX_MATRIX
@@ -29,8 +31,9 @@ class Physics(str, Enum):
     default = analytical
 
 
+@partial(vectorize, signature="(4),(3),(4),(3),(3)->(3),(4),(3),(3)", excluded=[5])
 def identified_dynamics(
-    cmd: Array, pos: Array, quat: Array, vel: Array, rpy_rates: Array, dt: float
+    control: Array, pos: Array, quat: Array, vel: Array, rpy_rates: Array, dt: float
 ) -> tuple[Array, Array, Array, Array]:
     """Dynamics model identified from data collected on the real drone.
 
@@ -43,14 +46,14 @@ def identified_dynamics(
         its dynamics are implicitly captured by the linear model.
 
     Args:
-        cmd: The 4D control input consisting of the desired collective thrust and attitude.
+        control: The 4D control input consisting of the desired collective thrust and attitude.
         pos: The current position.
         quat: The current orientation.
         vel: The current velocity.
         rpy_rates: The current roll, pitch, and yaw rates.
         dt: The simulation time step.
     """
-    collective_thrust, attitude = cmd[0], cmd[1:]
+    collective_thrust, attitude = control[0], control[1:]
     rot = R.from_quat(quat)
     thrust = rot.apply(jnp.array([0, 0, collective_thrust]))
     drift = rot.apply(jnp.array([0, 0, 1]))
@@ -94,6 +97,7 @@ def identified_dynamics_dx(
     return acc, rpy_rates_deriv
 
 
+@partial(vectorize, signature="(3),(3),(3),(4),(3),(3),(1),(3,3)->(3),(4),(3),(3)", excluded=[8])
 def analytical_dynamics(
     forces: Array,
     torques: Array,
@@ -135,6 +139,7 @@ def analytical_dynamics_dx(
     return acc, rpy_rates_deriv
 
 
+@partial(vectorize, signature="(4),(4),(3),(3,3)->(3),(3)")
 def rpms2collective_wrench(
     rpms: Array, quat: Array, rpy_rates: Array, J: Array
 ) -> tuple[Array, Array]:

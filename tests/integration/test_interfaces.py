@@ -1,18 +1,17 @@
 import jax.numpy as jnp
 import pytest
 
-from crazyflow.control.controller import Control, Controller, state2attitude
+from crazyflow.control.controller import Control, state2attitude
 from crazyflow.sim.core import Physics, Sim
 
 
 @pytest.mark.integration
 @pytest.mark.parametrize("physics", Physics)
-@pytest.mark.parametrize("controller", Controller)
-def test_state_interface(physics: Physics, controller: Controller):
+def test_state_interface(physics: Physics):
     # Create environment with 1 world and 1 drone
     if physics == Physics.sys_id:
         pytest.skip("sys_id physics does not support state control")
-    sim = Sim(physics=physics, control=Control.state, controller=controller)
+    sim = Sim(physics=physics, control=Control.state)
 
     # Run simulation for 2 seconds
     for _ in range(int(2 * sim.freq)):
@@ -31,10 +30,9 @@ def test_state_interface(physics: Physics, controller: Controller):
 
 @pytest.mark.integration
 @pytest.mark.parametrize("physics", Physics)
-@pytest.mark.parametrize("controller", Controller)
-def test_attitude_interface(physics: Physics, controller: Controller):
+def test_attitude_interface(physics: Physics):
     # Create environment with 1 world and 1 drone
-    sim = Sim(physics=physics, control=Control.attitude, controller=controller)
+    sim = Sim(physics=physics, control=Control.attitude)
     target_pos = jnp.array([0.0, 0.0, 1.0])
 
     i_error = jnp.zeros((1, 1, 3))
