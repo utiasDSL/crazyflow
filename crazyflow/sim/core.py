@@ -78,15 +78,12 @@ class Sim:
         mjx_model = mjx.put_model(mj_model, device=self.device)
         mjx_data = mjx.put_data(mj_model, mj_data, device=self.device)
         mjx_data = jax.vmap(lambda _: mjx_data)(jnp.arange(self.n_worlds))
-        # Optimization: Compile the sync function with the finalized model (mjx_model is not
-        # changing anymore) to avoid overhead. See Sim._sync_mjx for details.
-        self._sync_mjx = jax.jit(partial(self._sync_mjx_full, mjx_model=mjx_model))
         if self.n_drones > 1:  # If multiple drones, arrange them in a grid
             grid = grid_2d(self.n_drones)
             self.data = self.data.replace(
                 states=self.data.states.replace(pos=self.data.states.pos.at[..., :2].set(grid))
             )
-            self._mjx_data = self._sync_mjx(self.data.states, mjx_data)
+            self._mjx_data = self.sync_sim2mjx(self.data.states, mjx_data, mjx_model)
             # Update default to reflect changes after resetting
         self.default_data = self.data.replace()
         return spec, mj_model, mj_data, mjx_model, mjx_data
@@ -122,9 +119,9 @@ class Sim:
         # Having n_steps as a static argument is fine, since patterns with n_steps > 1 will almost
         # always use the same n_steps value for successive calls.
         @partial(jax.jit, static_argnames="n_steps")
-        def step(sim_data: SimData, n_steps: int = 1) -> SimData:
-            sim_data, _ = jax.lax.scan(single_step, sim_data, length=n_steps)
-            return sim_data
+        def step(data: SimData, n_steps: int = 1) -> SimData:
+            data, _ = jax.lax.scan(single_step, data, length=n_steps)
+            return data
 
         return step
 
@@ -138,14 +135,14 @@ class Sim:
         mask = self._default_mask if mask is None else mask
         assert mask.shape == (self.n_worlds,), f"Mask shape mismatch {mask.shape}"
         self.data = self._reset(self.data, self.default_data, mask)
-        self._sync_mjx(self.data.states, self._mjx_data)
+        self.sync_sim2mjx(self.data.states, self._mjx_data, self._mjx_model)
 
     def step(self, n_steps: int = 1):
         """Simulate all drones in all worlds for n time steps."""
         assert n_steps > 0, "Number of steps must be positive"
         self.data = self._step(self.data, n_steps)
         # TODO: Move sync_mjx into the pipeline
-        self._mjx_data = self._sync_mjx(self.data.states, self._mjx_data)
+        self._mjx_data = self.sync_sim2mjx(self.data.states, self._mjx_data, self._mjx_model)
 
     @staticmethod
     @jax.jit
@@ -253,23 +250,8 @@ class Sim:
                 raise NotImplementedError(f"Integrator {self.integrator} not implemented")
 
     @staticmethod
-    def _sync_mjx(states: SimState, mjx_data: Data, mjx_model: Model) -> Data:
-        """Sync the states to the MuJoCo data.
-
-        We initialize this function in Sim.setup() to compile it with the finalized MuJoCo model.
-        This allows us to avoid the overhead associated with flattening and unflattening the model
-        struct on every call in Sim._sync_mjx_full.
-
-        Warning:
-            Raises NotInitializedError if Sim.setup() was not called yet.
-
-        Warning:
-            If the model changes, the sync function needs to be recompiled with the new model.
-        """
-        raise NotInitializedError("MuJoCo sync function not initialized, call Sim.setup() first")
-
-    @staticmethod
-    def _sync_mjx_full(states: SimState, mjx_data: Data, mjx_model: Model) -> Data:
+    @jax.jit
+    def sync_sim2mjx(states: SimState, mjx_data: Data, mjx_model: Model) -> Data:
         pos, quat, vel, ang_vel = states.pos, states.quat, states.vel, states.ang_vel
         quat = quat[..., [-1, 0, 1, 2]]  # MuJoCo quat is [w, x, y, z], ours is [x, y, z, w]
         qpos = rearrange(jnp.concat([pos, quat], axis=-1), "w d qpos -> w (d qpos)")
