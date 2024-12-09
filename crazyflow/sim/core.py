@@ -80,10 +80,9 @@ class Sim:
         mjx_data = jax.vmap(lambda _: mjx_data)(jnp.arange(self.n_worlds))
         if self.n_drones > 1:  # If multiple drones, arrange them in a grid
             grid = grid_2d(self.n_drones)
-            self.data = self.data.replace(
-                states=self.data.states.replace(pos=self.data.states.pos.at[..., :2].set(grid))
-            )
-            self._mjx_data = self.sync_sim2mjx(self.data.states, mjx_data, mjx_model)
+            states = self.data.states.replace(pos=self.data.states.pos.at[..., :2].set(grid))
+            self.data = self.data.replace(states=states)
+            mjx_data = self.sync_sim2mjx(self.data, mjx_data, mjx_model)
             # Update default to reflect changes after resetting
         self.default_data = self.data.replace()
         return spec, mj_model, mj_data, mjx_model, mjx_data
@@ -119,9 +118,12 @@ class Sim:
         # Having n_steps as a static argument is fine, since patterns with n_steps > 1 will almost
         # always use the same n_steps value for successive calls.
         @partial(jax.jit, static_argnames="n_steps")
-        def step(data: SimData, n_steps: int = 1) -> SimData:
+        def step(
+            data: SimData, mjx_data: Data, mjx_model: Model, n_steps: int = 1
+        ) -> tuple[SimData, Data]:
             data, _ = jax.lax.scan(single_step, data, length=n_steps)
-            return data
+            mjx_data = self.sync_sim2mjx(data, mjx_data, mjx_model)
+            return data, mjx_data
 
         return step
 
@@ -135,25 +137,12 @@ class Sim:
         mask = self._default_mask if mask is None else mask
         assert mask.shape == (self.n_worlds,), f"Mask shape mismatch {mask.shape}"
         self.data = self._reset(self.data, self.default_data, mask)
-        self.sync_sim2mjx(self.data.states, self._mjx_data, self._mjx_model)
+        self._mjx_data = self.sync_sim2mjx(self.data, self._mjx_data, self._mjx_model)
 
     def step(self, n_steps: int = 1):
         """Simulate all drones in all worlds for n time steps."""
         assert n_steps > 0, "Number of steps must be positive"
-        self.data = self._step(self.data, n_steps)
-        # TODO: Move sync_mjx into the pipeline
-        self._mjx_data = self.sync_sim2mjx(self.data.states, self._mjx_data, self._mjx_model)
-
-    @staticmethod
-    @jax.jit
-    def _reset(data: SimData, default_data: SimData, mask: Array | None = None) -> SimData:
-        data = data.replace(states=pytree_replace(data.states, default_data.states, mask))
-        data = data.replace(controls=pytree_replace(data.controls, default_data.controls, mask))
-        data = data.replace(params=pytree_replace(data.params, default_data.params, mask))
-        return data
-
-    def _step(self, data: SimData, n_steps: int) -> SimData:
-        raise NotImplementedError("_step call before compiling the simulation pipeline.")
+        self.data, self._mjx_data = self._step(self.data, self._mjx_data, self._mjx_model, n_steps)
 
     def attitude_control(self, controls: Array):
         """Set the desired attitude for all drones in all worlds."""
@@ -167,7 +156,7 @@ class Sim:
         assert self.control == Control.state, "State control is not enabled by the sim config"
         self.data = state_control(controls, self.data, self.device)
 
-    def thrust_control(self, cmd: Array):
+    def thrust_control(self, controls: Array):
         raise NotImplementedError
 
     def render(self):
@@ -224,34 +213,10 @@ class Sim:
         geom_count = self._mj_model.body_geomnum[body_id]
         return contacts(geom_start, geom_count, self._mjx_data)
 
-    def generate_control_fn(self) -> Callable[[SimData], SimData]:
-        match self.control:
-            case Control.state:
-                return lambda data: step_attitude_controller(step_state_controller(data))
-            case Control.attitude:
-                return step_attitude_controller
-            case _:
-                raise NotImplementedError(f"Control mode {self.control} not implemented")
-
-    def generate_physics_fn(self) -> Callable[[SimData], SimData]:
-        match self.physics:
-            case Physics.analytical:
-                return fused_analytical_dynamics
-            case Physics.sys_id:
-                return fused_identified_dynamics
-            case _:
-                raise NotImplementedError(f"Physics mode {self.physics} not implemented")
-
-    def generate_integrator_fn(self) -> Callable[[SimData], SimData]:
-        match self.integrator:
-            case Integrator.euler:
-                return self._step_euler
-            case _:
-                raise NotImplementedError(f"Integrator {self.integrator} not implemented")
-
     @staticmethod
     @jax.jit
-    def sync_sim2mjx(states: SimState, mjx_data: Data, mjx_model: Model) -> Data:
+    def sync_sim2mjx(data: SimData, mjx_data: Data, mjx_model: Model) -> Data:
+        states = data.states
         pos, quat, vel, ang_vel = states.pos, states.quat, states.vel, states.ang_vel
         quat = quat[..., [-1, 0, 1, 2]]  # MuJoCo quat is [w, x, y, z], ours is [x, y, z, w]
         qpos = rearrange(jnp.concat([pos, quat], axis=-1), "w d qpos -> w (d qpos)")
@@ -260,6 +225,48 @@ class Sim:
         mjx_data = mjx_kinematics(mjx_model, mjx_data)
         mjx_data = mjx_collision(mjx_model, mjx_data)
         return mjx_data
+
+    @staticmethod
+    @jax.jit
+    def _reset(data: SimData, default_data: SimData, mask: Array | None = None) -> SimData:
+        data = data.replace(states=pytree_replace(data.states, default_data.states, mask))
+        data = data.replace(controls=pytree_replace(data.controls, default_data.controls, mask))
+        data = data.replace(params=pytree_replace(data.params, default_data.params, mask))
+        return data
+
+    def _step(self, data: SimData, n_steps: int) -> SimData:
+        raise NotImplementedError("_step call before compiling the simulation pipeline.")
+
+
+def generate_control_fn(control: Control) -> Callable[[SimData], SimData]:
+    """Generate the control function for the given control mode."""
+    match control:
+        case Control.state:
+            return lambda data: step_attitude_controller(step_state_controller(data))
+        case Control.attitude:
+            return step_attitude_controller
+        case _:
+            raise NotImplementedError(f"Control mode {control} not implemented")
+
+
+def generate_physics_fn(physics: Physics) -> Callable[[SimData], SimData]:
+    """Generate the physics function for the given physics mode."""
+    match physics:
+        case Physics.analytical:
+            return fused_analytical_dynamics
+        case Physics.sys_id:
+            return fused_identified_dynamics
+        case _:
+            raise NotImplementedError(f"Physics mode {physics} not implemented")
+
+
+def generate_integrator_fn(integrator: Integrator) -> Callable[[SimData], SimData]:
+    """Generate the integrator function for the given integrator mode."""
+    match integrator:
+        case Integrator.euler:
+            return ...
+        case _:
+            raise NotImplementedError(f"Integrator {integrator} not implemented")
 
 
 @partial(jax.jit, static_argnames="device")
