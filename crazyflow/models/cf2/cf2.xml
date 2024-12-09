@@ -9,7 +9,7 @@
         <geom group="2" type="mesh" contype="0" conaffinity="0"/>
       </default>
       <default class="collision">
-        <geom group="3"/>
+        <geom group="3" condim="1"/>
       </default>
       <site group="5"/>
     </default>
@@ -35,8 +35,9 @@
       <geom mesh="cf2_4" material="burnished_chrome" class="visual"/>
       <geom mesh="cf2_5" material="body_frame_plastic" class="visual"/>
       <geom mesh="cf2_6" material="white" class="visual"/>
-      <!-- Collision geometry is estimated based on the visual mesh -->
-      <geom type="cylinder" size="0.075 0.012" class="collision" name="drone0:col"/>
+      <!-- Collision geometry is estimated based on the visual mesh. We use a sphere for maximum
+       computational efficiency with larger swarms. -->
+      <geom type="sphere" size="0.055" class="collision" name="drone0:col1"/>
       <site name="imu"/>
       <site name="CoM"/>
       <site name="motor_0" pos="0.0325 0.0325 0.0"/>
@@ -52,4 +53,5 @@
     <accelerometer name="body_linacc" site="imu"/>
     <framequat name="body_quat" objtype="site" objname="imu"/>
   </sensor>
+
 </mujoco>
