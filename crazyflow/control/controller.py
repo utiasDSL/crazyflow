@@ -29,14 +29,6 @@ class Control(str, Enum):
     default = attitude
 
 
-class Controller(str, Enum):
-    """Controller type of the simulated onboard controller."""
-
-    pycffirmware = "pycffirmware"
-    emulatefirmware = "emulatefirmware"
-    default = emulatefirmware
-
-
 KF: float = 3.16e-10
 KM: float = 7.94e-12
 P_F: Array = jnp.array([0.4, 0.4, 1.25])
@@ -90,14 +82,14 @@ def state2attitude(
     return jnp.concatenate([jnp.atleast_1d(thrust_desired), euler_desired]), i_error
 
 
+@partial(jnp.vectorize, signature="(4),(4),(3),(3)->(4),(3)", excluded=[4])
 def attitude2rpm(
     attitude: Array, quat: Array, last_rpy: Array, rpy_err_i: Array, dt: float
 ) -> tuple[Array, Array]:
     """Convert the desired attitude and quaternion into motor RPMs."""
     rot = R.from_quat(quat)
-    target_rot = R.from_euler("xyz", attitude[..., 1:])
+    target_rot = R.from_euler("xyz", attitude[1:])
     drot = (target_rot.inv() * rot).as_matrix()
-
     # Extract the anti-symmetric part of the relative rotation matrix.
     rot_e = jnp.array([drot[2, 1] - drot[1, 2], drot[0, 2] - drot[2, 0], drot[1, 0] - drot[0, 1]])
     rpy_rates_e = -(rot.as_euler("xyz") - last_rpy) / dt  # Assuming zero rpy_rates target

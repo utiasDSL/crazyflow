@@ -26,9 +26,7 @@ def profile_step(sim_config: config_dict.ConfigDict, n_steps: int, device: str):
     sim.reset()
     control_fn(cmd)
     sim.step()
-    sim.step()
-    sim.reset()
-    jax.block_until_ready(sim.states.pos)
+    jax.block_until_ready(sim.data.states.pos)
 
     profiler = Profiler()
     profiler.start()
@@ -37,7 +35,7 @@ def profile_step(sim_config: config_dict.ConfigDict, n_steps: int, device: str):
         control_fn(cmd)
         # sim.reset()
         sim.step()
-        jax.block_until_ready(sim.states.pos)
+        jax.block_until_ready(sim.data.states.pos)
     profiler.stop()
     renderer = HTMLRenderer()
     renderer.open_in_browser(profiler.last_session)
@@ -84,11 +82,10 @@ def main():
     sim_config.n_drones = 1
     sim_config.physics = "analytical"
     sim_config.control = "attitude"
-    sim_config.controller = "emulatefirmware"
     sim_config.device = device
 
     profile_step(sim_config, 1000, device)
-    profile_gym_env_step(sim_config, 1000, device)
+    #  profile_gym_env_step(sim_config, 1000, device)
 
 
 if __name__ == "__main__":

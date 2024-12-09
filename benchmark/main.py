@@ -85,14 +85,13 @@ def profile_step(sim_config: config_dict.ConfigDict, n_steps: int, device: str):
     sim.reset()
     sim.attitude_control(cmd)
     sim.step()
-    jax.block_until_ready(sim.states.pos)  # Ensure JIT compiled dynamics
+    jax.block_until_ready(sim.data.states.pos)  # Ensure JIT compiled dynamics
 
-    for i in range(n_steps):
+    for _ in range(n_steps):
         tstart = time.perf_counter()
         sim.attitude_control(cmd)
         sim.step()
-        if i == n_steps - 1:
-            jax.block_until_ready(sim.states.pos)
+        jax.block_until_ready(sim.data.states.pos)
         times.append(time.perf_counter() - tstart)
 
     analyze_timings(times, n_steps, sim.n_worlds, sim.freq)
@@ -106,14 +105,13 @@ def main():
     sim_config.n_drones = 1
     sim_config.physics = "analytical"
     sim_config.control = "attitude"
-    sim_config.controller = "emulatefirmware"
     sim_config.device = device
 
     print("Simulator performance")
     profile_step(sim_config, 100, device)
 
     print("\nGymnasium environment performance")
-    profile_gym_env_step(sim_config, 100, device)
+    # profile_gym_env_step(sim_config, 100, device)
 
 
 if __name__ == "__main__":

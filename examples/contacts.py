@@ -10,13 +10,12 @@ def main():
     fps = 60
 
     cmd = np.array([[[0.3, 0, 0, 0] for _ in range(n_drones)] for _ in range(n_worlds)])
-    for _ in range(int(5 * fps)):
-        start = sim.time[0]
-        while sim.time[0] - start < 1.0 / fps:
-            sim.attitude_control(cmd)
-            sim.step()
-        print(f"Contacts: {sim.contacts().any()}")
-        sim.render()
+    for i in range(int(2 * sim.freq)):
+        sim.attitude_control(cmd)
+        sim.step()
+        if ((i * fps) % sim.freq) < fps:
+            sim.render()
+            print(f"Contacts: {sim.contacts().any()}")
     sim.close()
 
 

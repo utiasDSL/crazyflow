@@ -46,6 +46,7 @@ class SimControls:
     state_steps: Array  # (N, 1)
     state_freq: int = field(pytree_node=False)
     thrust: Array  # (N, M, 4)
+    thrust_steps: Array  # (N, 1)
     rpms: Array  # (N, M, 4)
     rpy_err_i: Array  # (N, M, 3)
     pos_err_i: Array  # (N, M, 3)
@@ -65,11 +66,12 @@ def default_controls(
         state=jnp.zeros((n_worlds, n_drones, 13), device=device),
         attitude=jnp.zeros((n_worlds, n_drones, 4), device=device),
         staged_attitude=jnp.zeros((n_worlds, n_drones, 4), device=device),
-        attitude_steps=jnp.zeros((n_worlds, 1), device=device),
+        attitude_steps=jnp.zeros((n_worlds, 1), dtype=jnp.int32, device=device),
         attitude_freq=attitude_freq,
-        state_steps=jnp.zeros((n_worlds, 1), device=device),
+        state_steps=jnp.zeros((n_worlds, 1), dtype=jnp.int32, device=device),
         state_freq=state_freq,
         thrust=jnp.zeros((n_worlds, n_drones, 4), device=device),
+        thrust_steps=jnp.zeros((n_worlds, 1), dtype=jnp.int32, device=device),
         rpms=jnp.zeros((n_worlds, n_drones, 4), device=device),
         rpy_err_i=jnp.zeros((n_worlds, n_drones, 3), device=device),
         pos_err_i=jnp.zeros((n_worlds, n_drones, 3), device=device),
@@ -97,11 +99,11 @@ def default_params(
 
 @dataclass
 class SimCore:
-    freq: int = field(pytree_node=False)
-    steps: int = field(default=0, pytree_node=False)
+    freq: int
+    steps: Array  # (N, 1)
 
 
-def default_core(freq: int, steps: int = 0) -> SimCore:
+def default_core(freq: int, steps: Array) -> SimCore:
     """Create a default set of core simulation parameters."""
     return SimCore(freq=freq, steps=steps)
 
