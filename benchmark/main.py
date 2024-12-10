@@ -58,13 +58,13 @@ def profile_gym_env_step(sim_config: config_dict.ConfigDict, n_steps: int, devic
     envs.step(action)
     envs.step(action)
 
-    jax.block_until_ready(envs.unwrapped.sim.states.pos)  # Ensure JIT compiled dynamics
+    jax.block_until_ready(envs.unwrapped.sim.data.states.pos)  # Ensure JIT compiled dynamics
 
     # Step through the environment
     for _ in range(n_steps):
         tstart = time.perf_counter()
         envs.step(action)
-        jax.block_until_ready(envs.unwrapped.sim.states.pos)
+        jax.block_until_ready(envs.unwrapped.sim.data.states.pos)
         times.append(time.perf_counter() - tstart)
 
     envs.close()
@@ -104,13 +104,14 @@ def main():
     sim_config.n_drones = 1
     sim_config.physics = "analytical"
     sim_config.control = "attitude"
+    sim_config.control_freq = 500
     sim_config.device = device
 
     print("Simulator performance")
     profile_step(sim_config, 100, device)
 
     print("\nGymnasium environment performance")
-    # profile_gym_env_step(sim_config, 100, device)
+    profile_gym_env_step(sim_config, 100, device)
 
 
 if __name__ == "__main__":
