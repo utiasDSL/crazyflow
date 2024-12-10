@@ -11,7 +11,8 @@ from gymnasium.envs.mujoco.mujoco_rendering import MujocoRenderer
 from jax import Array
 from mujoco.mjx import Data, Model
 
-from crazyflow.control.controller import J_INV, Control, J, attitude2rpm
+from crazyflow.constants import J_INV, J
+from crazyflow.control.controller import Control, attitude2rpm
 from crazyflow.exception import NotInitializedError
 from crazyflow.sim.fused import fused_analytical_dynamics, fused_identified_dynamics, state2attitude
 from crazyflow.sim.integration import Integrator
@@ -100,8 +101,8 @@ class Sim:
         # The ``generate_xxx_fn`` methods return functions, not the results of calling those
         # functions. They act as factories that produce building blocks for the construction of our
         # simulation pipeline.
-        ctrl_fn = self.generate_control_fn()
-        physics_fn = self.generate_physics_fn()
+        ctrl_fn = generate_control_fn(self.control)
+        physics_fn = generate_physics_fn(self.physics)
 
         # None is required by jax.lax.scan to unpack the tuple returned by single_step.
         def single_step(data: SimData, _: None) -> tuple[SimData, None]:
@@ -156,8 +157,11 @@ class Sim:
         assert self.control == Control.state, "State control is not enabled by the sim config"
         self.data = state_control(controls, self.data, self.device)
 
-    def thrust_control(self, controls: Array):
-        raise NotImplementedError
+    def thrust_control(self, cmd: Array):
+        """Set the desired thrust for all drones in all worlds."""
+        assert cmd.shape == (self.n_worlds, self.n_drones, 4), "Command shape mismatch"
+        assert self.control == Control.thrust, "Thrust control is not enabled by the sim config"
+        self.controls = self._thrust_control(cmd, self.controls, self.device)
 
     def render(self):
         if self.viewer is None:
@@ -235,7 +239,7 @@ class Sim:
         return data
 
     def _step(self, data: SimData, n_steps: int) -> SimData:
-        raise NotImplementedError("_step call before compiling the simulation pipeline.")
+        raise NotInitializedError("_step call before compiling the simulation pipeline.")
 
 
 def generate_control_fn(control: Control) -> Callable[[SimData], SimData]:
