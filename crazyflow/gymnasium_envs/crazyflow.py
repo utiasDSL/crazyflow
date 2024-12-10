@@ -175,25 +175,29 @@ class CrazyflowBaseEnv(VectorEnv):
             minval=jnp.array([-1.0, -1.0, 1.0]),  # x,y,z
             maxval=jnp.array([1.0, 1.0, 2.0]),  # x,y,z
         )
-        self.sim.states = self.sim.states.replace(
-            pos=jnp.where(mask3d, init_pos, self.sim.states.pos)
+        self.sim.data = self.sim.data.replace(
+            states=self.sim.data.states.replace(
+                pos=jnp.where(mask3d, init_pos, self.sim.data.states.pos)
+            )
         )
         # Sample initial vel
         self.jax_key, subkey = jax.random.split(self.jax_key)
         init_vel = jax.random.uniform(
             key=subkey, shape=(self.sim.n_worlds, self.sim.n_drones, 3), minval=-1.0, maxval=1.0
         )
-        self.sim.states = self.sim.states.replace(
-            vel=jnp.where(mask3d, init_vel, self.sim.states.vel)
+        self.sim.data = self.sim.data.replace(
+            states=self.sim.data.states.replace(
+                vel=jnp.where(mask3d, init_vel, self.sim.data.states.vel)
+            )
         )
 
     @property
     def reward(self) -> Array:
-        return self._reward(self.prev_done, self.terminated, self.sim.states)
+        return self._reward(self.prev_done, self.terminated, self.sim.data.states)
 
     @property
     def terminated(self) -> Array:
-        return self._terminated(self.prev_done, self.sim.states, self.sim.contacts())
+        return self._terminated(self.prev_done, self.sim.data.states, self.sim.contacts())
 
     @property
     def truncated(self) -> Array:
@@ -224,7 +228,7 @@ class CrazyflowBaseEnv(VectorEnv):
     def _obs(self) -> dict[str, Array]:
         convert = self.return_datatype == "numpy"
         fields = self.obs_keys
-        states = [maybe_to_numpy(getattr(self.sim.states, field), convert) for field in fields]
+        states = [maybe_to_numpy(getattr(self.sim.data.states, field), convert) for field in fields]
         return {k: v for k, v in zip(fields, states)}
 
 
@@ -243,7 +247,7 @@ class CrazyflowEnvReachGoal(CrazyflowBaseEnv):
 
     @property
     def reward(self) -> Array:
-        return self._reward(self.prev_done, self.terminated, self.sim.states, self.goal)
+        return self._reward(self.prev_done, self.terminated, self.sim.data.states, self.goal)
 
     @staticmethod
     @jax.jit
@@ -269,7 +273,7 @@ class CrazyflowEnvReachGoal(CrazyflowBaseEnv):
 
     def _obs(self) -> dict[str, Array]:
         obs = super()._obs()
-        obs["difference_to_goal"] = [self.goal - self.sim.states.pos]
+        obs["difference_to_goal"] = [self.goal - self.sim.data.states.pos]
         return obs
 
 
@@ -287,7 +291,7 @@ class CrazyflowEnvTargetVelocity(CrazyflowBaseEnv):
 
     @property
     def reward(self) -> Array:
-        return self._reward(self.prev_done, self.terminated, self.sim.states, self.target_vel)
+        return self._reward(self.prev_done, self.terminated, self.sim.data.states, self.target_vel)
 
     @staticmethod
     @jax.jit
@@ -313,7 +317,7 @@ class CrazyflowEnvTargetVelocity(CrazyflowBaseEnv):
 
     def _obs(self) -> dict[str, Array]:
         obs = super()._obs()
-        obs["difference_to_target_vel"] = [self.target_vel - self.sim.states.vel]
+        obs["difference_to_target_vel"] = [self.target_vel - self.sim.data.states.vel]
         return obs
 
 
@@ -335,7 +339,7 @@ class CrazyflowEnvLanding(CrazyflowBaseEnv):
 
     @property
     def reward(self) -> Array:
-        return self._reward(self.prev_done, self.terminated, self.sim.states, self.goal)
+        return self._reward(self.prev_done, self.terminated, self.sim.data.states, self.goal)
 
     @staticmethod
     @jax.jit
@@ -352,5 +356,5 @@ class CrazyflowEnvLanding(CrazyflowBaseEnv):
 
     def _get_obs(self) -> dict[str, Array]:
         obs = super()._get_obs()
-        obs["difference_to_goal"] = [self.goal - self.sim.states.pos]
+        obs["difference_to_goal"] = [self.goal - self.sim.data.states.pos]
         return obs

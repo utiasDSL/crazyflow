@@ -183,6 +183,16 @@ class Sim:
         return self.data.sim.freq
 
     @property
+    def control_freq(self) -> int:
+        if self.control == Control.state:
+            return self.data.controls.state_freq
+        if self.control == Control.attitude:
+            return self.data.controls.attitude_freq
+        if self.control == Control.thrust:
+            raise NotImplementedError("Thrust control is not yet supported by the sim config")
+        raise NotImplementedError(f"Control mode {self.control} not implemented")
+
+    @property
     def controllable(self) -> Array:
         """Boolean array of shape (n_worlds,) that indicates which worlds are controllable.
 
