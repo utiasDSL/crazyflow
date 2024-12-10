@@ -38,8 +38,6 @@ I_F_RANGE: Array = jnp.array([2.0, 2.0, 0.4])
 P_T: Array = jnp.array([70000.0, 70000.0, 60000.0])
 I_T: Array = jnp.array([0.0, 0.0, 500.0])
 D_T: Array = jnp.array([20000.0, 20000.0, 12000.0])
-J: Array = jnp.array([[2.3951e-5, 0, 0], [0, 2.3951e-5, 0], [0, 0, 3.2347e-5]])
-J_INV: Array = jnp.linalg.inv(J)
 PWM2RPM_SCALE: float = 0.2685
 PWM2RPM_CONST: float = 4070.3
 MIN_PWM: float = 20000
@@ -84,11 +82,11 @@ def state2attitude(
 
 @partial(jnp.vectorize, signature="(4),(4),(3),(3)->(4),(3)", excluded=[4])
 def attitude2rpm(
-    attitude: Array, quat: Array, last_rpy: Array, rpy_err_i: Array, dt: float
+    controls: Array, quat: Array, last_rpy: Array, rpy_err_i: Array, dt: float
 ) -> tuple[Array, Array]:
     """Convert the desired attitude and quaternion into motor RPMs."""
     rot = R.from_quat(quat)
-    target_rot = R.from_euler("xyz", attitude[1:])
+    target_rot = R.from_euler("xyz", controls[1:])
     drot = (target_rot.inv() * rot).as_matrix()
     # Extract the anti-symmetric part of the relative rotation matrix.
     rot_e = jnp.array([drot[2, 1] - drot[1, 2], drot[0, 2] - drot[2, 0], drot[1, 0] - drot[0, 1]])
@@ -99,13 +97,13 @@ def attitude2rpm(
     # PID target torques.
     target_torques = -P_T * rot_e + D_T * rpy_rates_e + I_T * rpy_err_i
     target_torques = jnp.clip(target_torques, -3200, 3200)
-    thrust_pwm = collective_thrust2pwm(attitude[0])
-    pwm = jnp.clip(thrust_pwm + MIX_MATRIX @ target_torques, MIN_PWM, MAX_PWM)
-    return PWM2RPM_CONST + PWM2RPM_SCALE * pwm, rpy_err_i
+    thrust_per_motor = controls[0] / 4
+    pwm = jnp.clip(thrust2pwm(thrust_per_motor) + MIX_MATRIX @ target_torques, MIN_PWM, MAX_PWM)
+    return pwm2rpm(pwm), rpy_err_i
 
 
-def collective_thrust2pwm(thrust: Array) -> Array:
-    """Convert the desired collective thrust into motor PWMs.
+def thrust2pwm(thrust: Array) -> Array:
+    """Convert the desired thrust into motor PWM.
 
     Args:
         thrust: The desired thrust per motor.
@@ -113,4 +111,10 @@ def collective_thrust2pwm(thrust: Array) -> Array:
     Returns:
         The motors' PWMs to apply to the quadrotor.
     """
-    return jnp.clip((jnp.sqrt(thrust / (KF * 4)) - PWM2RPM_CONST) / PWM2RPM_SCALE, MIN_PWM, MAX_PWM)
+    thrust = jnp.clip(thrust, MIN_THRUST, MAX_THRUST)  # Protect against NaN values
+    return jnp.clip((jnp.sqrt(thrust / KF) - PWM2RPM_CONST) / PWM2RPM_SCALE, MIN_PWM, MAX_PWM)
+
+
+def pwm2rpm(pwm: Array) -> Array:
+    """Convert the motors' PWMs into RPMs."""
+    return PWM2RPM_CONST + PWM2RPM_SCALE * pwm

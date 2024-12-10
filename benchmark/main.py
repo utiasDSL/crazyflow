@@ -44,7 +44,7 @@ def profile_gym_env_step(sim_config: config_dict.ConfigDict, n_steps: int, devic
 
     envs = gymnasium.make_vec(
         "DroneReachPos-v0",
-        max_episode_steps=200,
+        time_horizon_in_seconds=2,
         return_datatype="numpy",
         num_envs=sim_config.n_worlds,
         **sim_config,
@@ -52,8 +52,7 @@ def profile_gym_env_step(sim_config: config_dict.ConfigDict, n_steps: int, devic
 
     # Action for going up (in attitude control)
     action = np.zeros((sim_config.n_worlds, 4), dtype=np.float32)
-    action[..., 0] = -0.3
-
+    action[..., 0] = 0.3
     # Step through env once to ensure JIT compilation
     envs.reset_all(seed=42)
     envs.step(action)

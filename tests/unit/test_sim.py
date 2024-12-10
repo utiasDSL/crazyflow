@@ -32,7 +32,9 @@ def skip_unavailable_device(device: str):
 @pytest.mark.parametrize("device", ["gpu", "cpu"])
 @pytest.mark.parametrize("control", Control)
 @pytest.mark.parametrize("n_worlds", [1, 2])
-def test_sim_creation(physics: Physics, device: str, control: Control, n_worlds: int):
+def test_sim_init(
+    physics: Physics, device: str, control: Control, controller: Controller, n_worlds: int
+):
     n_drones = 1
     skip_unavailable_device(device)
 
@@ -41,6 +43,14 @@ def test_sim_creation(physics: Physics, device: str, control: Control, n_worlds:
             n_worlds=n_worlds, n_drones=n_drones, physics=physics, device=device, control=control
         )
 
+    if n_drones * n_worlds > 1 and controller == Controller.pycffirmware:
+        with pytest.raises(ConfigError):
+            create_sim()
+        return
+    if physics != Physics.analytical and control == Control.thrust:
+        with pytest.raises(ConfigError):  # TODO: Remove when supported with sys_id
+            create_sim()
+        return
     sim = create_sim()
     assert sim.n_worlds == n_worlds
     assert sim.n_drones == n_drones
@@ -163,12 +173,23 @@ def test_reset_masked(device: str, physics: Physics):
 @pytest.mark.parametrize("device", ["gpu", "cpu"])
 def test_sim_step(n_worlds: int, n_drones: int, physics: Physics, control: Control, device: str):
     skip_unavailable_device(device)
-    sim = Sim(n_worlds=n_worlds, n_drones=n_drones, physics=physics, device=device, control=control)
+    if n_drones * n_worlds > 1 and controller == Controller.pycffirmware:
+        return  # PyCFFirmware does not support multiple drones
+    if physics != Physics.analytical and control == Control.thrust:
+        return  # TODO: Remove when supported with sys_id
+    sim = Sim(
+        n_worlds=n_worlds,
+        n_drones=n_drones,
+        physics=physics,
+        device=device,
+        control=control,
+        controller=controller,
+    )
     try:
         for _ in range(2):
             sim.step()
-    except NotImplementedError:
-        pytest.skip("Physics not implemented")  # TODO: Remove once MuJoCo is supported
+    except NotImplementedError:  # TODO: Remove once MuJoCo is supported
+        pytest.skip("Physics not implemented")
 
 
 @pytest.mark.unit
