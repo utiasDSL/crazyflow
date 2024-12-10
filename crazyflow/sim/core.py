@@ -51,17 +51,15 @@ class Sim:
         self.control = control
         self.integrator = integrator
         self.device = jax.devices(device)[0]
-        # Allocate internal states and controls for analytical and sys_id physics.
         self.n_worlds = n_worlds
         self.n_drones = n_drones
-        self.default_data: SimData | None = None  # Populated at the end of self.setup()
-        self._default_mask = jnp.ones((n_worlds,), dtype=bool, device=self.device)
         # Allocate internal states and controls
         states = default_state(n_worlds, n_drones, self.device)
         controls = default_controls(n_worlds, n_drones, control_freq, control_freq, self.device)
         params = default_params(n_worlds, n_drones, 0.025, J, J_INV, self.device)
         sim = default_core(freq, jnp.zeros((n_worlds, 1), dtype=jnp.int32, device=self.device))
         self.data = SimData(states=states, controls=controls, params=params, sim=sim)
+        self.default_data: SimData | None = None  # Populated at the end of self.setup()
         # Initialize MuJoCo world and data
         self._xml_path = xml_path or self.default_path
         self._spec, self._mj_model, self._mj_data, self._mjx_model, self._mjx_data = self.setup_mj()
@@ -135,8 +133,7 @@ class Sim:
             mask: Boolean array of shape (n_worlds, ) that indicates which worlds to reset. If None,
                 all worlds are reset.
         """
-        mask = self._default_mask if mask is None else mask
-        assert mask.shape == (self.n_worlds,), f"Mask shape mismatch {mask.shape}"
+        assert mask is None or mask.shape == (self.n_worlds,), f"Mask shape mismatch {mask.shape}"
         self.data = self._reset(self.data, self.default_data, mask)
         self._mjx_data = self.sync_sim2mjx(self.data, self._mjx_data, self._mjx_model)
 

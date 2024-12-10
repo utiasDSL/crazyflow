@@ -113,8 +113,7 @@ class CrazyflowBaseEnv(VectorEnv):
         action = self._sanitize_action(action, self.sim.n_worlds, self.sim.n_drones, self.device)
         self._apply_action(action)
 
-        for _ in range(self.n_substeps):
-            self.sim.step()
+        self.sim.step(self.n_substeps)
         # Reset all environments which terminated or were truncated in the last step
         if jnp.any(self.prev_done):
             self.reset(mask=self.prev_done)
@@ -159,8 +158,8 @@ class CrazyflowBaseEnv(VectorEnv):
         if seed is not None:
             self.jax_key = jax.random.key(seed)
 
-        self.reset(mask=jnp.ones((self.sim.n_worlds), dtype=jnp.bool_))
-        self.prev_done = jnp.zeros((self.sim.n_worlds), dtype=jnp.bool_)
+        self.reset(mask=jnp.ones((self.sim.n_worlds), dtype=jnp.bool_, device=self.device))
+        self.prev_done = jnp.zeros((self.sim.n_worlds), dtype=jnp.bool_, device=self.device)
         return self._obs(), {}
 
     def reset(self, mask: Array) -> None:
@@ -219,7 +218,7 @@ class CrazyflowBaseEnv(VectorEnv):
     @staticmethod
     @jax.jit
     def _truncated(dones: Array, time: Array, time_horizon_in_seconds: float) -> Array:
-        truncated = time >= time_horizon_in_seconds
+        truncated = (time >= time_horizon_in_seconds).squeeze()
         return jnp.where(dones, False, truncated)
 
     def render(self):
