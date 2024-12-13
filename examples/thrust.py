@@ -1,5 +1,6 @@
 import numpy as np
 
+from crazyflow.constants import GRAVITY, MASS
 from crazyflow.control.controller import Control
 from crazyflow.sim.core import Sim
 
@@ -10,7 +11,8 @@ def main():
     duration = 5.0
     fps = 60
 
-    cmd = np.ones((sim.n_worlds, sim.n_drones, 4)) * 0.0615  # 4 individual motor thrusts
+    # 4 individual motor thrusts -> Weight devided by 4, plus a small margin to accelerate slightly
+    cmd = np.ones((sim.n_worlds, sim.n_drones, 4)) * (MASS + 1e-4) * GRAVITY / 4
     for i in range(int(duration * sim.freq)):
         sim.thrust_control(cmd)
         sim.step()
