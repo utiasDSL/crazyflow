@@ -10,11 +10,6 @@ from crazyflow.exception import ConfigError
 from crazyflow.sim.core import Sim
 from crazyflow.sim.physics import Physics
 
-# Reduce test time by skipping default. It already gets tested since it's one of the other enum
-# values.
-physics_no_default = [p for p in Physics if p != Physics.default]
-control_no_default = [c for c in Control if c != Control.default]
-
 
 def available_backends() -> list[str]:
     """Return list of available JAX backends."""
@@ -61,9 +56,9 @@ def array_compare_assert(x: Array, y: Array, value: bool = True, name: str | Non
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("physics", physics_no_default)
+@pytest.mark.parametrize("physics", Physics)
 @pytest.mark.parametrize("device", ["gpu", "cpu"])
-@pytest.mark.parametrize("control", control_no_default)
+@pytest.mark.parametrize("control", Control)
 @pytest.mark.parametrize("n_worlds", [1, 2])
 def test_sim_init(physics: Physics, device: str, control: Control, n_worlds: int):
     n_drones = 1
@@ -93,7 +88,7 @@ def test_sim_init(physics: Physics, device: str, control: Control, n_worlds: int
 
 @pytest.mark.unit
 @pytest.mark.parametrize("device", ["gpu", "cpu"])
-@pytest.mark.parametrize("physics", physics_no_default)
+@pytest.mark.parametrize("physics", Physics)
 @pytest.mark.parametrize("n_worlds", [1, 2])
 @pytest.mark.parametrize("n_drones", [1, 3])
 def test_reset(device: str, physics: Physics, n_worlds: int, n_drones: int):
@@ -129,7 +124,7 @@ def test_reset(device: str, physics: Physics, n_worlds: int, n_drones: int):
 
 @pytest.mark.unit
 @pytest.mark.parametrize("device", ["gpu", "cpu"])
-@pytest.mark.parametrize("physics", physics_no_default)
+@pytest.mark.parametrize("physics", Physics)
 def test_reset_masked(device: str, physics: Physics):
     """Test that reset with mask only resets specified worlds."""
     skip_unavailable_device(device)
@@ -173,8 +168,8 @@ def test_reset_masked(device: str, physics: Physics):
 @pytest.mark.unit
 @pytest.mark.parametrize("n_worlds", [1, 2])
 @pytest.mark.parametrize("n_drones", [1, 3])
-@pytest.mark.parametrize("physics", physics_no_default)
-@pytest.mark.parametrize("control", control_no_default)
+@pytest.mark.parametrize("physics", Physics)
+@pytest.mark.parametrize("control", Control)
 @pytest.mark.parametrize("device", ["gpu", "cpu"])
 def test_sim_step(n_worlds: int, n_drones: int, physics: Physics, control: Control, device: str):
     skip_unavailable_device(device)
