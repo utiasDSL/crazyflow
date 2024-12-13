@@ -74,7 +74,7 @@ def state2attitude(data: SimData) -> SimData:
     """
     states, controls = data.states, data.controls
     des_pos, des_vel = controls.state[..., :3], controls.state[..., 3:6]
-    des_yaw = controls.state[..., 9]
+    des_yaw = controls.state[..., [9]]  # Keep (N, M, 1) shape for broadcasting
     dt = 1 / data.sim.freq
     attitude, pos_err_i = state2attitude_ctrl(
         states.pos, states.vel, states.quat, des_pos, des_vel, des_yaw, controls.pos_err_i, dt
@@ -96,5 +96,4 @@ def fused_rpms2collective_wrench(
         cmd: The current simulation controls.
         params: The current simulation parameters.
     """
-    forces, torques = rpms2collective_wrench(cmd.rpms, states.quat, states.rpy_rates, params.J)
-    return forces, torques
+    return rpms2collective_wrench(cmd.rpms, states.quat, states.rpy_rates, params.J)
