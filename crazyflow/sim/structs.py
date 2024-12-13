@@ -66,14 +66,14 @@ def default_controls(
     device = jax.devices(device)[0] if isinstance(device, str) else device
     return SimControls(
         state=jnp.zeros((n_worlds, n_drones, 13), device=device),
-        state_steps=jnp.zeros((n_worlds, 1), dtype=jnp.int32, device=device),
+        state_steps=-jnp.ones((n_worlds, 1), dtype=jnp.int32, device=device),
         state_freq=state_freq,
         attitude=jnp.zeros((n_worlds, n_drones, 4), device=device),
         staged_attitude=jnp.zeros((n_worlds, n_drones, 4), device=device),
-        attitude_steps=jnp.zeros((n_worlds, 1), dtype=jnp.int32, device=device),
+        attitude_steps=-jnp.ones((n_worlds, 1), dtype=jnp.int32, device=device),
         attitude_freq=attitude_freq,
         thrust=jnp.zeros((n_worlds, n_drones, 4), device=device),
-        thrust_steps=jnp.zeros((n_worlds, 1), dtype=jnp.int32, device=device),
+        thrust_steps=-jnp.ones((n_worlds, 1), dtype=jnp.int32, device=device),
         thrust_freq=thrust_freq,
         rpms=jnp.zeros((n_worlds, n_drones, 4), device=device),
         rpy_err_i=jnp.zeros((n_worlds, n_drones, 3), device=device),
@@ -102,7 +102,7 @@ def default_params(
 
 @dataclass
 class SimCore:
-    freq: int
+    freq: int = field(pytree_node=False)
     steps: Array  # (N, 1)
 
 
@@ -116,4 +116,4 @@ class SimData:
     states: SimState
     controls: SimControls
     params: SimParams
-    sim: SimCore
+    core: SimCore
