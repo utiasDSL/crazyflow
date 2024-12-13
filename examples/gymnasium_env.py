@@ -25,9 +25,9 @@ envs = gymnasium.make_vec(
     **sim_config,
 )
 
-# action for going up (in attitude control). NOTE actions are rescaled in the environment
+# action for going up (in attitude control)
 action = np.zeros((sim_config.n_worlds * sim_config.n_drones, 4), dtype=np.float32)
-action[..., 0] = -0.2
+action[..., 0] = 0.4
 
 obs, info = envs.reset_all(seed=SEED)
 
