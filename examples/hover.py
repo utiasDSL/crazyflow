@@ -12,7 +12,8 @@ def main():
         physics=Physics.analytical,
         control=Control.state,
         freq=500,
-        control_freq=500,
+        attitude_freq=500,
+        state_freq=500,
         device="cpu",
     )
 
@@ -22,7 +23,7 @@ def main():
 
     # State cmd is [x, y, z, vx, vy, vz, ax, ay, az, yaw, roll_rate, pitch_rate, yaw_rate]
     cmd = np.zeros((sim.n_worlds, sim.n_drones, 13))
-    cmd[..., 2] = 0.1
+    cmd[..., :3] = 0.1
 
     for i in range(int(duration * sim.freq)):
         sim.state_control(cmd)

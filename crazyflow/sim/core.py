@@ -9,6 +9,7 @@ import mujoco.mjx as mjx
 from einops import rearrange
 from gymnasium.envs.mujoco.mujoco_rendering import MujocoRenderer
 from jax import Array
+from jax.scipy.spatial.transform import Rotation as R
 from mujoco.mjx import Data, Model
 
 from crazyflow.constants import J_INV, J
@@ -41,7 +42,8 @@ class Sim:
         control: Control = Control.default,
         integrator: Integrator = Integrator.default,
         freq: int = 500,
-        control_freq: int = 500,
+        state_freq: int = 100,
+        attitude_freq: int = 500,
         device: str = "cpu",
         xml_path: Path | None = None,
     ):
@@ -55,7 +57,7 @@ class Sim:
         self.n_drones = n_drones
         # Allocate internal states and controls
         states = default_state(n_worlds, n_drones, self.device)
-        controls = default_controls(n_worlds, n_drones, control_freq, control_freq, self.device)
+        controls = default_controls(n_worlds, n_drones, attitude_freq, state_freq, self.device)
         params = default_params(n_worlds, n_drones, 0.025, J, J_INV, self.device)
         sim = default_core(freq, jnp.zeros((n_worlds, 1), dtype=jnp.int32, device=self.device))
         self.data = SimData(states=states, controls=controls, params=params, sim=sim)
@@ -345,8 +347,10 @@ def _step_attitude_controller(data: SimData, mask: Array) -> SimData:
     mask = mask.reshape(-1, 1, 1)
     quat, attitude = data.states.quat, data.controls.attitude
     last_rpy, rpy_err_i = data.controls.last_rpy, data.controls.rpy_err_i
-    rpms, rpy_err_i = attitude2rpm(attitude, quat, last_rpy, rpy_err_i, 1 / data.sim.freq)
-    controls = leaf_replace(data.controls, mask, rpms=rpms, rpy_err_i=rpy_err_i, last_rpy=last_rpy)
+    dt = 1 / data.controls.attitude_freq
+    rpms, rpy_err_i = attitude2rpm(attitude, quat, last_rpy, rpy_err_i, dt)
+    rpy = R.from_quat(quat).as_euler("xyz")
+    controls = leaf_replace(data.controls, mask, rpms=rpms, rpy_err_i=rpy_err_i, last_rpy=rpy)
     return data.replace(controls=controls)
 
 

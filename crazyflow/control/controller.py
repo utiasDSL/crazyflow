@@ -90,7 +90,8 @@ def attitude2rpm(
     drot = (target_rot.inv() * rot).as_matrix()
     # Extract the anti-symmetric part of the relative rotation matrix.
     rot_e = jnp.array([drot[2, 1] - drot[1, 2], drot[0, 2] - drot[2, 0], drot[1, 0] - drot[0, 1]])
-    rpy_rates_e = -(rot.as_euler("xyz") - last_rpy) / dt  # Assuming zero rpy_rates target
+    # TODO: Assumes zero rpy_rates targets for now, use the actual target instead.
+    rpy_rates_e = -(rot.as_euler("xyz") - last_rpy) / dt
     rpy_err_i = rpy_err_i - rot_e * dt
     rpy_err_i = jnp.clip(rpy_err_i, -1500.0, 1500.0)
     rpy_err_i = rpy_err_i.at[:2].set(jnp.clip(rpy_err_i[:2], -1.0, 1.0))

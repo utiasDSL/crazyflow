@@ -5,12 +5,12 @@ from crazyflow.sim.core import Sim
 
 
 def main():
-    sim = Sim(n_worlds=1, n_drones=4, control=Control.state, device="cpu")
+    sim = Sim(n_drones=4, control=Control.state)
     sim.reset()
     duration = 5.0
     fps = 60
 
-    start_xy = sim.states.pos[0, :, :2]
+    start_xy = sim.data.states.pos[0, :, :2]
     for i in range(int(duration * sim.freq)):
         if sim.controllable:
             omega = i / sim.freq
