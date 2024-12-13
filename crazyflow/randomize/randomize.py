@@ -4,6 +4,7 @@ from jax import Array
 
 from crazyflow.sim.core import Sim
 from crazyflow.sim.structs import SimData
+from crazyflow.utils import leaf_replace
 
 
 def randomize_mass(sim: Sim, mass: Array, mask: Array | None = None):
@@ -41,17 +42,12 @@ def randomize_inertia(sim: Sim, new_j: Array, mask: Array | None = None):
 
 @jax.jit
 def _randomize_mass_params(data: SimData, mass: Array, mask: Array | None = None) -> SimData:
-    mask = mask.squeeze() if mask is not None else jnp.ones(mass.shape[0], dtype=bool)
     mass = jnp.atleast_3d(mass)
     assert mass.shape[2] == 1, f"Expected shape (n_worlds, n_drones | 1, 1), is {mass.shape}"
-    return data.replace(params=data.params.replace(mass=jnp.where(mask, mass, data.params.mass)))
+    return data.replace(params=leaf_replace(data.params, mask, mass=mass))
 
 
 @jax.jit
 def _randomize_inertia_params(data: SimData, new_j: Array, mask: Array | None = None) -> SimData:
-    mask = mask.squeeze() if mask is not None else jnp.ones(new_j.shape[0], dtype=bool)
     new_j_inv = jnp.linalg.inv(new_j)
-    mask_4d = mask.reshape(-1, 1, 1, 1)
-    new_j = jnp.where(mask_4d, new_j, data.params.J)
-    new_j_inv = jnp.where(mask_4d, new_j_inv, data.params.J_INV)
-    return data.replace(params=data.params.replace(J=new_j, J_INV=new_j_inv))
+    return data.replace(params=leaf_replace(data.params, mask, J=new_j, J_INV=new_j_inv))

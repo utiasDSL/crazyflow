@@ -25,7 +25,7 @@ SYS_ID_PARAMS = {
 class Physics(str, Enum):
     """Physics mode for the simulation."""
 
-    mujoco = "mujoco"
+    # mujoco = "mujoco"  TODO: Implement
     analytical = "analytical"
     sys_id = "sys_id"
     default = analytical

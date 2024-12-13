@@ -51,11 +51,11 @@ def test_attitude_interface(physics: Physics):
     # Check if drone maintained hover position
     dpos = sim.states.pos[0, 0] - target_pos
     distance = jnp.linalg.norm(dpos)
-    assert distance < 0.1, f"Failed to maintain hover with {physics} and {controller} ({dpos})"
+    assert distance < 0.1, f"Failed to maintain hover with {physics} ({dpos})"
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("physics", [Physics.analytical, Physics.mujoco])
+@pytest.mark.parametrize("physics", Physics)
 def test_swarm_control(physics: Physics):
     n_worlds, n_drones = 2, 3
     sim = Sim(n_worlds=n_worlds, n_drones=n_drones, physics=physics, control=Control.state)

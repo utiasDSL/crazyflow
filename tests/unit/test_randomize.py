@@ -20,18 +20,16 @@ def test_randomize_mass(device: str, n_worlds: int):
     add_on_mass = np.random.uniform(-0.005, 0.005, size=(sim.n_worlds, sim.n_drones))
     masses = np.ones((sim.n_worlds, sim.n_drones)) * 0.025
     randomized_masses = masses + add_on_mass
-    randomized_masses = randomized_masses.reshape(sim.n_worlds, sim.n_drones, 1)
-
-    randomized_masses = jnp.array(randomized_masses, device=sim.device)
     randomize_mass(sim, randomized_masses)
 
-    for k, v in to_state_dict(sim.params).items():
-        default = getattr(sim.defaults["params"], k)
+    for k, v in to_state_dict(sim.data.params).items():
+        default = getattr(sim.default_data.params, k)
         if not isinstance(v, jnp.ndarray) or not isinstance(default, jnp.ndarray):
             continue
         assert v.shape == default.shape, f"{k} shape mismatch"
         assert v.device == default.device, f"{k} device mismatch"
         if k == "mass":
+            randomized_masses = randomized_masses.reshape(sim.n_worlds, sim.n_drones, 1)
             assert np.allclose(v, randomized_masses), f"{k} value mismatch, {v-randomized_masses}"
 
 
@@ -50,17 +48,17 @@ def test_randomize_mass_masked(device: str):
     mask = jnp.array([True, False, True])
     randomize_mass(sim, randomized_masses, mask)
 
-    for k, v in to_state_dict(sim.params).items():
-        default = getattr(sim.defaults["params"], k)
+    for k, v in to_state_dict(sim.data.params).items():
+        default = getattr(sim.default_data.params, k)
         if not isinstance(v, jnp.ndarray) or not isinstance(default, jnp.ndarray):
             continue
         assert v.shape == default.shape, f"{k} shape mismatch"
         assert v.device == default.device, f"{k} device mismatch"
         if k == "mass":
             # Check that masked worlds match randomized masses
-            assert np.allclose(v[0], randomized_masses[0]), "First world should be randomized"
-            assert np.allclose(v[1], default[1]), "Second world should not be randomized"
-            assert np.allclose(v[2], randomized_masses[2]), "Third world should be randomized"
+            assert np.all(v[0] == randomized_masses[0]), "First world should be randomized"
+            assert np.all(v[1] == default[1]), "Second world should not be randomized"
+            assert np.all(v[2] == randomized_masses[2]), "Third world should be randomized"
 
 
 @pytest.mark.unit
@@ -74,8 +72,8 @@ def test_randomize_inertia(device: str):
 
     randomize_inertia(sim, randomized_j)
 
-    for k, v in to_state_dict(sim.params).items():
-        default = getattr(sim.defaults["params"], k)
+    for k, v in to_state_dict(sim.data.params).items():
+        default = getattr(sim.default_data.params, k)
         if not isinstance(v, jnp.ndarray) or not isinstance(default, jnp.ndarray):
             continue
         assert v.shape == default.shape, f"{k} shape mismatch"
@@ -97,8 +95,8 @@ def test_randomize_inertia_masked(device: str):
     mask = jnp.array([True, False, True])
     randomize_inertia(sim, randomized_j, mask)
 
-    for k, v in to_state_dict(sim.params).items():
-        default = getattr(sim.defaults["params"], k)
+    for k, v in to_state_dict(sim.data.params).items():
+        default = getattr(sim.default_data.params, k)
         if not isinstance(v, jnp.ndarray) or not isinstance(default, jnp.ndarray):
             continue
         assert v.shape == default.shape, f"{k} shape mismatch"

@@ -1,6 +1,6 @@
 from functools import partial
 from pathlib import Path
-from typing import Any, Callable, TypeVar
+from typing import Any, Callable
 
 import jax
 import jax.numpy as jnp
@@ -13,22 +13,19 @@ from jax.scipy.spatial.transform import Rotation as R
 from mujoco.mjx import Data, Model
 
 from crazyflow.constants import J_INV, J
-from crazyflow.control.controller import Control, attitude2rpm, pwm2rpm, thrust2pwm
-from crazyflow.exception import NotInitializedError
-from crazyflow.sim.fused import fused_analytical_dynamics, fused_identified_dynamics, state2attitude
+from crazyflow.control.controller import Control, attitude2rpm, pwm2rpm, state2attitude, thrust2pwm
+from crazyflow.exception import ConfigError, NotInitializedError
+from crazyflow.sim.fused import fused_analytical_dynamics, fused_identified_dynamics
 from crazyflow.sim.integration import Integrator
 from crazyflow.sim.physics import Physics
 from crazyflow.sim.structs import (
-    SimControls,
     SimData,
-    SimParams,
-    SimState,
     default_controls,
     default_core,
     default_params,
     default_state,
 )
-from crazyflow.utils import clone_body, grid_2d
+from crazyflow.utils import clone_body, grid_2d, leaf_replace, pytree_replace
 
 
 class Sim:
@@ -50,6 +47,8 @@ class Sim:
     ):
         assert Physics(physics) in Physics, f"Physics mode {physics} not implemented"
         assert Control(control) in Control, f"Control mode {control} not implemented"
+        if physics != Physics.analytical and control == Control.thrust:  # TODO: Implement
+            raise ConfigError("Thrust control is not supported with sys_id physics")
         self.physics = physics
         self.control = control
         self.integrator = integrator
@@ -62,8 +61,8 @@ class Sim:
             n_worlds, n_drones, state_freq, attitude_freq, thrust_freq, self.device
         )
         params = default_params(n_worlds, n_drones, 0.025, J, J_INV, self.device)
-        sim = default_core(freq, jnp.zeros((n_worlds, 1), dtype=jnp.int32, device=self.device))
-        self.data = SimData(states=states, controls=controls, params=params, sim=sim)
+        core = default_core(freq, jnp.zeros((n_worlds, 1), dtype=jnp.int32, device=self.device))
+        self.data = SimData(states=states, controls=controls, params=params, core=core)
         self.default_data: SimData | None = None  # Populated at the end of self.setup()
         # Initialize MuJoCo world and data
         self._xml_path = xml_path or self.default_path
@@ -85,7 +84,7 @@ class Sim:
         if self.n_drones > 1:  # If multiple drones, arrange them in a grid
             grid = grid_2d(self.n_drones)
             states = self.data.states.replace(pos=self.data.states.pos.at[..., :2].set(grid))
-            self.data = self.data.replace(states=states)
+            self.data: SimData = self.data.replace(states=states)
             mjx_data = self.sync_sim2mjx(self.data, mjx_data, mjx_model)
             # Update default to reflect changes after resetting
         self.default_data = self.data.replace()
@@ -112,7 +111,7 @@ class Sim:
             data = ctrl_fn(data)
             data = physics_fn(data)
             # data = integrator_fn(data)
-            data = data.replace(sim=data.sim.replace(steps=data.sim.steps + 1))
+            data = data.replace(core=data.core.replace(steps=data.core.steps + 1))
             return data, None
 
         # ``scan`` can be lowered to a single WhileOp, reducing compilation times while still fusing
@@ -178,11 +177,11 @@ class Sim:
 
     @property
     def time(self) -> Array:
-        return self.data.sim.steps / self.data.sim.freq
+        return self.data.core.steps / self.data.core.freq
 
     @property
     def freq(self) -> int:
-        return self.data.sim.freq
+        return self.data.core.freq
 
     @property
     def control_freq(self) -> int:
@@ -211,7 +210,7 @@ class Sim:
                 control_steps, control_freq = controls.attitude_steps, controls.attitude_freq
             case _:
                 raise NotImplementedError(f"Control mode {self.control} not implemented")
-        return controllable(self.data.sim.steps, self.data.sim.freq, control_steps, control_freq)
+        return controllable(self.data.core.steps, self.data.core.freq, control_steps, control_freq)
 
     def contacts(self, body: str | None = None) -> Array:
         """Get contact information from the simulation.
@@ -245,10 +244,7 @@ class Sim:
     @staticmethod
     @jax.jit
     def _reset(data: SimData, default_data: SimData, mask: Array | None = None) -> SimData:
-        data = data.replace(states=pytree_replace(data.states, default_data.states, mask))
-        data = data.replace(controls=pytree_replace(data.controls, default_data.controls, mask))
-        data = data.replace(params=pytree_replace(data.params, default_data.params, mask))
-        return data
+        return pytree_replace(data, default_data, mask)
 
     def _step(self, data: SimData, n_steps: int) -> SimData:
         raise NotInitializedError("_step call before compiling the simulation pipeline.")
@@ -317,7 +313,7 @@ def thrust_control(controls: Array, data: SimData, device: str) -> SimData:
 
 @jax.jit
 def controllable(step: Array, freq: int, control_steps: Array, control_freq: int) -> Array:
-    return ((step - control_steps) >= (freq / control_freq)) | (control_steps == 0)
+    return ((step - control_steps) >= (freq / control_freq)) | (control_steps == -1)
 
 
 @jax.jit
@@ -332,83 +328,47 @@ def contacts(geom_start: int, geom_count: int, data: Data) -> Array:
 
 def step_state_controller(data: SimData) -> SimData:
     """Compute the updated controls for the state controller."""
-    controls = data.controls
-    mask = controllable(data.sim.steps, data.sim.freq, controls.state_steps, controls.state_freq)
-    state_steps = jnp.where(mask, data.sim.steps, controls.state_steps)
-    data = data.replace(controls=controls.replace(state_steps=state_steps))
-    return state2attitude(data)
+    states, controls = data.states, data.controls
+    mask = controllable(data.core.steps, data.core.freq, controls.state_steps, controls.state_freq)
+    des_pos, des_vel = controls.state[..., :3], controls.state[..., 3:6]
+    des_yaw = controls.state[..., [9]]  # Keep (N, M, 1) shape for broadcasting
+    dt = 1 / data.core.freq
+    attitude, pos_err_i = state2attitude(
+        states.pos, states.vel, states.quat, des_pos, des_vel, des_yaw, controls.pos_err_i, dt
+    )
+    controls = leaf_replace(
+        controls, mask, state_steps=data.core.steps, staged_attitude=attitude, pos_err_i=pos_err_i
+    )
+    return data.replace(controls=controls)
 
 
 def step_attitude_controller(data: SimData) -> SimData:
     """Compute the updated controls for the attitude controller."""
     controls = data.controls
-    steps, freq = data.sim.steps, data.sim.freq
+    steps, freq = data.core.steps, data.core.freq
     mask = controllable(steps, freq, controls.attitude_steps, controls.attitude_freq)
-    data = _commit_attitude_controls(data, mask)
-    return _step_attitude_controller(data, mask)
+    if isinstance(freq, Array):
+        assert data.core.freq.ndim == 0, f"{freq.shape} {freq}, {freq.ndim}"
+    # Commit the staged attitude controls
+    staged_attitude = controls.staged_attitude
+    controls = leaf_replace(controls, mask, attitude_steps=steps, attitude=staged_attitude)
+    # Compute the new rpm values from the committed attitude controls
+    quat, attitude = data.states.quat, controls.attitude
+    dt = 1 / controls.attitude_freq
+    rpms, rpy_err_i = attitude2rpm(attitude, quat, controls.last_rpy, controls.rpy_err_i, dt)
+    rpy = R.from_quat(quat).as_euler("xyz")
+    controls = leaf_replace(controls, mask, rpms=rpms, rpy_err_i=rpy_err_i, last_rpy=rpy)
+    return data.replace(controls=controls)
 
 
 def step_thrust_controller(data: SimData) -> SimData:
     """Compute the updated controls for the thrust controller."""
     controls = data.controls
-    mask = controllable(data.sim.steps, data.sim.freq, controls.thrust_steps, controls.thrust_freq)
+    steps = data.core.steps
+    mask = controllable(steps, data.core.freq, controls.thrust_steps, controls.thrust_freq)
     rpms = pwm2rpm(thrust2pwm(controls.thrust))
-    controls = leaf_replace(controls, mask, thrust_steps=data.sim.steps, rpms=rpms)
+    controls = leaf_replace(controls, mask, thrust_steps=steps, rpms=rpms)
     return data.replace(controls=controls)
-
-
-def _commit_attitude_controls(data: SimData, mask: Array) -> SimData:
-    mask = mask.reshape(-1, 1, 1)
-    controls = data.controls
-    staged_attitude = controls.staged_attitude
-    controls = leaf_replace(controls, mask, attitude_steps=data.sim.steps, attitude=staged_attitude)
-    return data.replace(controls=controls)
-
-
-def _step_attitude_controller(data: SimData, mask: Array) -> SimData:
-    mask = mask.reshape(-1, 1, 1)
-    quat, attitude = data.states.quat, data.controls.attitude
-    last_rpy, rpy_err_i = data.controls.last_rpy, data.controls.rpy_err_i
-    dt = 1 / data.controls.attitude_freq
-    rpms, rpy_err_i = attitude2rpm(attitude, quat, last_rpy, rpy_err_i, dt)
-    rpy = R.from_quat(quat).as_euler("xyz")
-    controls = leaf_replace(data.controls, mask, rpms=rpms, rpy_err_i=rpy_err_i, last_rpy=rpy)
-    return data.replace(controls=controls)
-
-
-T = TypeVar("T", SimState, SimControls, SimParams)
-
-
-def pytree_replace(data: T, defaults: T, mask: Array | None = None) -> T:
-    """Overwrite elements of a pytree with values from another pytree filtered by a mask.
-
-    The mask indicates which elements of the leaf arrays to overwrite with new values, and which
-    ones to leave unchanged.
-    """
-
-    def masked_replace(x: Array, y: Array) -> Array:
-        """Resize the mask to match the shape of x and select from x and y accordingly."""
-        _mask = jnp.ones((x.shape[0],)) if mask is None else mask
-        _mask = _mask.reshape(-1, *[1] * (x.ndim - 1))
-        return jnp.where(_mask, y, x)
-
-    return jax.tree.map(masked_replace, data, defaults)
-
-
-def leaf_replace(data: T, mask: Array | None = None, **kwargs: dict[str, Array]) -> T:
-    """Replace elements of a pytree with the given keyword arguments.
-
-    If a mask is provided, the replacement is applied only to the elements indicated by the mask.
-
-    Args:
-        data: The pytree to be modified.
-        mask: Boolean array matching the first dimension of all kwargs entries in data.
-        kwargs: Leaf names and their replacement values.
-    """
-    replace = {}
-    for k, v in kwargs.items():
-        replace[k] = jnp.where(mask.reshape(-1, *[1] * (v.ndim - 1)), v, getattr(data, k))
-    return data.replace(**replace)
 
 
 mjx_kinematics = jax.vmap(mjx.kinematics, in_axes=(None, 0))
