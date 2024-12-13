@@ -12,7 +12,7 @@ from jax import Array
 from jax.scipy.spatial.transform import Rotation as R
 from mujoco.mjx import Data, Model
 
-from crazyflow.constants import J_INV, J
+from crazyflow.constants import J_INV, MASS, J
 from crazyflow.control.controller import Control, attitude2rpm, pwm2rpm, state2attitude, thrust2pwm
 from crazyflow.exception import ConfigError, NotInitializedError
 from crazyflow.sim.fused import fused_analytical_dynamics, fused_identified_dynamics
@@ -60,7 +60,7 @@ class Sim:
         controls = default_controls(
             n_worlds, n_drones, state_freq, attitude_freq, thrust_freq, self.device
         )
-        params = default_params(n_worlds, n_drones, 0.025, J, J_INV, self.device)
+        params = default_params(n_worlds, n_drones, MASS, J, J_INV, self.device)
         core = default_core(freq, jnp.zeros((n_worlds, 1), dtype=jnp.int32, device=self.device))
         self.data = SimData(states=states, controls=controls, params=params, core=core)
         self.default_data: SimData | None = None  # Populated at the end of self.setup()
