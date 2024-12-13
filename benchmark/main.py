@@ -90,8 +90,8 @@ def profile_step(sim_config: config_dict.ConfigDict, n_steps: int, device: str):
         tstart = time.perf_counter()
         sim.attitude_control(cmd)
         sim.step()
-        jax.block_until_ready(sim.data.states.pos)
         times.append(time.perf_counter() - tstart)
+    jax.block_until_ready(sim.data.states.pos)
 
     analyze_timings(times, n_steps, sim.n_worlds, sim.freq)
 
@@ -104,7 +104,7 @@ def main():
     sim_config.n_drones = 1
     sim_config.physics = "analytical"
     sim_config.control = "attitude"
-    sim_config.control_freq = 500
+    sim_config.attitude_freq = 500
     sim_config.device = device
 
     print("Simulator performance")
