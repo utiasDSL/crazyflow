@@ -11,7 +11,7 @@ from gymnasium.envs.mujoco.mujoco_rendering import MujocoRenderer
 from jax import Array
 from mujoco.mjx import Data, Model
 
-from crazyflow.constants import J_INV, J
+from crazyflow.constants import J_INV, MASS, J
 from crazyflow.control.controller import Control, Controller
 from crazyflow.exception import ConfigError, NotInitializedError
 from crazyflow.sim.fused import (
@@ -90,7 +90,7 @@ class Sim:
         # Allocate physics parameter buffers.
         j, j_inv = jnp.array(J, device=self.device), jnp.array(J_INV, device=self.device)
         self.params = SimParams(
-            mass=jnp.ones((n_worlds, n_drones, 1), device=self.device) * 0.025,
+            mass=jnp.ones((n_worlds, n_drones, 1), device=self.device) * MASS,
             J=jnp.tile(j[None, None, :, :], (n_worlds, n_drones, 1, 1)),
             J_INV=jnp.tile(j_inv[None, None, :, :], (n_worlds, n_drones, 1, 1)),
         )
