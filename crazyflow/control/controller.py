@@ -98,11 +98,12 @@ def attitude2rpm(
     # PID target torques.
     target_torques = -P_T * rot_e + D_T * rpy_rates_e + I_T * rpy_err_i
     target_torques = jnp.clip(target_torques, -3200, 3200)
-    thrust_per_motor = controls[0] / 4
+    thrust_per_motor = jnp.atleast_1d(controls[0]) / 4
     pwm = jnp.clip(thrust2pwm(thrust_per_motor) + MIX_MATRIX @ target_torques, MIN_PWM, MAX_PWM)
     return pwm2rpm(pwm), rpy_err_i
 
 
+@partial(jnp.vectorize, signature="(4)->(4)")
 def thrust2pwm(thrust: Array) -> Array:
     """Convert the desired thrust into motor PWM.
 
@@ -116,6 +117,7 @@ def thrust2pwm(thrust: Array) -> Array:
     return jnp.clip((jnp.sqrt(thrust / KF) - PWM2RPM_CONST) / PWM2RPM_SCALE, MIN_PWM, MAX_PWM)
 
 
+@partial(jnp.vectorize, signature="(4)->(4)")
 def pwm2rpm(pwm: Array) -> Array:
     """Convert the motors' PWMs into RPMs."""
     return PWM2RPM_CONST + PWM2RPM_SCALE * pwm

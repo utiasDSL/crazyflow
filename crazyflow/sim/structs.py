@@ -39,14 +39,15 @@ def default_state(n_worlds: int, n_drones: int, device: Device) -> SimState:
 @dataclass
 class SimControls:
     state: Array  # (N, M, 13)
+    state_steps: Array  # (N, 1)
+    state_freq: int = field(pytree_node=False)
     attitude: Array  # (N, M, 4)
     staged_attitude: Array  # (N, M, 4)
     attitude_steps: Array  # (N, 1)
     attitude_freq: int = field(pytree_node=False)
-    state_steps: Array  # (N, 1)
-    state_freq: int = field(pytree_node=False)
     thrust: Array  # (N, M, 4)
     thrust_steps: Array  # (N, 1)
+    thrust_freq: int = field(pytree_node=False)
     rpms: Array  # (N, M, 4)
     rpy_err_i: Array  # (N, M, 3)
     pos_err_i: Array  # (N, M, 3)
@@ -56,22 +57,24 @@ class SimControls:
 def default_controls(
     n_worlds: int,
     n_drones: int,
-    attitude_freq: int,
     state_freq: int = 100,
+    attitude_freq: int = 500,
+    thrust_freq: int = 500,
     device: Device | str = "cpu",
 ) -> SimControls:
     """Create a default set of controls for the simulation."""
     device = jax.devices(device)[0] if isinstance(device, str) else device
     return SimControls(
         state=jnp.zeros((n_worlds, n_drones, 13), device=device),
+        state_steps=jnp.zeros((n_worlds, 1), dtype=jnp.int32, device=device),
+        state_freq=state_freq,
         attitude=jnp.zeros((n_worlds, n_drones, 4), device=device),
         staged_attitude=jnp.zeros((n_worlds, n_drones, 4), device=device),
         attitude_steps=jnp.zeros((n_worlds, 1), dtype=jnp.int32, device=device),
         attitude_freq=attitude_freq,
-        state_steps=jnp.zeros((n_worlds, 1), dtype=jnp.int32, device=device),
-        state_freq=state_freq,
         thrust=jnp.zeros((n_worlds, n_drones, 4), device=device),
         thrust_steps=jnp.zeros((n_worlds, 1), dtype=jnp.int32, device=device),
+        thrust_freq=thrust_freq,
         rpms=jnp.zeros((n_worlds, n_drones, 4), device=device),
         rpy_err_i=jnp.zeros((n_worlds, n_drones, 3), device=device),
         pos_err_i=jnp.zeros((n_worlds, n_drones, 3), device=device),

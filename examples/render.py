@@ -5,10 +5,9 @@ from crazyflow.sim import Physics, Sim
 
 def main():
     """Spawn 5 drones in one world and render it."""
-    n_worlds, n_drones = 1, 100
-    sim = Sim(n_worlds=n_worlds, n_drones=n_drones, physics=Physics.sys_id, device="gpu", freq=60)
+    sim = Sim(n_drones=100, physics=Physics.sys_id, device="gpu", freq=60)
     fps = 60
-    cmd = np.array([[[0.3, 0, 0, 0] for _ in range(n_drones)] for _ in range(n_worlds)])
+    cmd = np.array([[[0.3, 0, 0, 0] for _ in range(sim.n_drones)]])
     for _ in range(int(5 * fps)):
         start = sim.time[0]
         while sim.time[0] - start < 1.0 / fps:

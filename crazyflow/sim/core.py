@@ -13,7 +13,7 @@ from jax.scipy.spatial.transform import Rotation as R
 from mujoco.mjx import Data, Model
 
 from crazyflow.constants import J_INV, J
-from crazyflow.control.controller import Control, attitude2rpm
+from crazyflow.control.controller import Control, attitude2rpm, pwm2rpm, thrust2pwm
 from crazyflow.exception import NotInitializedError
 from crazyflow.sim.fused import fused_analytical_dynamics, fused_identified_dynamics, state2attitude
 from crazyflow.sim.integration import Integrator
@@ -44,6 +44,7 @@ class Sim:
         freq: int = 500,
         state_freq: int = 100,
         attitude_freq: int = 500,
+        thrust_freq: int = 500,
         device: str = "cpu",
         xml_path: Path | None = None,
     ):
@@ -57,7 +58,9 @@ class Sim:
         self.n_drones = n_drones
         # Allocate internal states and controls
         states = default_state(n_worlds, n_drones, self.device)
-        controls = default_controls(n_worlds, n_drones, attitude_freq, state_freq, self.device)
+        controls = default_controls(
+            n_worlds, n_drones, state_freq, attitude_freq, thrust_freq, self.device
+        )
         params = default_params(n_worlds, n_drones, 0.025, J, J_INV, self.device)
         sim = default_core(freq, jnp.zeros((n_worlds, 1), dtype=jnp.int32, device=self.device))
         self.data = SimData(states=states, controls=controls, params=params, sim=sim)
@@ -160,7 +163,7 @@ class Sim:
         """Set the desired thrust for all drones in all worlds."""
         assert cmd.shape == (self.n_worlds, self.n_drones, 4), "Command shape mismatch"
         assert self.control == Control.thrust, "Thrust control is not enabled by the sim config"
-        self.controls = self._thrust_control(cmd, self.controls, self.device)
+        self.data = thrust_control(cmd, self.data, self.device)
 
     def render(self):
         if self.viewer is None:
@@ -258,6 +261,8 @@ def generate_control_fn(control: Control) -> Callable[[SimData], SimData]:
             return lambda data: step_attitude_controller(step_state_controller(data))
         case Control.attitude:
             return step_attitude_controller
+        case Control.thrust:
+            return step_thrust_controller
         case _:
             raise NotImplementedError(f"Control mode {control} not implemented")
 
@@ -283,6 +288,13 @@ def generate_integrator_fn(integrator: Integrator) -> Callable[[SimData], SimDat
 
 
 @partial(jax.jit, static_argnames="device")
+def state_control(controls: Array, data: SimData, device: str) -> SimData:
+    """Set the desired state for all drones in all worlds."""
+    controls = jnp.array(controls, device=device)
+    return data.replace(controls=data.controls.replace(state=controls))
+
+
+@partial(jax.jit, static_argnames="device")
 def attitude_control(controls: Array, data: SimData, device: str) -> SimData:
     """Stage the desired attitude for all drones in all worlds.
 
@@ -297,9 +309,10 @@ def attitude_control(controls: Array, data: SimData, device: str) -> SimData:
 
 
 @partial(jax.jit, static_argnames="device")
-def state_control(controls: Array, data: SimData, device: str) -> SimData:
+def thrust_control(controls: Array, data: SimData, device: str) -> SimData:
+    """Set the desired thrust for all drones in all worlds."""
     controls = jnp.array(controls, device=device)
-    return data.replace(controls=data.controls.replace(state=controls))
+    return data.replace(controls=data.controls.replace(thrust=controls))
 
 
 @jax.jit
@@ -333,6 +346,15 @@ def step_attitude_controller(data: SimData) -> SimData:
     mask = controllable(steps, freq, controls.attitude_steps, controls.attitude_freq)
     data = _commit_attitude_controls(data, mask)
     return _step_attitude_controller(data, mask)
+
+
+def step_thrust_controller(data: SimData) -> SimData:
+    """Compute the updated controls for the thrust controller."""
+    controls = data.controls
+    mask = controllable(data.sim.steps, data.sim.freq, controls.thrust_steps, controls.thrust_freq)
+    rpms = pwm2rpm(thrust2pwm(controls.thrust))
+    controls = leaf_replace(controls, mask, thrust_steps=data.sim.steps, rpms=rpms)
+    return data.replace(controls=controls)
 
 
 def _commit_attitude_controls(data: SimData, mask: Array) -> SimData:
