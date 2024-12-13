@@ -1,6 +1,6 @@
+import jax
 import jax.numpy as jnp
 from flax.struct import dataclass, field
-import jax
 from jax import Array, Device
 
 

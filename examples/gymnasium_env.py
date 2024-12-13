@@ -10,7 +10,7 @@ sim_config = config_dict.ConfigDict()
 sim_config.device = "cpu"
 sim_config.physics = Physics.sys_id
 sim_config.control = Control.default
-sim_config.control_freq = 50
+sim_config.attitude_freq = 50
 sim_config.n_drones = 1
 sim_config.n_worlds = 20
 

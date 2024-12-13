@@ -55,6 +55,7 @@ class Sim:
         self.device = jax.devices(device)[0]
         self.n_worlds = n_worlds
         self.n_drones = n_drones
+
         # Allocate internal states and controls
         states = default_state(n_worlds, n_drones, self.device)
         controls = default_controls(
@@ -64,6 +65,7 @@ class Sim:
         core = default_core(freq, jnp.zeros((n_worlds, 1), dtype=jnp.int32, device=self.device))
         self.data = SimData(states=states, controls=controls, params=params, core=core)
         self.default_data: SimData | None = None  # Populated at the end of self.setup()
+
         # Initialize MuJoCo world and data
         self._xml_path = xml_path or self.default_path
         self._spec, self._mj_model, self._mj_data, self._mjx_model, self._mjx_data = self.setup_mj()
