@@ -10,7 +10,7 @@ from pyinstrument import Profiler
 from pyinstrument.renderers.html import HTMLRenderer
 
 import crazyflow  # noqa: F401, ensure gymnasium envs are registered
-from crazyflow.sim.core import Sim
+from crazyflow.sim.sim import Sim
 
 if TYPE_CHECKING:
     from crazyflow.gymnasium_envs import CrazyflowEnvReachGoal

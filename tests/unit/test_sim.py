@@ -5,10 +5,10 @@ import pytest
 from flax.serialization import to_state_dict
 from jax import Array
 
-from crazyflow.control.controller import Control
+from crazyflow.control.control import Control
 from crazyflow.exception import ConfigError
-from crazyflow.sim.core import Sim
 from crazyflow.sim.physics import Physics
+from crazyflow.sim.sim import Sim
 
 
 def available_backends() -> list[str]:

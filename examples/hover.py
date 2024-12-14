@@ -1,8 +1,8 @@
 import numpy as np
 
-from crazyflow.control.controller import Control
-from crazyflow.sim.core import Sim
+from crazyflow.control.control import Control
 from crazyflow.sim.physics import Physics
+from crazyflow.sim.sim import Sim
 
 
 def main():

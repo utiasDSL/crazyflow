@@ -20,8 +20,8 @@ from casadi import MX
 from numpy.typing import NDArray
 
 from crazyflow.constants import ARM_LEN, GRAVITY, SIGN_MIX_MATRIX
-from crazyflow.control.controller import KF, KM
-from crazyflow.sim.core import Sim
+from crazyflow.control.control import KF, KM
+from crazyflow.sim.sim import Sim
 
 
 class SymbolicModel:

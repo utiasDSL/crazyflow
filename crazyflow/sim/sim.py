@@ -13,17 +13,23 @@ from jax.scipy.spatial.transform import Rotation as R
 from mujoco.mjx import Data, Model
 
 from crazyflow.constants import J_INV, MASS, J
-from crazyflow.control.controller import Control, attitude2rpm, pwm2rpm, state2attitude, thrust2pwm
+from crazyflow.control.control import Control, attitude2rpm, pwm2rpm, state2attitude, thrust2pwm
 from crazyflow.exception import ConfigError, NotInitializedError
-from crazyflow.sim.fused import fused_analytical_dynamics, fused_identified_dynamics
-from crazyflow.sim.integration import Integrator
-from crazyflow.sim.physics import Physics
+from crazyflow.sim.integration import Integrator, euler, rk4
+from crazyflow.sim.physics import (
+    Physics,
+    analytical_dynamics,
+    analytical_dynamics_deriv,
+    identified_dynamics,
+    rpms2collective_wrench,
+)
 from crazyflow.sim.structs import (
     SimData,
     default_controls,
     default_core,
     default_params,
     default_state,
+    default_state_deriv,
 )
 from crazyflow.utils import clone_body, grid_2d, leaf_replace, pytree_replace
 
@@ -58,12 +64,15 @@ class Sim:
 
         # Allocate internal states and controls
         states = default_state(n_worlds, n_drones, self.device)
+        states_deriv = default_state_deriv(n_worlds, n_drones, self.device)
         controls = default_controls(
             n_worlds, n_drones, state_freq, attitude_freq, thrust_freq, self.device
         )
         params = default_params(n_worlds, n_drones, MASS, J, J_INV, self.device)
         core = default_core(freq, jnp.zeros((n_worlds, 1), dtype=jnp.int32, device=self.device))
-        self.data = SimData(states=states, controls=controls, params=params, core=core)
+        self.data = SimData(
+            states=states, states_deriv=states_deriv, controls=controls, params=params, core=core
+        )
         self.default_data: SimData | None = None  # Populated at the end of self.setup()
 
         # Initialize MuJoCo world and data
@@ -107,12 +116,12 @@ class Sim:
         # simulation pipeline.
         ctrl_fn = generate_control_fn(self.control)
         physics_fn = generate_physics_fn(self.physics)
+        integrator_fn = generate_integrator_fn(self.integrator)
 
         # None is required by jax.lax.scan to unpack the tuple returned by single_step.
         def single_step(data: SimData, _: None) -> tuple[SimData, None]:
             data = ctrl_fn(data)
-            data = physics_fn(data)
-            # data = integrator_fn(data)
+            data = integrator_fn(data, physics_fn)
             data = data.replace(core=data.core.replace(steps=data.core.steps + 1))
             return data, None
 
@@ -234,10 +243,11 @@ class Sim:
     @jax.jit
     def sync_sim2mjx(data: SimData, mjx_data: Data, mjx_model: Model) -> Data:
         states = data.states
-        pos, quat, vel, ang_vel = states.pos, states.quat, states.vel, states.ang_vel
+        pos, quat, vel, rpy_rates = states.pos, states.quat, states.vel, states.rpy_rates
         quat = quat[..., [-1, 0, 1, 2]]  # MuJoCo quat is [w, x, y, z], ours is [x, y, z, w]
         qpos = rearrange(jnp.concat([pos, quat], axis=-1), "w d qpos -> w (d qpos)")
-        qvel = rearrange(jnp.concat([vel, ang_vel], axis=-1), "w d qvel -> w (d qvel)")
+        # TODO: rpy_rates should be ang_vel instead. Fix with conversion from rpy_rates to ang_vel
+        qvel = rearrange(jnp.concat([vel, rpy_rates], axis=-1), "w d qvel -> w (d qvel)")
         mjx_data = mjx_data.replace(qpos=qpos, qvel=qvel)
         mjx_data = mjx_kinematics(mjx_model, mjx_data)
         mjx_data = mjx_collision(mjx_model, mjx_data)
@@ -269,9 +279,9 @@ def generate_physics_fn(physics: Physics) -> Callable[[SimData], SimData]:
     """Generate the physics function for the given physics mode."""
     match physics:
         case Physics.analytical:
-            return fused_analytical_dynamics
+            return step_analytical_dynamics_deriv
         case Physics.sys_id:
-            return fused_identified_dynamics
+            return step_identified_dynamics
         case _:
             raise NotImplementedError(f"Physics mode {physics} not implemented")
 
@@ -280,7 +290,9 @@ def generate_integrator_fn(integrator: Integrator) -> Callable[[SimData], SimDat
     """Generate the integrator function for the given integrator mode."""
     match integrator:
         case Integrator.euler:
-            return ...
+            return euler
+        case Integrator.rk4:
+            return rk4
         case _:
             raise NotImplementedError(f"Integrator {integrator} not implemented")
 
@@ -371,6 +383,48 @@ def step_thrust_controller(data: SimData) -> SimData:
     rpms = pwm2rpm(thrust2pwm(controls.thrust))
     controls = leaf_replace(controls, mask, thrust_steps=steps, rpms=rpms)
     return data.replace(controls=controls)
+
+
+def step_analytical_dynamics(data: SimData) -> SimData:
+    """Dynamics model based on the physical parameters of the drone.
+
+    Args:
+        data: The simulation data structure.
+    """
+    states, controls, params = data.states, data.controls, data.params
+    forces, torques = rpms2collective_wrench(controls.rpms, states.quat, states.rpy_rates, params.J)
+    # The dynamics model only considers the force and torque at the center of mass, not the motors.
+    pos, quat, vel, rpy_rates = states.pos, states.quat, states.vel, states.rpy_rates
+    pos, quat, vel, rpy_rates = analytical_dynamics(
+        forces, torques, pos, quat, vel, rpy_rates, params.mass, params.J_INV, 1 / data.core.freq
+    )
+    return data.replace(states=states.replace(pos=pos, quat=quat, vel=vel, rpy_rates=rpy_rates))
+
+
+def step_analytical_dynamics_deriv(data: SimData) -> SimData:
+    """Compute the derivative of the analytical dynamics model."""
+    states, controls, params = data.states, data.controls, data.params
+    J, J_inv, mass = params.J, params.J_INV, params.mass
+    forces, torques = rpms2collective_wrench(controls.rpms, states.quat, states.rpy_rates, J)
+    acc, rpy_rates_deriv = analytical_dynamics_deriv(forces, torques, states.quat, mass, J_inv)
+    vel, rpy_rates = states.vel, states.rpy_rates  # Already given in the states
+    deriv = data.states_deriv
+    deriv = deriv.replace(dpos=vel, drot=rpy_rates, dvel=acc, drpy_rates=rpy_rates_deriv)
+    return data.replace(states=states, states_deriv=deriv)
+
+
+def step_identified_dynamics(data: SimData) -> SimData:
+    """Dynamics model identified from data collected on the real drone.
+
+    Args:
+        data: The simulation data structure.
+    """
+    states, controls = data.states, data.controls
+    pos, quat, vel, rpy_rates = states.pos, states.quat, states.vel, states.rpy_rates
+    pos, quat, vel, rpy_rates = identified_dynamics(
+        controls.attitude, pos, quat, vel, rpy_rates, 1 / data.core.freq
+    )
+    return data.replace(states=states.replace(pos=pos, quat=quat, vel=vel, rpy_rates=rpy_rates))
 
 
 mjx_kinematics = jax.vmap(mjx.kinematics, in_axes=(None, 0))

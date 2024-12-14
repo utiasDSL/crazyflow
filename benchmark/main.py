@@ -7,7 +7,7 @@ import numpy as np
 from ml_collections import config_dict
 
 import crazyflow  # noqa: F401, ensure gymnasium envs are registered
-from crazyflow.sim.core import Sim
+from crazyflow.sim.sim import Sim
 
 
 def analyze_timings(times: list[float], n_steps: int, n_worlds: int, freq: float) -> None:
