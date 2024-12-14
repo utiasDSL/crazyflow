@@ -9,7 +9,6 @@ class SimState:
     pos: Array  # (N, M, 3)
     quat: Array  # (N, M, 4)
     vel: Array  # (N, M, 3)
-    ang_vel: Array  # (N, M, 3)
     rpy_rates: Array  # (N, M, 3)
     forces: Array  # (N, M, 5, 3)  # 5 force points: CoM and 4 motor positions
     torques: Array  # (N, M, 5, 3)  # 5 torque points: CoM and 4 motor positions
@@ -20,20 +19,30 @@ def default_state(n_worlds: int, n_drones: int, device: Device) -> SimState:
     pos = jnp.zeros((n_worlds, n_drones, 3), device=device)
     quat = jnp.zeros((n_worlds, n_drones, 4), device=device)
     quat = quat.at[..., -1].set(1.0)
-    rpy_rates = jnp.zeros((n_worlds, n_drones, 3), device=device)
     vel = jnp.zeros((n_worlds, n_drones, 3), device=device)
-    ang_vel = jnp.zeros((n_worlds, n_drones, 3), device=device)
+    rpy_rates = jnp.zeros((n_worlds, n_drones, 3), device=device)
     forces = jnp.zeros((n_worlds, n_drones, 5, 3), device=device)
     torques = jnp.zeros((n_worlds, n_drones, 5, 3), device=device)
     return SimState(
-        pos=pos,
-        quat=quat,
-        forces=forces,
-        torques=torques,
-        vel=vel,
-        ang_vel=ang_vel,
-        rpy_rates=rpy_rates,
+        pos=pos, quat=quat, forces=forces, torques=torques, vel=vel, rpy_rates=rpy_rates
     )
+
+
+@dataclass
+class SimStateDeriv:
+    dpos: Array  # (N, M, 3)
+    drot: Array  # (N, M, 3)
+    dvel: Array  # (N, M, 3)
+    drpy_rates: Array  # (N, M, 3)
+
+
+def default_state_deriv(n_worlds: int, n_drones: int, device: Device) -> SimStateDeriv:
+    """Create a default set of state derivatives for the simulation."""
+    dpos = jnp.zeros((n_worlds, n_drones, 3), device=device)
+    drot = jnp.zeros((n_worlds, n_drones, 3), device=device)
+    dvel = jnp.zeros((n_worlds, n_drones, 3), device=device)
+    drpy_rates = jnp.zeros((n_worlds, n_drones, 3), device=device)
+    return SimStateDeriv(dpos=dpos, drot=drot, dvel=dvel, drpy_rates=drpy_rates)
 
 
 @dataclass
@@ -114,6 +123,7 @@ def default_core(freq: int, steps: Array) -> SimCore:
 @dataclass
 class SimData:
     states: SimState
+    states_deriv: SimStateDeriv
     controls: SimControls
     params: SimParams
     core: SimCore

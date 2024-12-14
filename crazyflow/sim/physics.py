@@ -7,8 +7,8 @@ from jax.numpy import vectorize
 from jax.scipy.spatial.transform import Rotation as R
 
 from crazyflow.constants import ARM_LEN, GRAVITY, SIGN_MIX_MATRIX
-from crazyflow.control.controller import KF, KM
-from crazyflow.sim.structs import SimControls, SimParams, SimState
+from crazyflow.control.control import KF, KM
+from crazyflow.sim.structs import SimControls, SimState
 
 SYS_ID_PARAMS = {
     "acc_k1": 20.91,
@@ -128,14 +128,15 @@ def analytical_dynamics(
     return next_pos, next_quat, next_vel, next_rpy_rates
 
 
-def analytical_dynamics_dx(
-    forces: Array, torques: Array, state: SimState, params: SimParams
+@partial(vectorize, signature="(3),(3),(4),(1),(3,3)->(3),(3)")
+def analytical_dynamics_deriv(
+    forces: Array, torques: Array, quat: Array, mass: Array, J_INV: Array
 ) -> tuple[Array, Array]:
     """Derivative of the analytical dynamics state."""
-    rot = R.from_quat(state.quat)
+    rot = R.from_quat(quat)
     torques_local = rot.apply(torques, inverse=True)
-    acc = forces / params.mass - jnp.array([0, 0, GRAVITY])
-    rpy_rates_deriv = rot.apply(params.J_INV @ torques_local)
+    acc = forces / mass - jnp.array([0, 0, GRAVITY])
+    rpy_rates_deriv = rot.apply(J_INV @ torques_local)
     return acc, rpy_rates_deriv
 
 

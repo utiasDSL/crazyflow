@@ -2,7 +2,7 @@ import jax
 import jax.numpy as jnp
 from jax import Array
 
-from crazyflow.sim.core import Sim
+from crazyflow.sim.sim import Sim
 from crazyflow.sim.structs import SimData
 from crazyflow.utils import leaf_replace
 

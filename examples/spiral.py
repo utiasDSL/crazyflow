@@ -1,11 +1,11 @@
 import numpy as np
 
-from crazyflow.control.controller import Control
-from crazyflow.sim.core import Sim
+from crazyflow.control.control import Control
+from crazyflow.sim.sim import Sim
 
 
 def main():
-    sim = Sim(n_drones=4, control=Control.state)
+    sim = Sim(n_drones=4, control=Control.state, integrator="rk4")
     sim.reset()
     duration = 5.0
     fps = 60

@@ -11,8 +11,8 @@ from gymnasium.vector.utils import batch_space
 from jax import Array
 from numpy.typing import NDArray
 
-from crazyflow.control.controller import MAX_THRUST, MIN_THRUST, Control
-from crazyflow.sim.core import Sim
+from crazyflow.control.control import MAX_THRUST, MIN_THRUST, Control
+from crazyflow.sim.sim import Sim
 from crazyflow.sim.structs import SimState
 
 

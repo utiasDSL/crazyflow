@@ -2,7 +2,7 @@ import gymnasium
 import numpy as np
 from ml_collections import config_dict
 
-from crazyflow.control.controller import Control
+from crazyflow.control.control import Control
 from crazyflow.sim.physics import Physics
 
 # set config for simulation
