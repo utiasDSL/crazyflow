@@ -1,15 +1,10 @@
 import gymnasium
-from gymnasium.wrappers.vector import JaxToNumpy #, JaxToTorch
 import numpy as np
 from ml_collections import config_dict
 
 from crazyflow.control.controller import Control, Controller
 from crazyflow.sim.physics import Physics
-
-from pyvirtualdisplay import Display
-
-disp = Display()
-disp.start()
+from crazyflow.gymnasium_envs import CrazyflowRL
 
 # set config for simulation
 sim_config = config_dict.ConfigDict()
@@ -29,19 +24,14 @@ envs = gymnasium.make_vec(
     num_envs=sim_config.n_worlds,
     **sim_config,
 )
-
-# RL wrapper
-# envs = CrazyflowRL(
-#     envs
-# )  # This wrapper to clips the actions to [-1, 1], and rescales them subsequently for use with common DRL libraries.
-
 envs = JaxToNumpy(
     envs
-)  #  This wrapper makes it possible to interact with the environment using numpy arrays, if desired. JaxToTorch is available as well.
+)  # we have a JAX environment. This wrapper makes it possible to interact with this environment using numpy arrays, if desired.
+envs = CrazyflowRL(envs) # Wrapper to clip the actions to [-1, 1], and rescale to sim action values.
 
 # action for going up (in attitude control)
 action = np.zeros((sim_config.n_worlds * sim_config.n_drones, 4), dtype=np.float32)
-action[..., 0] = 0.4
+action[..., 0] = -0.2
 
 obs, info = envs.reset(seed=SEED)
 

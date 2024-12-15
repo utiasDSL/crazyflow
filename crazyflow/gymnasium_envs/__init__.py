@@ -4,9 +4,10 @@ from crazyflow.gymnasium_envs.crazyflow import (
     CrazyflowEnvLanding,
     CrazyflowEnvReachGoal,
     CrazyflowEnvTargetVelocity,
+    CrazyflowRL
 )
 
-__all__ = ["CrazyflowEnvReachGoal", "CrazyflowEnvTargetVelocity", "CrazyflowEnvLanding"]
+__all__ = ["CrazyflowEnvReachGoal", "CrazyflowEnvTargetVelocity", "CrazyflowEnvLanding", "CrazyflowRL"]
 
 register(
     id="DroneReachPos-v0",
