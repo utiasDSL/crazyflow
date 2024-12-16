@@ -1,10 +1,12 @@
 import gymnasium
-from gymnasium.wrappers.vector import JaxToNumpy #, JaxToTorch
 import numpy as np
+from gymnasium.wrappers.vector import JaxToNumpy  #, JaxToTorch
 from ml_collections import config_dict
 
 from crazyflow.control.controller import Control, Controller
+from crazyflow.gymnasium_envs import CrazyflowRL
 from crazyflow.sim.physics import Physics
+
 
 def main():
     # set config for simulation
@@ -44,7 +46,7 @@ def main():
     # Step through the environment
     for _ in range(1500):
         observation, reward, terminated, truncated, info = envs.step(action)
-        # envs.render()
+        envs.render()
 
     envs.close()
 

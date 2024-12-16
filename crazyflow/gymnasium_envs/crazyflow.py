@@ -344,7 +344,8 @@ class CrazyflowEnvLanding(CrazyflowBaseEnv):
 class CrazyflowRL(VectorWrapper):
     """Wrapper to use the crazyflow JAX environments with common DRL frameworks.
     Currently, this wrapper clips the expected actions to [-1,1]
-    and rescales them to the action space expected in simulation."""
+    and rescales them to the action space expected in simulation.
+    """
 
     def __init__(
         self,
