@@ -20,7 +20,7 @@ import casadi as cs
 from casadi import MX
 from numpy.typing import NDArray
 
-from crazyflow.constants import ARM_LEN, GRAVITY
+from crazyflow.constants import ARM_LEN, GRAVITY, SIGN_MIX_MATRIX
 from crazyflow.control.controller import KF, KM
 from crazyflow.sim.core import Sim
 
@@ -183,10 +183,12 @@ def symbolic(mass: float, J: NDArray, dt: float) -> SymbolicModel:
     oVdot_cg_o = Rob @ cs.vertcat(0, 0, f1 + f2 + f3 + f4) / mass - cs.vertcat(0, 0, GRAVITY)
     pos_ddot = oVdot_cg_o
     pos_dot = cs.vertcat(x_dot, y_dot, z_dot)
+    # We use the spin directions (signs) from the mix matrix used in the simulation.
+    sx, sy, sz = SIGN_MIX_MATRIX[..., 0], SIGN_MIX_MATRIX[..., 1], SIGN_MIX_MATRIX[..., 2]
     Mb = cs.vertcat(
-        ARM_LEN / cs.sqrt(2.0) * (f1 + f2 - f3 - f4),
-        ARM_LEN / cs.sqrt(2.0) * (-f1 + f2 + f3 - f4),
-        gamma * (f1 - f2 + f3 - f4),
+        ARM_LEN / cs.sqrt(2.0) * (sx[0] * f1 + sx[1] * f2 + sx[2] * f3 + sx[3] * f4),
+        ARM_LEN / cs.sqrt(2.0) * (sy[0] * f1 + sy[1] * f2 + sy[2] * f3 + sy[3] * f4),
+        gamma * (sz[0] * f1 + sz[1] * f2 + sz[2] * f3 + sz[3] * f4),
     )
     rate_dot = Jinv @ (Mb - (cs.skew(cs.vertcat(p, q, r)) @ J @ cs.vertcat(p, q, r)))
     ang_dot = cs.blockcat(
