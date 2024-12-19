@@ -218,8 +218,11 @@ class Sim:
         # Optional optimization: check if mask.any() before updating the controls. This breaks jax's
         # gradient tracing, so we omit it for now.
         if self.control == Control.state:
+            control_dt = 1 / self.control_freq
             self.controls = self._masked_state_controls_update(mask, self.controls)
-            self.controls = fused_masked_state2attitude(mask, self.states, self.controls, self.dt)
+            self.controls = fused_masked_state2attitude(
+                mask, self.states, self.controls, control_dt
+            )
         self.controls = self._masked_attitude_controls_update(mask, self.controls)
         self.last_ctrl_steps = self._masked_controls_step_update(
             mask, self.steps, self.last_ctrl_steps
@@ -247,13 +250,16 @@ class Sim:
 
     def _step_emulate_firmware(self) -> SimControls:
         mask = self.controllable
+        control_dt = 1 / self.control_freq
         if self.control == Control.thrust:
             return fused_masked_thrust2rpm(mask, self.controls)
         if self.control == Control.state:
             self.controls = self._masked_state_controls_update(mask, self.controls)
-            self.controls = fused_masked_state2attitude(mask, self.states, self.controls, self.dt)
+            self.controls = fused_masked_state2attitude(
+                mask, self.states, self.controls, control_dt
+            )
         self.controls = self._masked_attitude_controls_update(mask, self.controls)
-        return fused_masked_attitude2rpm(mask, self.states, self.controls, self.dt)
+        return fused_masked_attitude2rpm(mask, self.states, self.controls, control_dt)
 
     @staticmethod
     def _sync_mjx(states: SimState, mjx_data: Data) -> Data:

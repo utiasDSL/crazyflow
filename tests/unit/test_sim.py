@@ -296,3 +296,34 @@ def test_shape_consistency(device: str, n_drones: int, n_worlds: int):
     sim.step()
     assert sim._mjx_data.qpos.shape == qpos_shape, "step() should not change qpos shape"
     assert sim._mjx_data.qvel.shape == qvel_shape, "step() should not change qvel shape"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("physics", [Physics.sys_id, Physics.analytical])
+def test_control_frequency(physics: Physics):
+    # Create two sims with different frequencies
+    sim_500 = Sim(freq=500, physics=physics, control="state")
+    sim_1000 = Sim(freq=1000, physics=physics, control="state")
+
+    # Set same initial state and controls
+    cmd = np.zeros((1, 1, 13))  # Single world, single drone, state control
+    # Target position of (1, 1, 1). Needs to be off-center to check attitude integration error
+    cmd[..., :3] = 1.0
+
+    # Run both sims for one control cycle
+    sim_500.state_control(cmd)
+    sim_500.step()
+
+    sim_1000.state_control(cmd)
+    sim_1000.step()
+    sim_1000.step()
+
+    # Check that the controls are the same
+    assert np.all(sim_500.controls.rpms == sim_1000.controls.rpms), "Control mismatch"
+    assert np.all(sim_500.controls.thrust == sim_1000.controls.thrust), "Control mismatch"
+    assert np.all(sim_500.controls.attitude == sim_1000.controls.attitude), "Control mismatch"
+    assert np.all(sim_500.controls.pos_err_i == sim_1000.controls.pos_err_i), "Control mismatch"
+    assert np.all(sim_500.controls.rpy_err_i == sim_1000.controls.rpy_err_i), "Control mismatch"
+
+    sim_500.close()
+    sim_1000.close()
