@@ -12,7 +12,7 @@ from crazyflow.sim.structs import SimData
 
 class Integrator(str, Enum):
     euler = "euler"
-    rk4 = "rk4"
+    rk4 = "rk4"  # TODO: Confirm the RK4 implementation correctness
     default = euler  # TODO: Replace with rk4
 
 
