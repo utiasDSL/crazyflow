@@ -43,28 +43,24 @@ def profile_gym_env_step(sim_config: config_dict.ConfigDict, n_steps: int, devic
     device = jax.devices(device)[0]
 
     envs = gymnasium.make_vec(
-        "DroneReachPos-v0",
-        time_horizon_in_seconds=2,
-        return_datatype="numpy",
-        num_envs=sim_config.n_worlds,
-        **sim_config,
+        "DroneReachPos-v0", time_horizon_in_seconds=2, num_envs=sim_config.n_worlds, **sim_config
     )
 
     # Action for going up (in attitude control)
     action = np.zeros((sim_config.n_worlds, 4), dtype=np.float32)
     action[..., 0] = 0.3
     # Step through env once to ensure JIT compilation
-    envs.reset_all(seed=42)
+    envs.reset(seed=42)
     envs.step(action)
     envs.step(action)
 
-    jax.block_until_ready(envs.unwrapped.sim.data.states.pos)  # Ensure JIT compiled dynamics
+    jax.block_until_ready(envs.unwrapped.sim.data)  # Ensure JIT compiled dynamics
 
     # Step through the environment
     for _ in range(n_steps):
         tstart = time.perf_counter()
         envs.step(action)
-        jax.block_until_ready(envs.unwrapped.sim.data.states.pos)
+        jax.block_until_ready(envs.unwrapped.sim.data)
         times.append(time.perf_counter() - tstart)
 
     envs.close()
@@ -84,14 +80,14 @@ def profile_step(sim_config: config_dict.ConfigDict, n_steps: int, device: str):
     sim.reset()
     sim.attitude_control(cmd)
     sim.step()
-    jax.block_until_ready(sim.data.states.pos)  # Ensure JIT compiled dynamics
+    jax.block_until_ready(sim.data)  # Ensure JIT compiled dynamics
 
     for _ in range(n_steps):
         tstart = time.perf_counter()
         sim.attitude_control(cmd)
         sim.step()
         times.append(time.perf_counter() - tstart)
-    jax.block_until_ready(sim.data.states.pos)
+    jax.block_until_ready(sim.data)
 
     analyze_timings(times, n_steps, sim.n_worlds, sim.freq)
 
