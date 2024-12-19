@@ -5,13 +5,12 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from gymnasium import spaces
-from gymnasium.vector import VectorEnv
+from gymnasium.vector import VectorEnv, VectorWrapper
 from gymnasium.vector.utils import batch_space
-from gymnasium.vector import VectorWrapper
 from jax import Array
 
 from crazyflow.control.control import MAX_THRUST, MIN_THRUST, Control
-from crazyflow.sim.sim import Sim
+from crazyflow.sim import Sim
 from crazyflow.sim.structs import SimState
 
 
@@ -97,7 +96,7 @@ class CrazyflowBaseEnv(VectorEnv):
         self.observation_space = batch_space(self.single_observation_space, self.sim.n_worlds)
 
     def step(self, action: Array) -> tuple[Array, Array, Array, Array, dict]:
-        assert self.action_space.contains(action), f"{action!r} ({type(action)}) invalid"
+        assert self.action_space.contains(np.array(action)), f"{action!r} ({type(action)}) invalid"
         action = self._sanitize_action(action, self.sim.n_worlds, self.sim.n_drones, self.device)
         self._apply_action(action)
 
@@ -145,8 +144,8 @@ class CrazyflowBaseEnv(VectorEnv):
         if seed is not None:
             self.jax_key = jax.random.key(seed)
 
-        self.reset(mask=jnp.ones((self.sim.n_worlds), dtype=jnp.bool_, device=self.device))
-        self.prev_done = jnp.zeros((self.sim.n_worlds), dtype=jnp.bool_, device=self.device)
+        self.reset_masked(mask=jnp.ones((self.sim.n_worlds), dtype=bool, device=self.device))
+        self.prev_done = jnp.zeros((self.sim.n_worlds), dtype=bool, device=self.device)
         return self._obs(), {}
 
     def reset_masked(self, mask: Array) -> None:
@@ -213,7 +212,7 @@ class CrazyflowBaseEnv(VectorEnv):
 
     def _obs(self) -> dict[str, Array]:
         fields = self.obs_keys
-        states = [getattr(self.sim.states, field) for field in fields]
+        states = [getattr(self.sim.data.states, field) for field in fields]
         return {k: v for k, v in zip(fields, states)}
 
 

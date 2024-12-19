@@ -21,7 +21,7 @@ from numpy.typing import NDArray
 
 from crazyflow.constants import ARM_LEN, GRAVITY, SIGN_MIX_MATRIX
 from crazyflow.control.control import KF, KM
-from crazyflow.sim.sim import Sim
+from crazyflow.sim import Sim
 
 
 class SymbolicModel:

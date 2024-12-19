@@ -4,9 +4,9 @@ import pytest
 from flax.serialization import to_state_dict
 
 from crazyflow.constants import J
-from crazyflow.control.control import Control
+from crazyflow.control import Control
 from crazyflow.randomize import randomize_inertia, randomize_mass
-from crazyflow.sim.sim import Sim
+from crazyflow.sim import Sim
 from tests.unit.test_sim import skip_unavailable_device
 
 

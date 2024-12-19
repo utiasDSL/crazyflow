@@ -5,10 +5,9 @@ import pytest
 from flax.serialization import to_state_dict
 from jax import Array
 
-from crazyflow.control.control import Control
+from crazyflow.control import Control
 from crazyflow.exception import ConfigError
-from crazyflow.sim.physics import Physics
-from crazyflow.sim.sim import Sim
+from crazyflow.sim import Physics, Sim
 
 
 def available_backends() -> list[str]:
@@ -78,7 +77,7 @@ def test_sim_init(physics: Physics, device: str, control: Control, n_worlds: int
     array_meta_assert(sim.data.states.pos, (n_worlds, n_drones, 3), device, "pos")
     array_meta_assert(sim.data.states.quat, (n_worlds, n_drones, 4), device, "quat")
     array_meta_assert(sim.data.states.vel, (n_worlds, n_drones, 3), device, "vel")
-    array_meta_assert(sim.data.states.ang_vel, (n_worlds, n_drones, 3), device, "ang_vel")
+    array_meta_assert(sim.data.states.rpy_rates, (n_worlds, n_drones, 3), device, "rpy_rates")
 
     # Test control buffer shapes
     array_meta_assert(sim.data.controls.attitude, (n_worlds, n_drones, 4), device)
@@ -312,11 +311,11 @@ def test_control_frequency(physics: Physics):
     sim_1000.step()
 
     # Check that the controls are the same
-    assert np.all(sim_500.controls.rpms == sim_1000.controls.rpms), "Control mismatch"
-    assert np.all(sim_500.controls.thrust == sim_1000.controls.thrust), "Control mismatch"
-    assert np.all(sim_500.controls.attitude == sim_1000.controls.attitude), "Control mismatch"
-    assert np.all(sim_500.controls.pos_err_i == sim_1000.controls.pos_err_i), "Control mismatch"
-    assert np.all(sim_500.controls.rpy_err_i == sim_1000.controls.rpy_err_i), "Control mismatch"
+    assert np.all(sim_500.data.controls.rpms == sim_1000.data.controls.rpms)
+    assert np.all(sim_500.data.controls.thrust == sim_1000.data.controls.thrust)
+    assert np.all(sim_500.data.controls.attitude == sim_1000.data.controls.attitude)
+    assert np.all(sim_500.data.controls.pos_err_i == sim_1000.data.controls.pos_err_i)
+    assert np.all(sim_500.data.controls.rpy_err_i == sim_1000.data.controls.rpy_err_i)
 
     sim_500.close()
     sim_1000.close()
