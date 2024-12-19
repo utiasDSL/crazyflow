@@ -1,6 +1,5 @@
 import warnings
 from functools import partial
-from typing import Literal
 
 import jax
 import jax.numpy as jnp
@@ -8,18 +7,12 @@ import numpy as np
 from gymnasium import spaces
 from gymnasium.vector import VectorEnv
 from gymnasium.vector.utils import batch_space
+from gymnasium.vector import VectorWrapper
 from jax import Array
-from numpy.typing import NDArray
 
 from crazyflow.control.control import MAX_THRUST, MIN_THRUST, Control
 from crazyflow.sim.sim import Sim
 from crazyflow.sim.structs import SimState
-
-
-@partial(jax.jit, static_argnames=["convert"])
-def maybe_to_numpy(data: Array, convert: bool) -> NDArray | Array:
-    """Converts data to numpy array if convert is True."""
-    return jax.lax.cond(convert, lambda: jax.device_get(data), lambda: data)
 
 
 def action_space(control_type: Control) -> spaces.Box:
@@ -62,7 +55,6 @@ class CrazyflowBaseEnv(VectorEnv):
         *,
         num_envs: int = 1,  # required for VectorEnv
         time_horizon_in_seconds: float = 10.0,
-        return_datatype: Literal["numpy", "jax"] = "jax",
         **kwargs: dict,
     ):
         """Initialize the CrazyflowEnv.
@@ -70,9 +62,6 @@ class CrazyflowBaseEnv(VectorEnv):
         Args:
             num_envs: The number of environments to run in parallel.
             time_horizon_in_seconds: The time horizon after which episodes are truncated.
-            return_datatype: The data type for returned arrays, either "numpy" or "jax". If "numpy",
-                the returned arrays will be numpy arrays on the CPU. If "jax", the returned arrays
-                will be jax arrays on the "device" specified for the simulation.
             **kwargs: Takes arguments that are passed to the Crazyfly simulation.
         """
         assert num_envs == kwargs["n_worlds"], "num_envs must be equal to n_worlds"
@@ -80,7 +69,6 @@ class CrazyflowBaseEnv(VectorEnv):
         self.jax_key = jax.random.key(int(self.np_random.random() * 2**32))
 
         self.num_envs = num_envs
-        self.return_datatype = return_datatype
         self.device = jax.devices(kwargs["device"])[0]
         self.time_horizon_in_seconds = time_horizon_in_seconds
         self.sim = Sim(**kwargs)
@@ -116,7 +104,7 @@ class CrazyflowBaseEnv(VectorEnv):
         self.sim.step(self.n_substeps)
         # Reset all environments which terminated or were truncated in the last step
         if jnp.any(self.prev_done):
-            self.reset(mask=self.prev_done)
+            self.reset_masked(mask=self.prev_done)
 
         terminated = self.terminated
         truncated = self.truncated
@@ -125,9 +113,8 @@ class CrazyflowBaseEnv(VectorEnv):
         reward = self.reward
         self.prev_done = self._done(terminated, truncated)
 
-        convert = self.return_datatype == "numpy"
-        terminated = maybe_to_numpy(terminated, convert)
-        truncated = maybe_to_numpy(truncated, convert)
+        terminated = terminated
+        truncated = truncated
         return self._obs(), reward, terminated, truncated, {}
 
     def _apply_action(self, action: Array):
@@ -151,7 +138,7 @@ class CrazyflowBaseEnv(VectorEnv):
     def _done(terminated: Array, truncated: Array) -> Array:
         return jnp.logical_or(terminated, truncated)
 
-    def reset_all(
+    def reset(
         self, *, seed: int | None = None, options: dict | None = None
     ) -> tuple[dict[str, Array], dict]:
         super().reset(seed=seed)
@@ -162,7 +149,7 @@ class CrazyflowBaseEnv(VectorEnv):
         self.prev_done = jnp.zeros((self.sim.n_worlds), dtype=jnp.bool_, device=self.device)
         return self._obs(), {}
 
-    def reset(self, mask: Array) -> None:
+    def reset_masked(self, mask: Array) -> None:
         self.sim.reset(mask=mask)
         mask3d = mask[:, None, None]
         # NOTE Setting initial ryp_rate when using physics.sys_id will not have an impact
@@ -225,9 +212,8 @@ class CrazyflowBaseEnv(VectorEnv):
         self.sim.render()
 
     def _obs(self) -> dict[str, Array]:
-        convert = self.return_datatype == "numpy"
         fields = self.obs_keys
-        states = [maybe_to_numpy(getattr(self.sim.data.states, field), convert) for field in fields]
+        states = [getattr(self.sim.states, field) for field in fields]
         return {k: v for k, v in zip(fields, states)}
 
 
@@ -257,8 +243,8 @@ class CrazyflowEnvReachGoal(CrazyflowBaseEnv):
         reward = jnp.where(prev_done, 0.0, reward)
         return reward
 
-    def reset(self, mask: Array) -> None:
-        super().reset(mask)
+    def reset_masked(self, mask: Array) -> None:
+        super().reset_masked(mask)
 
         # Generate new goals
         self.jax_key, subkey = jax.random.split(self.jax_key)
@@ -301,8 +287,8 @@ class CrazyflowEnvTargetVelocity(CrazyflowBaseEnv):
         reward = jnp.where(prev_done, 0.0, reward)
         return reward
 
-    def reset(self, mask: Array) -> None:
-        super().reset(mask)
+    def reset_masked(self, mask: Array) -> None:
+        super().reset_masked(mask)
 
         # Generate new target_vels
         self.jax_key, subkey = jax.random.split(self.jax_key)
@@ -350,10 +336,47 @@ class CrazyflowEnvLanding(CrazyflowBaseEnv):
         reward = jnp.where(prev_done, 0.0, reward)
         return reward
 
-    def reset(self, mask: Array) -> None:
-        super().reset(mask)
+    def reset_masked(self, mask: Array) -> None:
+        super().reset_masked(mask)
 
     def _get_obs(self) -> dict[str, Array]:
         obs = super()._get_obs()
         obs["difference_to_goal"] = [self.goal - self.sim.data.states.pos]
         return obs
+
+
+class CrazyflowRL(VectorWrapper):
+    """Wrapper to use the crazyflow JAX environments with common DRL frameworks.
+    Currently, this wrapper clips the expected actions to [-1,1]
+    and rescales them to the action space expected in simulation.
+    """
+
+    def __init__(self, env: VectorEnv):
+        super().__init__(env)
+
+        # Simulation action space bounds
+        self.action_sim_low = self.single_action_space.low
+        self.action_sim_high = self.single_action_space.high
+
+        # Compute scale and mean for rescaling
+        self.action_scale = jnp.array((self.action_sim_high - self.action_sim_low) / 2.0)
+        self.action_mean = jnp.array((self.action_sim_high + self.action_sim_low) / 2.0)
+
+        # Modify the wrapper's action space to [-1, 1]
+        self.single_action_space.low = -np.ones_like(self.action_sim_low)
+        self.single_action_space.high = np.ones_like(self.action_sim_high)
+        self.action_space = batch_space(self.single_action_space, self.num_envs)
+
+    def step(self, actions: Array) -> tuple[Array, Array, Array, Array, dict]:
+        actions = np.clip(actions, -1.0, 1.0)
+        return self.env.step(self.actions(actions))
+
+    def actions(self, actions):
+        """Rescale and clip actions from [-1, 1] to [action_sim_low, action_sim_high]."""
+        # Rescale actions using the computed scale and mean
+        rescaled_actions = actions * self.action_scale + self.action_mean
+
+        # Ensure actions are within the valid range of the simulation action space
+        rescaled_actions = np.clip(rescaled_actions, self.action_sim_low, self.action_sim_high)
+
+        return rescaled_actions
