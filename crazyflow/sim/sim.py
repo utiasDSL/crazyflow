@@ -54,6 +54,8 @@ class Sim:
         assert Control(control) in Control, f"Control mode {control} not implemented"
         if physics != Physics.analytical and control == Control.thrust:  # TODO: Implement
             raise ConfigError("Thrust control is not supported with sys_id physics")
+        if freq > 10_000 and not jax.config.jax_enable_x64:
+            raise ConfigError("Double precision mode is required for high frequency simulations")
         self.physics = physics
         self.control = control
         self.integrator = integrator
