@@ -18,9 +18,8 @@ from crazyflow.exception import ConfigError, NotInitializedError
 from crazyflow.sim.integration import Integrator, euler, rk4
 from crazyflow.sim.physics import (
     Physics,
-    analytical_dynamics,
     analytical_dynamics_deriv,
-    identified_dynamics,
+    identified_dynamics_deriv,
     rpms2collective_wrench,
 )
 from crazyflow.sim.structs import (
@@ -279,9 +278,9 @@ def generate_physics_fn(physics: Physics) -> Callable[[SimData], SimData]:
     """Generate the physics function for the given physics mode."""
     match physics:
         case Physics.analytical:
-            return step_analytical_dynamics_deriv
+            return compute_analytical_dynamics_deriv
         case Physics.sys_id:
-            return step_identified_dynamics
+            return compute_identified_dynamics_deriv
         case _:
             raise NotImplementedError(f"Physics mode {physics} not implemented")
 
@@ -346,7 +345,7 @@ def step_state_controller(data: SimData) -> SimData:
     mask = controllable(data.core.steps, data.core.freq, controls.state_steps, controls.state_freq)
     des_pos, des_vel = controls.state[..., :3], controls.state[..., 3:6]
     des_yaw = controls.state[..., [9]]  # Keep (N, M, 1) shape for broadcasting
-    dt = 1 / data.core.freq
+    dt = 1 / data.controls.state_freq
     attitude, pos_err_i = state2attitude(
         states.pos, states.vel, states.quat, des_pos, des_vel, des_yaw, controls.pos_err_i, dt
     )
@@ -361,8 +360,6 @@ def step_attitude_controller(data: SimData) -> SimData:
     controls = data.controls
     steps, freq = data.core.steps, data.core.freq
     mask = controllable(steps, freq, controls.attitude_steps, controls.attitude_freq)
-    if isinstance(freq, Array):
-        assert data.core.freq.ndim == 0, f"{freq.shape} {freq}, {freq.ndim}"
     # Commit the staged attitude controls
     staged_attitude = controls.staged_attitude
     controls = leaf_replace(controls, mask, attitude_steps=steps, attitude=staged_attitude)
@@ -385,23 +382,7 @@ def step_thrust_controller(data: SimData) -> SimData:
     return data.replace(controls=controls)
 
 
-def step_analytical_dynamics(data: SimData) -> SimData:
-    """Dynamics model based on the physical parameters of the drone.
-
-    Args:
-        data: The simulation data structure.
-    """
-    states, controls, params = data.states, data.controls, data.params
-    forces, torques = rpms2collective_wrench(controls.rpms, states.quat, states.rpy_rates, params.J)
-    # The dynamics model only considers the force and torque at the center of mass, not the motors.
-    pos, quat, vel, rpy_rates = states.pos, states.quat, states.vel, states.rpy_rates
-    pos, quat, vel, rpy_rates = analytical_dynamics(
-        forces, torques, pos, quat, vel, rpy_rates, params.mass, params.J_INV, 1 / data.core.freq
-    )
-    return data.replace(states=states.replace(pos=pos, quat=quat, vel=vel, rpy_rates=rpy_rates))
-
-
-def step_analytical_dynamics_deriv(data: SimData) -> SimData:
+def compute_analytical_dynamics_deriv(data: SimData) -> SimData:
     """Compute the derivative of the analytical dynamics model."""
     states, controls, params = data.states, data.controls, data.params
     J, J_inv, mass = params.J, params.J_INV, params.mass
@@ -410,21 +391,19 @@ def step_analytical_dynamics_deriv(data: SimData) -> SimData:
     vel, rpy_rates = states.vel, states.rpy_rates  # Already given in the states
     deriv = data.states_deriv
     deriv = deriv.replace(dpos=vel, drot=rpy_rates, dvel=acc, drpy_rates=rpy_rates_deriv)
-    return data.replace(states=states, states_deriv=deriv)
+    return data.replace(states_deriv=deriv)
 
 
-def step_identified_dynamics(data: SimData) -> SimData:
-    """Dynamics model identified from data collected on the real drone.
-
-    Args:
-        data: The simulation data structure.
-    """
+def compute_identified_dynamics_deriv(data: SimData) -> SimData:
+    """Compute the derivative of the identified dynamics model."""
     states, controls = data.states, data.controls
-    pos, quat, vel, rpy_rates = states.pos, states.quat, states.vel, states.rpy_rates
-    pos, quat, vel, rpy_rates = identified_dynamics(
-        controls.attitude, pos, quat, vel, rpy_rates, 1 / data.core.freq
+    acc, rpy_rates_deriv = identified_dynamics_deriv(
+        controls.attitude, states.quat, states.rpy_rates, 1 / data.core.freq
     )
-    return data.replace(states=states.replace(pos=pos, quat=quat, vel=vel, rpy_rates=rpy_rates))
+    vel, rpy_rates = states.vel, states.rpy_rates
+    deriv = data.states_deriv
+    deriv = deriv.replace(dpos=vel, drot=rpy_rates, dvel=acc, drpy_rates=rpy_rates_deriv)
+    return data.replace(states_deriv=deriv)
 
 
 mjx_kinematics = jax.vmap(mjx.kinematics, in_axes=(None, 0))

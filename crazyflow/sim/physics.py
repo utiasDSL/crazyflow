@@ -8,7 +8,6 @@ from jax.scipy.spatial.transform import Rotation as R
 
 from crazyflow.constants import ARM_LEN, GRAVITY, SIGN_MIX_MATRIX
 from crazyflow.control.control import KF, KM
-from crazyflow.sim.structs import SimControls, SimState
 
 SYS_ID_PARAMS = {
     "acc_k1": 20.91,
@@ -31,11 +30,11 @@ class Physics(str, Enum):
     default = analytical
 
 
-@partial(vectorize, signature="(4),(3),(4),(3),(3)->(3),(4),(3),(3)", excluded=[5])
-def identified_dynamics(
-    control: Array, pos: Array, quat: Array, vel: Array, rpy_rates: Array, dt: float
-) -> tuple[Array, Array, Array, Array]:
-    """Dynamics model identified from data collected on the real drone.
+@partial(vectorize, signature="(4),(4),(3)->(3),(3)", excluded=[3])
+def identified_dynamics_deriv(
+    controls: Array, quat: Array, rpy_rates: Array, dt: float
+) -> tuple[Array, Array]:
+    """Derivative of the identified dynamics state.
 
     Contrary to the other physics implementations, this function is not based on a physical model.
     Instead, we fit a linear model to the data collected on the real drone, and predict the next
@@ -45,42 +44,26 @@ def identified_dynamics(
         We do not explicitly simulate the onboard controller for this model. Instead, we assume that
         its dynamics are implicitly captured by the linear model.
 
+    Note:
+        The position and quaternion derivatives (velocity and rpy_rates) are also part of the state,
+        which is why we do not compute them again.
+
+    Warning:
+        The identified dynamics model does not include second-order derivatives of the orientation.
+        Since the integration interface requires derivatives for all states, we return the
+        rpy_rates_deriv that will integrate to the model's rpy_rates instead.
+
     Args:
-        control: The 4D control input consisting of the desired collective thrust and attitude.
-        pos: The current position.
+        controls: The 4D control input consisting of the desired collective thrust and attitude.
         quat: The current orientation.
-        vel: The current velocity.
         rpy_rates: The current roll, pitch, and yaw rates.
         dt: The simulation time step.
     """
-    collective_thrust, attitude = control[0], control[1:]
+    collective_thrust, attitude = controls[0], controls[1:]
     rot = R.from_quat(quat)
     thrust = rot.apply(jnp.array([0, 0, collective_thrust]))
     drift = rot.apply(jnp.array([0, 0, 1]))
-    a1, a2 = SYS_ID_PARAMS["acc_k1"], SYS_ID_PARAMS["acc_k2"]
-    acc = thrust * a1 + drift * a2 - jnp.array([0, 0, GRAVITY])
-    roll_cmd, pitch_cmd, yaw_cmd = attitude
-    rpy = rot.as_euler("xyz")
-    roll_rate = SYS_ID_PARAMS["roll_alpha"] * rpy[0] + SYS_ID_PARAMS["roll_beta"] * roll_cmd
-    pitch_rate = SYS_ID_PARAMS["pitch_alpha"] * rpy[1] + SYS_ID_PARAMS["pitch_beta"] * pitch_cmd
-    yaw_rate = SYS_ID_PARAMS["yaw_alpha"] * rpy[2] + SYS_ID_PARAMS["yaw_beta"] * yaw_cmd
-    rpy_rates = jnp.array([roll_rate, pitch_rate, yaw_rate])
-    next_pos = pos + vel * dt
-    next_rot = R.from_euler("xyz", rpy + rpy_rates * dt)
-    next_quat = next_rot.as_quat()
-    next_vel = vel + acc * dt
-    next_rpy_rates = next_rot.apply(rpy_rates)
-    return next_pos, next_quat, next_vel, next_rpy_rates
-
-
-def identified_dynamics_dx(
-    state: SimState, controls: SimControls, dt: float
-) -> tuple[Array, Array]:
-    """Derivative of the identified dynamics state."""
-    collective_thrust, attitude = controls.attitude[0], controls.attitude[1:]
-    rot = R.from_quat(state.quat)
-    thrust = rot.apply(jnp.array([0, 0, collective_thrust]))
-    drift = rot.apply(jnp.array([0, 0, 1]))
+    prev_rpy_rates = rot.apply(rpy_rates, inverse=True)
     a1, a2 = SYS_ID_PARAMS["acc_k1"], SYS_ID_PARAMS["acc_k2"]
     acc = thrust * a1 + drift * a2 - jnp.array([0, 0, GRAVITY])
     # rpy_rates_deriv have no real meaning in this context, since the identified dynamics set the
@@ -92,47 +75,21 @@ def identified_dynamics_dx(
     roll_rate = SYS_ID_PARAMS["roll_alpha"] * rpy[0] + SYS_ID_PARAMS["roll_beta"] * roll_cmd
     pitch_rate = SYS_ID_PARAMS["pitch_alpha"] * rpy[1] + SYS_ID_PARAMS["pitch_beta"] * pitch_cmd
     yaw_rate = SYS_ID_PARAMS["yaw_alpha"] * rpy[2] + SYS_ID_PARAMS["yaw_beta"] * yaw_cmd
-    rpy_rates = jnp.array([roll_rate, pitch_rate, yaw_rate])
-    rpy_rates_deriv = (rpy_rates - rot.apply(state.rpy_rates, inverse=True)) / dt
-    return acc, rpy_rates_deriv
-
-
-@partial(vectorize, signature="(3),(3),(3),(4),(3),(3),(1),(3,3)->(3),(4),(3),(3)", excluded=[8])
-def analytical_dynamics(
-    forces: Array,
-    torques: Array,
-    pos: Array,
-    quat: Array,
-    vel: Array,
-    rpy_rates: Array,
-    mass: Array,
-    J_INV: Array,
-    dt: float,
-) -> tuple[Array, Array, Array, Array]:
-    """Analytical dynamics model."""
-    # Convert rotational quantities to local frame
-    rot = R.from_quat(quat)
-    torques_local = rot.apply(torques, inverse=True)
-    rpy_rates_local = rot.apply(rpy_rates, inverse=True)
-    # Compute acceleration in global frame, rpy_rates in local frame
-    acc = forces / mass - jnp.array([0, 0, GRAVITY])
-    rpy_rates_deriv_local = J_INV @ torques_local
-    # Update state.
-    next_pos = pos + vel * dt
-    next_vel = vel + acc * dt
-    next_rot = R.from_euler("xyz", rot.as_euler("xyz") + rpy_rates_local * dt)
-    next_quat = next_rot.as_quat()
-    # Convert rpy rates back to global frame
-    next_rpy_rates_local = rpy_rates_local + rpy_rates_deriv_local * dt
-    next_rpy_rates = next_rot.apply(next_rpy_rates_local)  # Always give rpy rates in world frame
-    return next_pos, next_quat, next_vel, next_rpy_rates
+    rpy_rates_local = jnp.array([roll_rate, pitch_rate, yaw_rate])
+    rpy_rates_local_deriv = (rpy_rates_local - prev_rpy_rates) / dt
+    return acc, rot.apply(rpy_rates_local_deriv)
 
 
 @partial(vectorize, signature="(3),(3),(4),(1),(3,3)->(3),(3)")
 def analytical_dynamics_deriv(
     forces: Array, torques: Array, quat: Array, mass: Array, J_INV: Array
 ) -> tuple[Array, Array]:
-    """Derivative of the analytical dynamics state."""
+    """Derivative of the analytical dynamics state.
+
+    Note:
+        The position and quaternion derivatives (velocity and rpy_rates) are also part of the state,
+        which is why we do not compute them again.
+    """
     rot = R.from_quat(quat)
     torques_local = rot.apply(torques, inverse=True)
     acc = forces / mass - jnp.array([0, 0, GRAVITY])
