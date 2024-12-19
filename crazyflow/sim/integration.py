@@ -33,7 +33,7 @@ def rk4_average(k1: SimData, k2: SimData, k3: SimData, k4: SimData) -> SimData:
     """Average four derivatives according to the RK4 rules."""
     data = k1
     k1, k2, k3, k4 = k1.states_deriv, k2.states_deriv, k3.states_deriv, k4.states_deriv
-    states_deriv = jax.tree_map(
+    states_deriv = jax.tree.map(
         lambda x1, x2, x3, x4: (x1 + 2 * x2 + 2 * x3 + x4) / 6, k1, k2, k3, k4
     )
     return data.replace(states_deriv=states_deriv)

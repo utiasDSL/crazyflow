@@ -1,7 +1,7 @@
 import numpy as np
 
-from crazyflow.control.control import Control
-from crazyflow.sim.sim import Sim
+from crazyflow.control import Control
+from crazyflow.sim import Sim
 
 
 def main():
