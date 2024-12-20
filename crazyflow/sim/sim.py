@@ -179,7 +179,7 @@ class Sim:
     def render(self):
         if self.viewer is None:
             self.viewer = MujocoRenderer(self._mj_model, self._mj_data)
-        self._mj_data.qpos[:] = mjx.get_data(m=self._mj_model, d=self._mjx_data)[0].qpos
+        self._mj_data.qpos[:] = self._mjx_data.qpos[0, :]
         mujoco.mj_forward(self._mj_model, self._mj_data)
         self.viewer.render("human")
 

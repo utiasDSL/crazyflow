@@ -12,7 +12,7 @@ def main():
         control=Control.state,
         freq=500,
         attitude_freq=500,
-        state_freq=500,
+        state_freq=100,
         device="cpu",
     )
 
@@ -24,10 +24,10 @@ def main():
     cmd = np.zeros((sim.n_worlds, sim.n_drones, 13))
     cmd[..., :3] = 0.1
 
-    for i in range(int(duration * sim.freq)):
+    for i in range(int(duration * sim.control_freq)):
         sim.state_control(cmd)
-        sim.step()
-        if ((i * fps) % sim.freq) < fps:
+        sim.step(sim.freq // sim.control_freq)
+        if ((i * fps) % sim.control_freq) < fps:
             sim.render()
     sim.close()
 
