@@ -24,8 +24,27 @@ class Control(str, Enum):
     """Control type of the simulated onboard controller."""
 
     state = "state"
+    """State control takes [x, y, z, vx, vy, vz, ax, ay, az, yaw, roll_rate, pitch_rate, yaw_rate].
+    
+    Note:
+        Recommended frequency is >=20 Hz.
+
+    Warning:
+        Currently, we only use positions, velocities, and yaw. The rest of the state is ignored.
+        This is subject to change in the future.
+    """
     attitude = "attitude"
+    """Attitude control takes [collective thrust, roll, pitch, yaw].
+
+    Note:
+        Recommended frequency is >=100 Hz.
+    """
     thrust = "thrust"
+    """Thrust control takes [thrust1, thrust2, thrust3, thrust4] for each drone motor.
+
+    Note:
+        Recommended frequency is >=500 Hz.
+    """
     default = attitude
 
 
