@@ -287,7 +287,9 @@ def generate_physics_fn(physics: Physics) -> Callable[[SimData], SimData]:
             raise NotImplementedError(f"Physics mode {physics} not implemented")
 
 
-def generate_integrator_fn(integrator: Integrator) -> Callable[[SimData], SimData]:
+def generate_integrator_fn(
+    integrator: Integrator,
+) -> Callable[[SimData, Callable[[SimData], SimData]], SimData]:
     """Generate the integrator function for the given integrator mode."""
     match integrator:
         case Integrator.euler:
@@ -328,6 +330,18 @@ def thrust_control(controls: Array, data: SimData, device: str) -> SimData:
 
 @jax.jit
 def controllable(step: Array, freq: int, control_steps: Array, control_freq: int) -> Array:
+    """Check which worlds can currently update their controllers.
+
+    Args:
+        step: The current step of the simulation.
+        freq: The frequency of the simulation.
+        control_steps: The steps at which the controllers were last updated.
+        control_freq: The frequency of the controllers.
+
+    Returns:
+        A boolean mask of shape (n_worlds,) that is True at the worlds where the controllers can be
+        updated.
+    """
     return ((step - control_steps) >= (freq / control_freq)) | (control_steps == -1)
 
 

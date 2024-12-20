@@ -17,10 +17,28 @@ class Integrator(str, Enum):
 
 
 def euler(data: SimData, deriv_fn: Callable[[SimData], SimData]) -> SimData:
+    """Explicit Euler integration.
+
+    Args:
+        data: The simulation data structure.
+        deriv_fn: The function to compute the derivative of the dynamics.
+
+    Returns:
+        The integrated simulation data structure.
+    """
     return integrate(data, deriv_fn(data), dt=1 / data.core.freq)
 
 
 def rk4(data: SimData, deriv_fn: Callable[[SimData], SimData]) -> SimData:
+    """Runge-Kutta 4 integration.
+
+    Args:
+        data: The simulation data structure.
+        deriv_fn: The function to compute the derivative of the dynamics.
+
+    Returns:
+        The integrated simulation data structure.
+    """
     dt = 1 / data.core.freq
     data_d1 = deriv_fn(data)
     data_d2 = deriv_fn(integrate(data, data_d1, dt=dt / 2))
@@ -68,12 +86,18 @@ def _integrate(
     """Integrate the dynamics forward in time.
 
     Args:
-        data: The simulation data structure.
+        pos: The position of the drone.
+        quat: The orientation of the drone as a quaternion.
         vel: The velocity of the drone.
         rpy_rates: The roll, pitch, and yaw rates of the drone.
-        acc: The acceleration of the drone.
-        rpy_rates_deriv: The derivative of the roll, pitch, and yaw rates of the drone.
+        dpos: The derivative of the position of the drone.
+        drot: The derivative of the quaternion of the drone.
+        dvel: The derivative of the velocity of the drone.
+        drpy_rates: The derivative of the roll, pitch, and yaw rates of the drone.
         dt: The time step to integrate over.
+
+    Returns:
+        The next position, quaternion, velocity, and roll, pitch, and yaw rates of the drone.
     """
     rot = R.from_quat(quat)
     rpy_rates_local = rot.apply(rpy_rates, inverse=True)

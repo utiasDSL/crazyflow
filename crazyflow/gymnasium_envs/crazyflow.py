@@ -346,8 +346,9 @@ class CrazyflowEnvLanding(CrazyflowBaseEnv):
 
 class CrazyflowRL(VectorWrapper):
     """Wrapper to use the crazyflow JAX environments with common DRL frameworks.
-    Currently, this wrapper clips the expected actions to [-1,1]
-    and rescales them to the action space expected in simulation.
+
+    Currently, this wrapper clips the expected actions to [-1,1] and rescales them to the action
+    space expected in simulation.
     """
 
     def __init__(self, env: VectorEnv):
@@ -370,7 +371,7 @@ class CrazyflowRL(VectorWrapper):
         actions = np.clip(actions, -1.0, 1.0)
         return self.env.step(self.actions(actions))
 
-    def actions(self, actions):
+    def actions(self, actions: Array) -> Array:
         """Rescale and clip actions from [-1, 1] to [action_sim_low, action_sim_high]."""
         # Rescale actions using the computed scale and mean
         rescaled_actions = actions * self.action_scale + self.action_mean
