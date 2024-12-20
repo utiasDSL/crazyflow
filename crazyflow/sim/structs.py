@@ -113,11 +113,14 @@ def default_params(
 class SimCore:
     freq: int = field(pytree_node=False)
     steps: Array  # (N, 1)
+    rng_key: Array
 
 
-def default_core(freq: int, steps: Array) -> SimCore:
+def default_core(freq: int, n_worlds: int, rng_key: int, device: Device) -> SimCore:
     """Create a default set of core simulation parameters."""
-    return SimCore(freq=freq, steps=steps)
+    steps = jnp.zeros((n_worlds, 1), dtype=jnp.int32, device=device)
+    rng_key = jax.device_put(jax.random.key(rng_key), device)
+    return SimCore(freq=freq, steps=steps, rng_key=rng_key)
 
 
 @dataclass

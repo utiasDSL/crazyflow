@@ -18,9 +18,10 @@ from crazyflow.exception import ConfigError, NotInitializedError
 from crazyflow.sim.integration import Integrator, euler, rk4
 from crazyflow.sim.physics import (
     Physics,
-    analytical_dynamics_deriv,
-    identified_dynamics_deriv,
+    collective_force2acceleration,
+    collective_torque2rpy_rates_deriv,
     rpms2collective_wrench,
+    virtual_identified_collective_wrench,
 )
 from crazyflow.sim.structs import (
     SimData,
@@ -49,6 +50,7 @@ class Sim:
         thrust_freq: int = 500,
         device: str = "cpu",
         xml_path: Path | None = None,
+        rng_key: int = 0,
     ):
         assert Physics(physics) in Physics, f"Physics mode {physics} not implemented"
         assert Control(control) in Control, f"Control mode {control} not implemented"
@@ -70,7 +72,7 @@ class Sim:
             n_worlds, n_drones, state_freq, attitude_freq, thrust_freq, self.device
         )
         params = default_params(n_worlds, n_drones, MASS, J, J_INV, self.device)
-        core = default_core(freq, jnp.zeros((n_worlds, 1), dtype=jnp.int32, device=self.device))
+        core = default_core(freq, n_worlds, rng_key, self.device)
         self.data = SimData(
             states=states, states_deriv=states_deriv, controls=controls, params=params, core=core
         )
@@ -80,7 +82,12 @@ class Sim:
         self._xml_path = xml_path or self.default_path
         self._spec, self._mj_model, self._mj_data, self._mjx_model, self._mjx_data = self.setup_mj()
         self.viewer: MujocoRenderer | None = None
-        self._step = self.setup_pipeline()  # Overwrite _step with the compiled pipeline
+
+        # Default functions for the simulation pipeline
+        self.disturbance_fn: Callable[[SimData], SimData] | None = None
+
+        # Compile the simulation pipeline and overwrite the default _step implementation with it
+        self.update_pipeline()
 
     def setup_mj(self) -> tuple[Any, Any, Any, Model, Data]:
         assert self._xml_path.exists(), f"Model file {self._xml_path} does not exist"
@@ -102,7 +109,7 @@ class Sim:
         self.default_data = self.data.replace()
         return spec, mj_model, mj_data, mjx_model, mjx_data
 
-    def setup_pipeline(self) -> Callable[[SimData, int], SimData]:
+    def update_pipeline(self) -> Callable[[SimData, int], SimData]:
         """Setup the chain of functions that are called in Sim.step().
 
         We know all the functions that are called in succession since the simulation is configured
@@ -116,13 +123,17 @@ class Sim:
         # functions. They act as factories that produce building blocks for the construction of our
         # simulation pipeline.
         ctrl_fn = generate_control_fn(self.control)
-        physics_fn = generate_physics_fn(self.physics)
+        wrench_fn = generate_wrench_fn(self.physics)
+        disturbance_fn = identity if self.disturbance_fn is None else self.disturbance_fn
+        derivative_fn = generate_derivative_fn(self.physics)
         integrator_fn = generate_integrator_fn(self.integrator)
 
         # None is required by jax.lax.scan to unpack the tuple returned by single_step.
         def single_step(data: SimData, _: None) -> tuple[SimData, None]:
             data = ctrl_fn(data)
-            data = integrator_fn(data, physics_fn)
+            data = wrench_fn(data)
+            data = disturbance_fn(data)
+            data = integrator_fn(data, derivative_fn)
             data = data.replace(core=data.core.replace(steps=data.core.steps + 1))
             return data, None
 
@@ -140,7 +151,7 @@ class Sim:
             mjx_data = self.sync_sim2mjx(data, mjx_data, mjx_model)
             return data, mjx_data
 
-        return step
+        self._step = step
 
     def reset(self, mask: Array | None = None):
         """Reset the simulation to the initial state.
@@ -257,7 +268,9 @@ class Sim:
     @staticmethod
     @jax.jit
     def _reset(data: SimData, default_data: SimData, mask: Array | None = None) -> SimData:
-        return pytree_replace(data, default_data, mask)
+        rng_key = data.core.rng_key
+        data = pytree_replace(data, default_data, mask)
+        return data.replace(core=data.core.replace(rng_key=rng_key))  # Don't reset the rng_key
 
     def _step(self, data: SimData, n_steps: int) -> SimData:
         raise NotInitializedError("_step call before compiling the simulation pipeline.")
@@ -276,13 +289,24 @@ def generate_control_fn(control: Control) -> Callable[[SimData], SimData]:
             raise NotImplementedError(f"Control mode {control} not implemented")
 
 
-def generate_physics_fn(physics: Physics) -> Callable[[SimData], SimData]:
-    """Generate the physics function for the given physics mode."""
+def generate_wrench_fn(physics: Physics) -> Callable[[SimData], SimData]:
+    """Generate the wrench function for the given physics mode."""
     match physics:
         case Physics.analytical:
-            return compute_analytical_dynamics_deriv
+            return analytical_wrench
         case Physics.sys_id:
-            return compute_identified_dynamics_deriv
+            return identified_wrench
+        case _:
+            raise NotImplementedError(f"Physics mode {physics} not implemented")
+
+
+def generate_derivative_fn(physics: Physics) -> Callable[[SimData], SimData]:
+    """Generate the derivative function for the given physics mode."""
+    match physics:
+        case Physics.analytical:
+            return analytical_derivative
+        case Physics.sys_id:
+            return identified_derivative
         case _:
             raise NotImplementedError(f"Physics mode {physics} not implemented")
 
@@ -398,28 +422,48 @@ def step_thrust_controller(data: SimData) -> SimData:
     return data.replace(controls=controls)
 
 
-def compute_analytical_dynamics_deriv(data: SimData) -> SimData:
-    """Compute the derivative of the analytical dynamics model."""
+def analytical_wrench(data: SimData) -> SimData:
+    """Compute the wrench from the analytical dynamics model."""
     states, controls, params = data.states, data.controls, data.params
-    J, J_inv, mass = params.J, params.J_INV, params.mass
-    forces, torques = rpms2collective_wrench(controls.rpms, states.quat, states.rpy_rates, J)
-    acc, rpy_rates_deriv = analytical_dynamics_deriv(forces, torques, states.quat, mass, J_inv)
-    vel, rpy_rates = states.vel, states.rpy_rates  # Already given in the states
+    forces, torques = rpms2collective_wrench(controls.rpms, states.quat, states.rpy_rates, params.J)
+    forces = data.states.forces.at[..., 0, :].set(forces)
+    torques = data.states.torques.at[..., 0, :].set(torques)
+    return data.replace(states=data.states.replace(forces=forces, torques=torques))
+
+
+def analytical_derivative(data: SimData) -> SimData:
+    """Compute the derivative of the states."""
+    forces, torques = data.states.forces[..., 0, :], data.states.torques[..., 0, :]
+    quat, mass, J_inv = data.states.quat, data.params.mass, data.params.J_INV
+    acc = collective_force2acceleration(forces, mass)
+    rpy_rates_deriv = collective_torque2rpy_rates_deriv(torques, quat, J_inv)
+    vel, rpy_rates = data.states.vel, data.states.rpy_rates  # Already given in the states
     deriv = data.states_deriv
     deriv = deriv.replace(dpos=vel, drot=rpy_rates, dvel=acc, drpy_rates=rpy_rates_deriv)
     return data.replace(states_deriv=deriv)
 
 
-def compute_identified_dynamics_deriv(data: SimData) -> SimData:
-    """Compute the derivative of the identified dynamics model."""
+def identified_wrench(data: SimData) -> SimData:
+    """Compute the wrench from the identified dynamics model."""
     states, controls = data.states, data.controls
-    acc, rpy_rates_deriv = identified_dynamics_deriv(
-        controls.attitude, states.quat, states.rpy_rates, 1 / data.core.freq
+    mass, J = data.params.mass, data.params.J
+    forces, torques = virtual_identified_collective_wrench(
+        controls.attitude, states.quat, states.rpy_rates, mass, J, 1 / data.core.freq
     )
-    vel, rpy_rates = states.vel, states.rpy_rates
-    deriv = data.states_deriv
-    deriv = deriv.replace(dpos=vel, drot=rpy_rates, dvel=acc, drpy_rates=rpy_rates_deriv)
-    return data.replace(states_deriv=deriv)
+    forces = data.states.forces.at[..., 0, :].set(forces)
+    torques = data.states.torques.at[..., 0, :].set(torques)
+    return data.replace(states=data.states.replace(forces=forces, torques=torques))
+
+
+identified_derivative = analytical_derivative  # We can use the same derivative function for both
+
+
+def identity(data: SimData) -> SimData:
+    """Identity function for the simulation pipeline.
+
+    Used as default function for optional pipeline steps.
+    """
+    return data
 
 
 mjx_kinematics = jax.vmap(mjx.kinematics, in_axes=(None, 0))
