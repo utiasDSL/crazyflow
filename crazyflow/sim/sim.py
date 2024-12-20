@@ -202,7 +202,7 @@ class Sim:
         if self.control == Control.attitude:
             return self.data.controls.attitude_freq
         if self.control == Control.thrust:
-            raise NotImplementedError("Thrust control is not yet supported by the sim config")
+            return self.data.controls.thrust_freq
         raise NotImplementedError(f"Control mode {self.control} not implemented")
 
     @property
