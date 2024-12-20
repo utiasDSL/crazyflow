@@ -30,33 +30,30 @@ class Physics(str, Enum):
     default = analytical
 
 
-@partial(vectorize, signature="(4),(4),(3)->(3),(3)", excluded=[3])
-def identified_dynamics_deriv(
-    controls: Array, quat: Array, rpy_rates: Array, dt: float
+@partial(vectorize, signature="(4),(4),(3),(1),(3,3)->(3),(3)", excluded=[5])
+def virtual_identified_collective_wrench(
+    controls: Array, quat: Array, rpy_rates: Array, mass: Array, J: Array, dt: float
 ) -> tuple[Array, Array]:
-    """Derivative of the identified dynamics state.
+    """Virtual collective wrench for the identified dynamics model.
 
     Contrary to the other physics implementations, this function is not based on a physical model.
     Instead, we fit a linear model to the data collected on the real drone, and predict the next
-    state based on the control inputs and the current state.
-
-    Note:
-        We do not explicitly simulate the onboard controller for this model. Instead, we assume that
-        its dynamics are implicitly captured by the linear model.
-
-    Note:
-        The position and quaternion derivatives (velocity and rpy_rates) are also part of the state,
-        which is why we do not compute them again.
+    state based on the control inputs and the current state. Since we do not have a physical model,
+    we cannot compute the actual forces and torques required by the simulation pipeline. Instead, we
+    return virtual forces and torques that result in the desired acceleration and rpy rates
+    derivative after converting back to the state derivative.
 
     Warning:
         The identified dynamics model does not include second-order derivatives of the orientation.
-        Since the integration interface requires derivatives for all states, we return the
+        Since the integration interface requires derivatives for all states, we leverage the
         rpy_rates_deriv that will integrate to the model's rpy_rates instead.
 
     Args:
         controls: The 4D control input consisting of the desired collective thrust and attitude.
         quat: The current orientation.
         rpy_rates: The current roll, pitch, and yaw rates.
+        mass: The drone's mass.
+        J: The drone's inertia matrix.
         dt: The simulation time step.
     """
     collective_thrust, attitude = controls[0], controls[1:]
@@ -65,7 +62,7 @@ def identified_dynamics_deriv(
     drift = rot.apply(jnp.array([0, 0, 1]))
     prev_rpy_rates = rot.apply(rpy_rates, inverse=True)
     a1, a2 = SYS_ID_PARAMS["acc_k1"], SYS_ID_PARAMS["acc_k2"]
-    acc = thrust * a1 + drift * a2 - jnp.array([0, 0, GRAVITY])
+    acc = thrust * a1 + drift * a2
     # rpy_rates_deriv have no real meaning in this context, since the identified dynamics set the
     # rpy_rates to the commanded values directly. However, since we use a unified integration
     # interface for all physics models, we cannot access states directly. Instead, we calculate
@@ -77,24 +74,27 @@ def identified_dynamics_deriv(
     yaw_rate = SYS_ID_PARAMS["yaw_alpha"] * rpy[2] + SYS_ID_PARAMS["yaw_beta"] * yaw_cmd
     rpy_rates_local = jnp.array([roll_rate, pitch_rate, yaw_rate])
     rpy_rates_local_deriv = (rpy_rates_local - prev_rpy_rates) / dt
-    return acc, rot.apply(rpy_rates_local_deriv)
+    # The identified dynamics model does not use forces or torques, because we assume no knowledge
+    # of the drone's mass and inertia. However, to remain compatible with the physics pipeline, we
+    # return virtual forces and torques that result in the desired acceleration and rpy rates
+    # derivative. When converting back to the state derivative, the mass and inertia will cancel
+    # out, resulting in the correct acceleration and rpy rates derivative regardless of the model's
+    # mass and inertia.
+    virtual_torques = rot.apply(J @ rpy_rates_local_deriv)
+    virtual_forces = acc * mass
+    return virtual_forces, virtual_torques
 
 
-@partial(vectorize, signature="(3),(3),(4),(1),(3,3)->(3),(3)")
-def analytical_dynamics_deriv(
-    forces: Array, torques: Array, quat: Array, mass: Array, J_INV: Array
-) -> tuple[Array, Array]:
-    """Derivative of the analytical dynamics state.
+@partial(vectorize, signature="(3),(1)->(3)")
+def collective_force2acceleration(forces: Array, mass: Array) -> Array:
+    """Convert forces to acceleration."""
+    return forces / mass - jnp.array([0, 0, GRAVITY])
 
-    Note:
-        The position and quaternion derivatives (velocity and rpy_rates) are also part of the state,
-        which is why we do not compute them again.
-    """
-    rot = R.from_quat(quat)
-    torques_local = rot.apply(torques, inverse=True)
-    acc = forces / mass - jnp.array([0, 0, GRAVITY])
-    rpy_rates_deriv = rot.apply(J_INV @ torques_local)
-    return acc, rpy_rates_deriv
+
+@partial(vectorize, signature="(3),(4),(3,3)->(3)")
+def collective_torque2rpy_rates_deriv(torques: Array, quat: Array, J_INV: Array) -> Array:
+    """Convert torques to rpy_rates_deriv."""
+    return R.from_quat(quat).apply(J_INV @ torques)
 
 
 @partial(vectorize, signature="(4),(4),(3),(3,3)->(3),(3)")

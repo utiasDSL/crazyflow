@@ -152,8 +152,9 @@ def test_reset_masked(device: str, physics: Physics):
             default = default_member[k]
             if isinstance(v, jnp.ndarray):
                 array_compare_assert(v, default, name=k, value=False)
-                # Only check values for the first world
-                assert jnp.all(v[0] == default[0]), f"{k} value mismatch"
+                if v.ndim >= 1:  # Do not check zero-dimensional arrays common to all worlds
+                    # Only check values for the first world
+                    assert jnp.all(v[0] == default[0]), f"{k} value mismatch"
             else:
                 assert v == default, f"{k} value mismatch"
 
