@@ -31,11 +31,12 @@ from crazyflow.sim.structs import (
     default_state,
     default_state_deriv,
 )
-from crazyflow.utils import clone_body, grid_2d, leaf_replace, pytree_replace
+from crazyflow.utils import grid_2d, leaf_replace, pytree_replace
 
 
 class Sim:
     default_path = Path(__file__).parents[1] / "models/cf2/scene.xml"
+    drone_path = Path(__file__).parents[1] / "models/cf2/cf2.xml"
 
     def __init__(
         self,
@@ -65,6 +66,11 @@ class Sim:
         self.n_worlds = n_worlds
         self.n_drones = n_drones
 
+        # Initialize MuJoCo world and data
+        self._xml_path = xml_path or self.default_path
+        self._spec, self._mj_model, self._mj_data, self.mjx_model, self.mjx_data = self.setup_mj()
+        self.viewer: MujocoRenderer | None = None
+
         # Allocate internal states and controls
         states = default_state(n_worlds, n_drones, self.device)
         states_deriv = default_state_deriv(n_worlds, n_drones, self.device)
@@ -76,12 +82,11 @@ class Sim:
         self.data = SimData(
             states=states, states_deriv=states_deriv, controls=controls, params=params, core=core
         )
-        self.default_data: SimData | None = None  # Populated at the end of self.setup()
-
-        # Initialize MuJoCo world and data
-        self._xml_path = xml_path or self.default_path
-        self._spec, self._mj_model, self._mj_data, self._mjx_model, self._mjx_data = self.setup_mj()
-        self.viewer: MujocoRenderer | None = None
+        if self.n_drones > 1:  # If multiple drones, arrange them in a grid
+            grid = grid_2d(self.n_drones)
+            states = self.data.states.replace(pos=self.data.states.pos.at[..., :2].set(grid))
+            self.data: SimData = self.data.replace(states=states)
+        self.default_data = self.data.replace()
 
         # Default functions for the simulation pipeline
         self.disturbance_fn: Callable[[SimData], SimData] | None = None
@@ -92,21 +97,29 @@ class Sim:
     def setup_mj(self) -> tuple[Any, Any, Any, Model, Data]:
         assert self._xml_path.exists(), f"Model file {self._xml_path} does not exist"
         spec = mujoco.MjSpec.from_file(str(self._xml_path))
-        # Add additional drones to the world
-        for i in range(1, self.n_drones):
-            clone_body(spec.worldbody, spec.find_body("drone0"), f"drone{i}")
+        drone_spec = mujoco.MjSpec.from_file(str(self.drone_path))
+        frame = spec.worldbody.add_frame()
+        # Add drones and their actuators
+        for i in range(self.n_drones):
+            drone = frame.attach_body(drone_spec.find_body("drone"), "", f":{i}")
+            drone.add_freejoint()
+            # Add actuators for the drone. This should be covered by the frame.attach_body call, but
+            # is currently not working as expected.
+            for actuator in drone_spec.actuators:
+                spec.add_actuator(
+                    name=f"{actuator.name}:{i}",
+                    trntype=actuator.trntype,
+                    target=f"{actuator.target}:{i}",
+                    gear=actuator.gear,
+                    dynprm=actuator.dynprm,
+                    biasprm=actuator.biasprm,
+                )
+        # Compile and create data structures
         mj_model = spec.compile()
         mj_data = mujoco.MjData(mj_model)
         mjx_model = mjx.put_model(mj_model, device=self.device)
         mjx_data = mjx.put_data(mj_model, mj_data, device=self.device)
         mjx_data = jax.vmap(lambda _: mjx_data)(jnp.arange(self.n_worlds))
-        if self.n_drones > 1:  # If multiple drones, arrange them in a grid
-            grid = grid_2d(self.n_drones)
-            states = self.data.states.replace(pos=self.data.states.pos.at[..., :2].set(grid))
-            self.data: SimData = self.data.replace(states=states)
-            mjx_data = self.sync_sim2mjx(self.data, mjx_data, mjx_model)
-            # Update default to reflect changes after resetting
-        self.default_data = self.data.replace()
         return spec, mj_model, mj_data, mjx_model, mjx_data
 
     def update_pipeline(self) -> Callable[[SimData, int], SimData]:
@@ -144,11 +157,9 @@ class Sim:
         # Having n_steps as a static argument is fine, since patterns with n_steps > 1 will almost
         # always use the same n_steps value for successive calls.
         @partial(jax.jit, static_argnames="n_steps")
-        def step(
-            data: SimData, mjx_data: Data, mjx_model: Model, n_steps: int = 1
-        ) -> tuple[SimData, Data]:
+        def step(data: SimData, mjx_data: Data, _: Model, n_steps: int = 1) -> SimData:
             data, _ = jax.lax.scan(single_step, data, length=n_steps)
-            mjx_data = self.sync_sim2mjx(data, mjx_data, mjx_model)
+            mjx_data = self.sync_sim2mjx(data, mjx_data, self.mjx_model)
             return data, mjx_data
 
         self._step = step
@@ -162,12 +173,12 @@ class Sim:
         """
         assert mask is None or mask.shape == (self.n_worlds,), f"Mask shape mismatch {mask.shape}"
         self.data = self._reset(self.data, self.default_data, mask)
-        self._mjx_data = self.sync_sim2mjx(self.data, self._mjx_data, self._mjx_model)
+        self.mjx_data = self.sync_sim2mjx(self.data, self.mjx_data, self.mjx_model)
 
     def step(self, n_steps: int = 1):
         """Simulate all drones in all worlds for n time steps."""
         assert n_steps > 0, "Number of steps must be positive"
-        self.data, self._mjx_data = self._step(self.data, self._mjx_data, self._mjx_model, n_steps)
+        self.data, self.mjx_data = self._step(self.data, self.mjx_data, self.mjx_model, n_steps)
 
     def attitude_control(self, controls: Array):
         """Set the desired attitude for all drones in all worlds."""
@@ -190,7 +201,7 @@ class Sim:
     def render(self):
         if self.viewer is None:
             self.viewer = MujocoRenderer(self._mj_model, self._mj_data)
-        self._mj_data.qpos[:] = self._mjx_data.qpos[0, :]
+        self._mj_data.qpos[:] = self.mjx_data.qpos[0, :]
         mujoco.mj_forward(self._mj_model, self._mj_data)
         self.viewer.render("human")
 
@@ -231,6 +242,8 @@ class Sim:
                 control_steps, control_freq = controls.state_steps, controls.state_freq
             case Control.attitude:
                 control_steps, control_freq = controls.attitude_steps, controls.attitude_freq
+            case Control.thrust:
+                control_steps, control_freq = controls.thrust_steps, controls.thrust_freq
             case _:
                 raise NotImplementedError(f"Control mode {self.control} not implemented")
         return controllable(self.data.core.steps, self.data.core.freq, control_steps, control_freq)
@@ -245,11 +258,11 @@ class Sim:
             An boolean array of shape (n_worlds,) that is True if any contact is present.
         """
         if body is None:
-            return self._mjx_data.contact.dist < 0
+            return self.mjx_data.contact.dist < 0
         body_id = self._mj_model.body(body).id
         geom_start = self._mj_model.body_geomadr[body_id]
         geom_count = self._mj_model.body_geomnum[body_id]
-        return contacts(geom_start, geom_count, self._mjx_data)
+        return contacts(geom_start, geom_count, self.mjx_data)
 
     @staticmethod
     @jax.jit
@@ -272,7 +285,7 @@ class Sim:
         data = pytree_replace(data, default_data, mask)
         return data.replace(core=data.core.replace(rng_key=rng_key))  # Don't reset the rng_key
 
-    def _step(self, data: SimData, n_steps: int) -> SimData:
+    def _step(self, data: SimData, mjx_data: Data, mjx_model: Model, n_steps: int) -> SimData:
         raise NotInitializedError("_step call before compiling the simulation pipeline.")
 
 

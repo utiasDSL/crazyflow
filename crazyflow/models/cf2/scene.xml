@@ -1,6 +1,6 @@
 <mujoco model="CF2 scene">
-    <include file="cf2.xml"/>
-
+    <option integrator="RK4" density="1.225" viscosity="1.8e-5"/>
+    <compiler inertiafromgeom="false" meshdir="assets" autolimits="true"/>
     <statistic center="0 0 2" extent="2.5"/>
 
     <visual>

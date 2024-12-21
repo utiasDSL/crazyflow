@@ -1,8 +1,7 @@
 <mujoco model="cf2">
-  <option integrator="RK4" density="1.225" viscosity="1.8e-5"/>
-
   <compiler inertiafromgeom="false" meshdir="assets" autolimits="true"/>
-
+  <include file="assets.xml"/>
+  
   <default>
     <default class="cf2">
       <default class="visual">
@@ -15,11 +14,8 @@
     </default>
   </default>
 
-  <include file="assets.xml"/>
-
   <worldbody>
-    <body name="drone0" pos="0 0 0.05" childclass="cf2">
-      <joint name="free_joint" type="free" stiffness="0" damping="0" frictionloss="0" armature="0"/>
+    <body name="drone" pos="0 0 0.05" childclass="cf2">
       <inertial pos="0.0 0.0 0.0" mass="0.027" diaginertia="2.3951e-5 2.3951e-5 3.2347e-5"/>
       <camera name="track" pos="-1 0 .5" xyaxes="0 -1 0 1 0 2" mode="trackcom"/>
       <!-- Virtual bodies for the drone motors and the drone CoM -->
@@ -37,15 +33,13 @@
       <geom mesh="cf2_6" material="white" class="visual"/>
       <!-- Collision geometry is estimated based on the visual mesh. We use a sphere for maximum
        computational efficiency with larger swarms. -->
-      <geom type="sphere" size="0.055" class="collision" name="drone0:col1"/>
-      <site name="imu"/>
+      <geom type="sphere" size="0.055" class="collision" name="col"/>
       <site name="CoM"/>
-      <site name="motor_0" pos="0.0325 0.0325 0.0"/>
-      <site name="motor_1" pos="-0.0325 0.0325 0.0"/>
-      <site name="motor_2" pos="-0.0325 -0.0325 0.0"/>
-      <site name="motor_3" pos="0.0325 -0.0325 0.0"/>
+      <site name="motor0" pos="0.0325 0.0325 0.0"/>
+      <site name="motor1" pos="-0.0325 0.0325 0.0"/>
+      <site name="motor2" pos="-0.0325 -0.0325 0.0"/>
+      <site name="motor3" pos="0.0325 -0.0325 0.0"/>
     </body>
-
   </worldbody>
 
   <sensor>
