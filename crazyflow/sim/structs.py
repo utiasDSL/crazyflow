@@ -10,8 +10,10 @@ class SimState:
     quat: Array  # (N, M, 4)
     vel: Array  # (N, M, 3)
     rpy_rates: Array  # (N, M, 3)
-    forces: Array  # (N, M, 5, 3)  # 5 force points: CoM and 4 motor positions
-    torques: Array  # (N, M, 5, 3)  # 5 torque points: CoM and 4 motor positions
+    force: Array  # (N, M, 3)  # CoM force
+    torque: Array  # (N, M, 3)  # CoM torque
+    motor_forces: Array  # (N, M, 4)  # Motor forces along body frame z axis
+    motor_torques: Array  # (N, M, 4)  # Motor torques around the body frame z axis
 
 
 def default_state(n_worlds: int, n_drones: int, device: Device) -> SimState:
@@ -21,10 +23,19 @@ def default_state(n_worlds: int, n_drones: int, device: Device) -> SimState:
     quat = quat.at[..., -1].set(1.0)
     vel = jnp.zeros((n_worlds, n_drones, 3), device=device)
     rpy_rates = jnp.zeros((n_worlds, n_drones, 3), device=device)
-    forces = jnp.zeros((n_worlds, n_drones, 5, 3), device=device)
-    torques = jnp.zeros((n_worlds, n_drones, 5, 3), device=device)
+    force = jnp.zeros((n_worlds, n_drones, 3), device=device)
+    torque = jnp.zeros((n_worlds, n_drones, 3), device=device)
+    motor_forces = jnp.zeros((n_worlds, n_drones, 4), device=device)
+    motor_torques = jnp.zeros((n_worlds, n_drones, 4), device=device)
     return SimState(
-        pos=pos, quat=quat, forces=forces, torques=torques, vel=vel, rpy_rates=rpy_rates
+        pos=pos,
+        quat=quat,
+        force=force,
+        torque=torque,
+        motor_forces=motor_forces,
+        motor_torques=motor_torques,
+        vel=vel,
+        rpy_rates=rpy_rates,
     )
 
 
@@ -113,14 +124,16 @@ def default_params(
 class SimCore:
     freq: int = field(pytree_node=False)
     steps: Array  # (N, 1)
-    rng_key: Array
+    n_worlds: int = field(pytree_node=False)
+    n_drones: int = field(pytree_node=False)
+    rng_key: Array  # (N, 1)
 
 
-def default_core(freq: int, n_worlds: int, rng_key: int, device: Device) -> SimCore:
+def default_core(freq: int, n_worlds: int, n_drones: int, rng_key: int, device: Device) -> SimCore:
     """Create a default set of core simulation parameters."""
     steps = jnp.zeros((n_worlds, 1), dtype=jnp.int32, device=device)
     rng_key = jax.device_put(jax.random.key(rng_key), device)
-    return SimCore(freq=freq, steps=steps, rng_key=rng_key)
+    return SimCore(freq=freq, steps=steps, n_worlds=n_worlds, n_drones=n_drones, rng_key=rng_key)
 
 
 @dataclass

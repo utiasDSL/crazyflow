@@ -86,15 +86,15 @@ def virtual_identified_collective_wrench(
 
 
 @partial(vectorize, signature="(3),(1)->(3)")
-def collective_force2acceleration(forces: Array, mass: Array) -> Array:
+def collective_force2acceleration(force: Array, mass: Array) -> Array:
     """Convert forces to acceleration."""
-    return forces / mass - jnp.array([0, 0, GRAVITY])
+    return force / mass - jnp.array([0, 0, GRAVITY])
 
 
 @partial(vectorize, signature="(3),(4),(3,3)->(3)")
-def collective_torque2rpy_rates_deriv(torques: Array, quat: Array, J_INV: Array) -> Array:
+def collective_torque2rpy_rates_deriv(torque: Array, quat: Array, J_INV: Array) -> Array:
     """Convert torques to rpy_rates_deriv."""
-    return R.from_quat(quat).apply(J_INV @ torques)
+    return R.from_quat(quat).apply(J_INV @ torque)
 
 
 @partial(vectorize, signature="(4),(4),(3),(3,3)->(3),(3)")

@@ -72,7 +72,7 @@ class Sim:
             n_worlds, n_drones, state_freq, attitude_freq, thrust_freq, self.device
         )
         params = default_params(n_worlds, n_drones, MASS, J, J_INV, self.device)
-        core = default_core(freq, n_worlds, rng_key, self.device)
+        core = default_core(freq, n_worlds, n_drones, rng_key, self.device)
         self.data = SimData(
             states=states, states_deriv=states_deriv, controls=controls, params=params, core=core
         )
@@ -425,18 +425,15 @@ def step_thrust_controller(data: SimData) -> SimData:
 def analytical_wrench(data: SimData) -> SimData:
     """Compute the wrench from the analytical dynamics model."""
     states, controls, params = data.states, data.controls, data.params
-    forces, torques = rpms2collective_wrench(controls.rpms, states.quat, states.rpy_rates, params.J)
-    forces = data.states.forces.at[..., 0, :].set(forces)
-    torques = data.states.torques.at[..., 0, :].set(torques)
-    return data.replace(states=data.states.replace(forces=forces, torques=torques))
+    force, torque = rpms2collective_wrench(controls.rpms, states.quat, states.rpy_rates, params.J)
+    return data.replace(states=data.states.replace(force=force, torque=torque))
 
 
 def analytical_derivative(data: SimData) -> SimData:
     """Compute the derivative of the states."""
-    forces, torques = data.states.forces[..., 0, :], data.states.torques[..., 0, :]
     quat, mass, J_inv = data.states.quat, data.params.mass, data.params.J_INV
-    acc = collective_force2acceleration(forces, mass)
-    rpy_rates_deriv = collective_torque2rpy_rates_deriv(torques, quat, J_inv)
+    acc = collective_force2acceleration(data.states.force, mass)
+    rpy_rates_deriv = collective_torque2rpy_rates_deriv(data.states.torque, quat, J_inv)
     vel, rpy_rates = data.states.vel, data.states.rpy_rates  # Already given in the states
     deriv = data.states_deriv
     deriv = deriv.replace(dpos=vel, drot=rpy_rates, dvel=acc, drpy_rates=rpy_rates_deriv)
@@ -447,12 +444,10 @@ def identified_wrench(data: SimData) -> SimData:
     """Compute the wrench from the identified dynamics model."""
     states, controls = data.states, data.controls
     mass, J = data.params.mass, data.params.J
-    forces, torques = virtual_identified_collective_wrench(
+    force, torque = virtual_identified_collective_wrench(
         controls.attitude, states.quat, states.rpy_rates, mass, J, 1 / data.core.freq
     )
-    forces = data.states.forces.at[..., 0, :].set(forces)
-    torques = data.states.torques.at[..., 0, :].set(torques)
-    return data.replace(states=data.states.replace(forces=forces, torques=torques))
+    return data.replace(states=data.states.replace(force=force, torque=torque))
 
 
 identified_derivative = analytical_derivative  # We can use the same derivative function for both

@@ -103,7 +103,7 @@ def state2attitude(
 def attitude2rpm(
     controls: Array, quat: Array, last_rpy: Array, rpy_err_i: Array, dt: float
 ) -> tuple[Array, Array]:
-    """Convert the desired attitude and quaternion into motor RPMs."""
+    """Convert the desired collective thrust and attitude into motor RPMs."""
     rot = R.from_quat(quat)
     target_rot = R.from_euler("xyz", controls[1:])
     drot = (target_rot.inv() * rot).as_matrix()
