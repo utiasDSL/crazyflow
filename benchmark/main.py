@@ -104,10 +104,10 @@ def main():
     sim_config.device = device
 
     print("Simulator performance")
-    profile_step(sim_config, 100, device)
+    profile_step(sim_config, 1000, device)
 
     print("\nGymnasium environment performance")
-    profile_gym_env_step(sim_config, 100, device)
+    profile_gym_env_step(sim_config, 1000, device)
 
 
 if __name__ == "__main__":
