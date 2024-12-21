@@ -9,9 +9,8 @@ from crazyflow.sim.structs import SimData
 def disturbance_fn(data: SimData) -> SimData:
     key, subkey = jax.random.split(data.core.rng_key)
     states = data.states
-    force = states.forces[..., 0, :]
-    disturbance_force = jax.random.normal(subkey, force.shape) * 5e-1  # In world frame
-    states = states.replace(forces=states.forces.at[..., 0, :].set(force + disturbance_force))
+    disturbance_force = jax.random.normal(subkey, states.force.shape) * 5e-1  # In world frame
+    states = states.replace(force=states.force + disturbance_force)
     return data.replace(states=states, core=data.core.replace(rng_key=key))
 
 
