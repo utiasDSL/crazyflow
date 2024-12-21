@@ -138,15 +138,15 @@ class Sim:
         ctrl_fn = generate_control_fn(self.control)
         wrench_fn = generate_wrench_fn(self.physics)
         disturbance_fn = identity if self.disturbance_fn is None else self.disturbance_fn
-        derivative_fn = generate_derivative_fn(self.physics)
-        integrator_fn = generate_integrator_fn(self.integrator)
+        physics_fn = generate_physics_fn(self.physics, self.integrator)
+        sync_fn = generate_sync_fn(self.physics)
 
         # None is required by jax.lax.scan to unpack the tuple returned by single_step.
         def single_step(data: SimData, _: None) -> tuple[SimData, None]:
             data = ctrl_fn(data)
             data = wrench_fn(data)
             data = disturbance_fn(data)
-            data = integrator_fn(data, derivative_fn)
+            data = physics_fn(data)
             data = data.replace(core=data.core.replace(steps=data.core.steps + 1))
             return data, None
 
@@ -159,7 +159,7 @@ class Sim:
         @partial(jax.jit, static_argnames="n_steps")
         def step(data: SimData, mjx_data: Data, _: Model, n_steps: int = 1) -> SimData:
             data, _ = jax.lax.scan(single_step, data, length=n_steps)
-            mjx_data = self.sync_sim2mjx(data, mjx_data, self.mjx_model)
+            mjx_data = sync_fn(data, mjx_data, self.mjx_model)
             return data, mjx_data
 
         self._step = step
@@ -335,6 +335,30 @@ def generate_integrator_fn(
             return rk4
         case _:
             raise NotImplementedError(f"Integrator {integrator} not implemented")
+
+
+def generate_physics_fn(physics: Physics, integrator: Integrator) -> Callable[[SimData], SimData]:
+    """Generate the physics function for the given physics mode."""
+    match physics:
+        case Physics.sys_id | Physics.analytical:
+            integrator_fn = generate_integrator_fn(integrator)
+            derivative_fn = generate_derivative_fn(physics)
+            return lambda data: integrator_fn(data, derivative_fn)
+        case Physics.mujoco:
+            return mjx_physics_fn
+        case _:
+            raise NotImplementedError(f"Physics mode {physics} not implemented")
+
+
+def generate_sync_fn(physics: Physics) -> Callable[[SimData], SimData]:
+    """Generate the sync function for the given physics mode."""
+    match physics:
+        case Physics.sys_id | Physics.analytical:
+            return Sim.sync_sim2mjx
+        case Physics.mujoco:
+            return Sim.sync_mjx2sim
+        case _:
+            raise NotImplementedError(f"Physics mode {physics} not implemented")
 
 
 @partial(jax.jit, static_argnames="device")
