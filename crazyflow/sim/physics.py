@@ -103,15 +103,33 @@ def rpms2collective_wrench(
 ) -> tuple[Array, Array]:
     """Convert RPMs to forces and torques in the global frame."""
     rot = R.from_quat(quat)
-    # Forces
-    forces = rpms**2 * KF
-    force = jnp.array([0, 0, jnp.sum(forces)])
-    # Torques
-    rpy_rates = rot.apply(rpy_rates, inverse=True)  # Now in body frame
-    z_torques = jnp.array(rpms**2) * KM
-    z_torque = SIGN_MIX_MATRIX[..., 3] @ z_torques
-    x_torque = SIGN_MIX_MATRIX[..., 0] @ forces * (ARM_LEN / jnp.sqrt(2))
-    y_torque = SIGN_MIX_MATRIX[..., 1] @ forces * (ARM_LEN / jnp.sqrt(2))
-    torques = jnp.array([x_torque, y_torque, z_torque])
-    torques = torques - jnp.cross(rpy_rates, J @ rpy_rates)
-    return rot.apply(force), rot.apply(torques)
+    motor_forces = rpms2motor_forces(rpms)
+    body_force = jnp.array([0, 0, jnp.sum(motor_forces)])
+    body_torque = rpms2body_torque(rpms, quat, rpy_rates, motor_forces, J)
+    return rot.apply(body_force), rot.apply(body_torque)
+
+
+@partial(vectorize, signature="(4)->(4)")
+def rpms2motor_forces(rpms: Array) -> Array:
+    """Convert RPMs to motor forces (body frame, along the z-axis)."""
+    return rpms**2 * KF
+
+
+@partial(vectorize, signature="(4)->(4)")
+def rpms2motor_torques(rpms: Array) -> Array:
+    """Convert RPMs to motor torques (body frame, around the z-axis)."""
+    return rpms**2 * KM
+
+
+@partial(vectorize, signature="(4),(4),(3),(4),(3,3)->(3)")
+def rpms2body_torque(
+    rpms: Array, quat: Array, rpy_rates: Array, motor_forces: Array, J: Array
+) -> Array:
+    """Convert RPMs to torques in the body frame."""
+    rot = R.from_quat(quat)
+    body_rpy_rates = rot.apply(rpy_rates, inverse=True)  # Now in body frame
+    motor_torques = rpms2motor_torques(rpms)
+    z_torque = SIGN_MIX_MATRIX[..., 3] @ motor_torques
+    x_torque = SIGN_MIX_MATRIX[..., 0] @ motor_forces * (ARM_LEN / jnp.sqrt(2))
+    y_torque = SIGN_MIX_MATRIX[..., 1] @ motor_forces * (ARM_LEN / jnp.sqrt(2))
+    return jnp.array([x_torque, y_torque, z_torque]) - jnp.cross(body_rpy_rates, J @ body_rpy_rates)
