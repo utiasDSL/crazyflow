@@ -68,7 +68,7 @@ class Sim:
 
         # Initialize MuJoCo world and data
         self._xml_path = xml_path or self.default_path
-        self._spec, self._mj_model, self._mj_data, self.mjx_model, self.mjx_data = self.setup_mj()
+        self.spec, self._mj_model, self._mj_data, self.mjx_model, self.mjx_data = self.setup_mj()
         self.viewer: MujocoRenderer | None = None
 
         # Allocate internal states and controls
@@ -91,8 +91,8 @@ class Sim:
         # Default functions for the simulation pipeline
         self.disturbance_fn: Callable[[SimData], SimData] | None = None
 
-        # Compile the simulation pipeline and overwrite the default _step implementation with it
-        self.update_pipeline()
+        # Build the simulation pipeline and overwrite the default _step implementation with it
+        self.build()
 
     def setup_mj(self) -> tuple[Any, Any, Any, Model, Data]:
         assert self._xml_path.exists(), f"Model file {self._xml_path} does not exist"
@@ -103,26 +103,19 @@ class Sim:
         for i in range(self.n_drones):
             drone = frame.attach_body(drone_spec.find_body("drone"), "", f":{i}")
             drone.add_freejoint()
-            # Add actuators for the drone. This should be covered by the frame.attach_body call, but
-            # is currently not working as expected.
-            for actuator in drone_spec.actuators:
-                spec.add_actuator(
-                    name=f"{actuator.name}:{i}",
-                    trntype=actuator.trntype,
-                    target=f"{actuator.target}:{i}",
-                    gear=actuator.gear,
-                    dynprm=actuator.dynprm,
-                    biasprm=actuator.biasprm,
-                )
         # Compile and create data structures
         mj_model = spec.compile()
         mj_data = mujoco.MjData(mj_model)
         mjx_model = mjx.put_model(mj_model, device=self.device)
         mjx_data = mjx.put_data(mj_model, mj_data, device=self.device)
         mjx_data = jax.vmap(lambda _: mjx_data)(jnp.arange(self.n_worlds))
+        # Avoid recompilation on the second call due to time being a weak type. See e.g.
+        # https://github.com/jax-ml/jax/issues/4274#issuecomment-692406759
+        # Tracking issue: https://github.com/google-deepmind/mujoco/issues/2306
+        mjx_data = mjx_data.replace(time=jnp.float32(mjx_data.time))
         return spec, mj_model, mj_data, mjx_model, mjx_data
 
-    def update_pipeline(self) -> Callable[[SimData, int], SimData]:
+    def build(self):
         """Setup the chain of functions that are called in Sim.step().
 
         We know all the functions that are called in succession since the simulation is configured

@@ -38,7 +38,7 @@ def main(plot: bool = False):
 
     # Second run
     sim.disturbance_fn = disturbance_fn
-    sim.update_pipeline()
+    sim.build()
     pos_perturbed = []
     rpy_perturbed = []
     sim.reset()

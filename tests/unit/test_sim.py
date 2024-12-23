@@ -275,7 +275,7 @@ def test_device(device: str):
     sim = Sim(n_worlds=2, physics=Physics.sys_id, device=device)
     sim.step()
     assert sim.data.states.pos.device == jax.devices(device)[0]
-    assert sim._mjx_data.qpos.device == jax.devices(device)[0]
+    assert sim.mjx_data.qpos.device == jax.devices(device)[0]
 
 
 @pytest.mark.unit
@@ -285,10 +285,10 @@ def test_device(device: str):
 def test_shape_consistency(device: str, n_drones: int, n_worlds: int):
     skip_unavailable_device(device)
     sim = Sim(n_worlds=n_worlds, n_drones=n_drones, physics=Physics.sys_id, device=device)
-    qpos_shape, qvel_shape = sim._mjx_data.qpos.shape, sim._mjx_data.qvel.shape
+    qpos_shape, qvel_shape = sim.mjx_data.qpos.shape, sim.mjx_data.qvel.shape
     sim.step()
-    assert sim._mjx_data.qpos.shape == qpos_shape, "step() should not change qpos shape"
-    assert sim._mjx_data.qvel.shape == qvel_shape, "step() should not change qvel shape"
+    assert sim.mjx_data.qpos.shape == qpos_shape, "step() should not change qpos shape"
+    assert sim.mjx_data.qvel.shape == qvel_shape, "step() should not change qvel shape"
 
 
 @pytest.mark.unit
