@@ -19,10 +19,10 @@ classifiers = [
 
 dependencies = [
     "jax",
-    "mujoco",
+    "mujoco>=3.2.6",
+    "mujoco-mjx>=3.2.6",
     "gymnasium",
     "imageio",
-    "mujoco-mjx",
     "einops",
     "flax",
     "ml_collections",
