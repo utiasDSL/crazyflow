@@ -90,6 +90,8 @@ class Sim:
             grid = grid_2d(self.n_drones)
             states = self.data.states.replace(pos=self.data.states.pos.at[..., :2].set(grid))
             self.data: SimData = self.data.replace(states=states)
+            if self.physics == Physics.mujoco:  # Sync positions to MuJoCo
+                self.mjx_data = self.sync_sim2mjx(self.data, self.mjx_data, self.mjx_model)
         self.default_data = self.data.replace()
 
         # Default functions for the simulation pipeline
@@ -102,6 +104,10 @@ class Sim:
         assert self._xml_path.exists(), f"Model file {self._xml_path} does not exist"
         spec = mujoco.MjSpec.from_file(str(self._xml_path))
         drone_spec = mujoco.MjSpec.from_file(str(self.drone_path))
+        if self.physics != Physics.mujoco:  # Make the floor a contact body for physics != mujoco
+            floor = next(g for g in spec.worldbody.geoms if g.name == "floor")
+            floor.contype = 1
+            floor.conaffinity = 1
         frame = spec.worldbody.add_frame()
         # Add drones and their actuators
         for i in range(self.n_drones):

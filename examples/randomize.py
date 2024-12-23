@@ -30,10 +30,10 @@ def main():
     cmd[..., :2] = grid_2d(sim.n_drones) * 0.25
 
     # Simulate for 5 seconds. Each drone should behave slightly differently due to the randomization
-    for i in range(int(duration * sim.freq)):
+    for i in range(int(duration * sim.control_freq)):
         sim.state_control(cmd)
-        sim.step()
-        if ((i * fps) % sim.freq) < fps:
+        sim.step(sim.freq // sim.control_freq)
+        if ((i * fps) % sim.control_freq) < fps:
             sim.render()
     sim.close()
 
