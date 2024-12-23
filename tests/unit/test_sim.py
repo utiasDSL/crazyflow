@@ -63,8 +63,8 @@ def test_sim_init(physics: Physics, device: str, control: Control, n_worlds: int
     n_drones = 1
     skip_unavailable_device(device)
 
-    if physics != Physics.analytical and control == Control.thrust:
-        with pytest.raises(ConfigError):  # TODO: Remove when supported with sys_id
+    if physics == Physics.sys_id and control == Control.thrust:
+        with pytest.raises(ConfigError):
             Sim(n_worlds=n_worlds, physics=physics, device=device, control=control)
         return
     sim = Sim(n_worlds=n_worlds, physics=physics, device=device, control=control)
@@ -173,11 +173,10 @@ def test_reset_masked(device: str, physics: Physics):
 @pytest.mark.parametrize("device", ["gpu", "cpu"])
 def test_sim_step(n_worlds: int, n_drones: int, physics: Physics, control: Control, device: str):
     skip_unavailable_device(device)
-    if physics != Physics.analytical and control == Control.thrust:
-        return  # TODO: Remove when supported with sys_id
+    if physics == Physics.sys_id and control == Control.thrust:
+        return
     sim = Sim(n_worlds=n_worlds, n_drones=n_drones, physics=physics, device=device, control=control)
-    for _ in range(2):
-        sim.step()
+    sim.step(2)
 
 
 @pytest.mark.unit

@@ -59,7 +59,7 @@ class Sim:
     ):
         assert Physics(physics) in Physics, f"Physics mode {physics} not implemented"
         assert Control(control) in Control, f"Control mode {control} not implemented"
-        if physics != Physics.analytical and control == Control.thrust:  # TODO: Implement
+        if physics == Physics.sys_id and control == Control.thrust:
             raise ConfigError("Thrust control is not supported with sys_id physics")
         if freq > 10_000 and not jax.config.jax_enable_x64:
             raise ConfigError("Double precision mode is required for high frequency simulations")
@@ -69,11 +69,6 @@ class Sim:
         self.device = jax.devices(device)[0]
         self.n_worlds = n_worlds
         self.n_drones = n_drones
-
-        # Initialize MuJoCo world and data
-        self._xml_path = xml_path or self.default_path
-        self.spec, self._mj_model, self._mj_data, self.mjx_model, self.mjx_data = self.setup_mj()
-        self.viewer: MujocoRenderer | None = None
 
         # Allocate internal states and controls
         states = default_state(n_worlds, n_drones, self.device)
@@ -90,9 +85,14 @@ class Sim:
             grid = grid_2d(self.n_drones)
             states = self.data.states.replace(pos=self.data.states.pos.at[..., :2].set(grid))
             self.data: SimData = self.data.replace(states=states)
-            if self.physics == Physics.mujoco:  # Sync positions to MuJoCo
-                self.mjx_data = self.sync_sim2mjx(self.data, self.mjx_data, self.mjx_model)
         self.default_data = self.data.replace()
+
+        # Initialize MuJoCo world and data
+        self._xml_path = xml_path or self.default_path
+        self.spec, self._mj_model, self._mj_data, self.mjx_model, self.mjx_data = self.setup_mj()
+        self.viewer: MujocoRenderer | None = None
+        if self.physics == Physics.mujoco:  # Sync positions to MuJoCo
+            self.mjx_data = self.sync_sim2mjx(self.data, self.mjx_data, self.mjx_model)
 
         # Default functions for the simulation pipeline
         self.disturbance_fn: Callable[[SimData], SimData] | None = None
@@ -103,6 +103,7 @@ class Sim:
     def setup_mj(self) -> tuple[Any, Any, Any, Model, Data]:
         assert self._xml_path.exists(), f"Model file {self._xml_path} does not exist"
         spec = mujoco.MjSpec.from_file(str(self._xml_path))
+        spec.option.timestep = 1 / self.freq
         drone_spec = mujoco.MjSpec.from_file(str(self.drone_path))
         if self.physics != Physics.mujoco:  # Make the floor a contact body for physics != mujoco
             floor = next(g for g in spec.worldbody.geoms if g.name == "floor")
