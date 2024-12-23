@@ -7,20 +7,24 @@ import jax.numpy as jnp
 import mujoco
 import mujoco.mjx as mjx
 from einops import rearrange
+from flax.struct import dataclass
 from gymnasium.envs.mujoco.mujoco_rendering import MujocoRenderer
 from jax import Array
 from jax.scipy.spatial.transform import Rotation as R
 from mujoco.mjx import Data, Model
 
-from crazyflow.constants import J_INV, MASS, J
+from crazyflow.constants import J_INV, MASS, SIGN_MIX_MATRIX, J
 from crazyflow.control.control import Control, attitude2rpm, pwm2rpm, state2attitude, thrust2pwm
 from crazyflow.exception import ConfigError, NotInitializedError
 from crazyflow.sim.integration import Integrator, euler, rk4
 from crazyflow.sim.physics import (
     Physics,
+    ang_vel2rpy_rates,
     collective_force2acceleration,
     collective_torque2rpy_rates_deriv,
     rpms2collective_wrench,
+    rpms2motor_forces,
+    rpms2motor_torques,
     virtual_identified_collective_wrench,
 )
 from crazyflow.sim.structs import (
@@ -143,6 +147,24 @@ class Sim:
             data = data.replace(core=data.core.replace(steps=data.core.steps + 1))
             return data, None
 
+        @dataclass
+        class ScanData:
+            """jax.lax.scan requires that the carry-over data is a single Array or PyTree."""
+
+            data: SimData
+            mjx_data: Data
+            mjx_model: Model
+
+        def single_mujoco_step(scan_data: ScanData, _: None) -> tuple[ScanData, None]:
+            data, mjx_data, mjx_model = scan_data.data, scan_data.mjx_data, scan_data.mjx_model
+            data = ctrl_fn(data)
+            data = wrench_fn(data)
+            data = disturbance_fn(data)
+            mjx_data = mjx_physics_fn(data, mjx_data, mjx_model)
+            data = data.replace(core=data.core.replace(steps=data.core.steps + 1))
+            data = sync_fn(data, mjx_data)
+            return ScanData(data=data, mjx_data=mjx_data, mjx_model=mjx_model), None
+
         # ``scan`` can be lowered to a single WhileOp, reducing compilation times while still fusing
         # the loops and giving XLA maximum freedom to reorder operations and jointly optimize the
         # pipeline. This is especially relevant for the common use case of running multiple sim
@@ -150,12 +172,26 @@ class Sim:
         # Having n_steps as a static argument is fine, since patterns with n_steps > 1 will almost
         # always use the same n_steps value for successive calls.
         @partial(jax.jit, static_argnames="n_steps")
-        def step(data: SimData, mjx_data: Data, _: Model, n_steps: int = 1) -> SimData:
+        def _step(data: SimData, mjx_data: Data, n_steps: int = 1) -> SimData:
             data, _ = jax.lax.scan(single_step, data, length=n_steps)
             mjx_data = sync_fn(data, mjx_data, self.mjx_model)
             return data, mjx_data
 
-        self._step = step
+        # We wrap the _step function to remove the unused Model argument. This significantly
+        # improves performance, because the Model struct does not have to be flattened and checked
+        # for consistency with the jitted _step function.
+        def step(data: SimData, mjx_data: Data, _: Model, n_steps: int = 1) -> SimData:
+            return _step(data, mjx_data, n_steps)
+
+        @partial(jax.jit, static_argnames="n_steps")
+        def mujoco_step(
+            data: SimData, mjx_data: Data, mjx_model: Model, n_steps: int = 1
+        ) -> SimData:
+            scan_data = ScanData(data=data, mjx_data=mjx_data, mjx_model=mjx_model)
+            scan_data, _ = jax.lax.scan(single_mujoco_step, scan_data, length=n_steps)
+            return scan_data.data, scan_data.mjx_data
+
+        self._step = mujoco_step if self.physics == Physics.mujoco else step
 
     def reset(self, mask: Array | None = None):
         """Reset the simulation to the initial state.
@@ -273,6 +309,18 @@ class Sim:
 
     @staticmethod
     @jax.jit
+    def sync_mjx2sim(data: SimData, mjx_data: Data) -> SimData:
+        qpos = mjx_data.qpos.reshape(data.core.n_worlds, data.core.n_drones, 7)
+        qvel = mjx_data.qvel.reshape(data.core.n_worlds, data.core.n_drones, 6)
+        pos, quat = jnp.split(qpos, [3], axis=-1)
+        quat = quat[..., [1, 2, 3, 0]]  # MuJoCo quat is [w, x, y, z], ours is [x, y, z, w]
+        vel, local_ang_vel = jnp.split(qvel, [3], axis=-1)
+        rpy_rates = R.from_quat(quat).apply(ang_vel2rpy_rates(local_ang_vel, quat))
+        states = data.states.replace(pos=pos, quat=quat, vel=vel, rpy_rates=rpy_rates)
+        return data.replace(states=states)
+
+    @staticmethod
+    @jax.jit
     def _reset(data: SimData, default_data: SimData, mask: Array | None = None) -> SimData:
         rng_key = data.core.rng_key
         data = pytree_replace(data, default_data, mask)
@@ -302,6 +350,8 @@ def generate_wrench_fn(physics: Physics) -> Callable[[SimData], SimData]:
             return analytical_wrench
         case Physics.sys_id:
             return identified_wrench
+        case Physics.mujoco:
+            return mujoco_wrench
         case _:
             raise NotImplementedError(f"Physics mode {physics} not implemented")
 
@@ -481,6 +531,26 @@ def identified_wrench(data: SimData) -> SimData:
 
 
 identified_derivative = analytical_derivative  # We can use the same derivative function for both
+
+
+def mujoco_wrench(data: SimData) -> SimData:
+    """Compute the wrench from the MuJoCo dynamics model."""
+    forces = rpms2motor_forces(data.controls.rpms)
+    torques = SIGN_MIX_MATRIX[..., 3] * rpms2motor_torques(data.controls.rpms)
+    return data.replace(states=data.states.replace(motor_forces=forces, motor_torques=torques))
+
+
+batched_mjx_step = jax.vmap(mjx.step, in_axes=(None, 0))
+
+
+def mjx_physics_fn(data: SimData, mjx_data: Data, mjx_model: Model) -> SimData:
+    """Step the MuJoCo simulation."""
+    force_torques = jnp.concatenate([data.states.motor_forces, data.states.motor_torques], axis=-1)
+    force_torques = rearrange(force_torques, "w d ft -> w (d ft)")
+    mjx_data = mjx_data.replace(ctrl=force_torques)
+    # TODO: Add disturbances from data.states.force/torque with mjx_data.xfrc_applied
+    mjx_data = batched_mjx_step(mjx_model, mjx_data)
+    return mjx_data
 
 
 def identity(data: SimData) -> SimData:
