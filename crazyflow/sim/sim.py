@@ -298,7 +298,7 @@ class Sim:
     def sync_sim2mjx(data: SimData, mjx_data: Data, mjx_model: Model) -> Data:
         states = data.states
         pos, quat, vel, rpy_rates = states.pos, states.quat, states.vel, states.rpy_rates
-        quat = quat[..., [-1, 0, 1, 2]]  # MuJoCo quat is [w, x, y, z], ours is [x, y, z, w]
+        quat = quat[..., [3, 0, 1, 2]]  # MuJoCo quat is [w, x, y, z], ours is [x, y, z, w]
         qpos = rearrange(jnp.concat([pos, quat], axis=-1), "w d qpos -> w (d qpos)")
         # TODO: rpy_rates should be ang_vel instead. Fix with conversion from rpy_rates to ang_vel
         qvel = rearrange(jnp.concat([vel, rpy_rates], axis=-1), "w d qvel -> w (d qvel)")

@@ -126,8 +126,7 @@ def rpms2body_torque(
     rpms: Array, quat: Array, rpy_rates: Array, motor_forces: Array, J: Array
 ) -> Array:
     """Convert RPMs to torques in the body frame."""
-    rot = R.from_quat(quat)
-    body_rpy_rates = rot.apply(rpy_rates, inverse=True)  # Now in body frame
+    body_rpy_rates = R.from_quat(quat).apply(rpy_rates, inverse=True)  # Now in body frame
     motor_torques = rpms2motor_torques(rpms)
     z_torque = SIGN_MIX_MATRIX[..., 3] @ motor_torques
     x_torque = SIGN_MIX_MATRIX[..., 0] @ motor_forces * (ARM_LEN / jnp.sqrt(2))
