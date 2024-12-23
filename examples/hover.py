@@ -8,7 +8,7 @@ def main():
     sim = Sim(
         n_worlds=1,
         n_drones=1,
-        physics=Physics.analytical,
+        physics=Physics.mujoco,
         control=Control.state,
         freq=500,
         attitude_freq=500,
