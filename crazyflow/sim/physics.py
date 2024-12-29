@@ -156,3 +156,19 @@ def ang_vel2rpy_rates(ang_vel: Array, quat: Array) -> Array:
         ]
     )
     return conv_mat @ ang_vel
+
+
+@partial(vectorize, signature="(3),(4)->(3)")
+def rpy_rates2ang_vel(rpy_rates: Array, quat: Array) -> Array:
+    """Convert rpy rates to angular velocity."""
+    rpy = R.from_quat(quat).as_euler("xyz")
+    sin_phi, cos_phi = jnp.sin(rpy[0]), jnp.cos(rpy[0])
+    cos_theta, tan_theta = jnp.cos(rpy[1]), jnp.tan(rpy[1])
+    conv_mat = jnp.array(
+        [
+            [1, 0, -cos_theta * tan_theta],
+            [0, cos_phi, sin_phi * cos_theta],
+            [0, -sin_phi, cos_phi * cos_theta],
+        ]
+    )
+    return conv_mat @ rpy_rates
