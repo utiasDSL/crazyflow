@@ -24,7 +24,7 @@ SYS_ID_PARAMS = {
 class Physics(str, Enum):
     """Physics mode for the simulation."""
 
-    # mujoco = "mujoco"  TODO: Implement
+    mujoco = "mujoco"
     analytical = "analytical"
     sys_id = "sys_id"
     default = analytical
@@ -126,10 +126,49 @@ def rpms2body_torque(
     rpms: Array, quat: Array, rpy_rates: Array, motor_forces: Array, J: Array
 ) -> Array:
     """Convert RPMs to torques in the body frame."""
-    rot = R.from_quat(quat)
-    body_rpy_rates = rot.apply(rpy_rates, inverse=True)  # Now in body frame
+    body_rpy_rates = R.from_quat(quat).apply(rpy_rates, inverse=True)  # Now in body frame
     motor_torques = rpms2motor_torques(rpms)
     z_torque = SIGN_MIX_MATRIX[..., 3] @ motor_torques
     x_torque = SIGN_MIX_MATRIX[..., 0] @ motor_forces * (ARM_LEN / jnp.sqrt(2))
     y_torque = SIGN_MIX_MATRIX[..., 1] @ motor_forces * (ARM_LEN / jnp.sqrt(2))
     return jnp.array([x_torque, y_torque, z_torque]) - jnp.cross(body_rpy_rates, J @ body_rpy_rates)
+
+
+@partial(vectorize, signature="(3),(4)->(3)")
+def ang_vel2rpy_rates(ang_vel: Array, quat: Array) -> Array:
+    """Convert angular velocity to rpy rates.
+
+    Args:
+        ang_vel: The angular velocity in the body frame.
+        quat: The current orientation.
+
+    Returns:
+        The rpy rates in the body frame, following the 'xyz' convention.
+    """
+    rpy = R.from_quat(quat).as_euler("xyz")
+    sin_phi, cos_phi = jnp.sin(rpy[0]), jnp.cos(rpy[0])
+    cos_theta, tan_theta = jnp.cos(rpy[1]), jnp.tan(rpy[1])
+    conv_mat = jnp.array(
+        [
+            [1, sin_phi * tan_theta, cos_phi * tan_theta],
+            [0, cos_phi, -sin_phi],
+            [0, sin_phi / cos_theta, cos_phi / cos_theta],
+        ]
+    )
+    return conv_mat @ ang_vel
+
+
+@partial(vectorize, signature="(3),(4)->(3)")
+def rpy_rates2ang_vel(rpy_rates: Array, quat: Array) -> Array:
+    """Convert rpy rates to angular velocity."""
+    rpy = R.from_quat(quat).as_euler("xyz")
+    sin_phi, cos_phi = jnp.sin(rpy[0]), jnp.cos(rpy[0])
+    cos_theta, tan_theta = jnp.cos(rpy[1]), jnp.tan(rpy[1])
+    conv_mat = jnp.array(
+        [
+            [1, 0, -cos_theta * tan_theta],
+            [0, cos_phi, sin_phi * cos_theta],
+            [0, -sin_phi, cos_phi * cos_theta],
+        ]
+    )
+    return conv_mat @ rpy_rates

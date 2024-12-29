@@ -14,8 +14,7 @@ def main():
     def step(cmd: NDArray) -> jax.Array:
         sim.reset()
         sim.state_control(cmd)
-        sim.step()
-        sim.step()  # We need two steps for the initial step to take effect on the z position
+        sim.step(sim.freq // sim.control_freq)
         return (sim.data.states.pos[0, 0, 2] - 1.0) ** 2  # Quadratic cost to reach 1m height
 
     step_grad = jax.jit(jax.grad(step))
