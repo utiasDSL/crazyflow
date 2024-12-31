@@ -28,7 +28,7 @@ from crazyflow.sim.physics import (
     virtual_identified_collective_wrench,
 )
 from crazyflow.sim.structs import SimControls, SimCore, SimData, SimParams, SimState, SimStateDeriv
-from crazyflow.utils import grid_2d, leaf_replace, pytree_replace, to_device
+from crazyflow.utils import grid_2d, leaf_replace, patch_viewer, pytree_replace, to_device
 
 
 class Sim:
@@ -66,11 +66,11 @@ class Sim:
 
         # Initialize MuJoCo world and data
         self._xml_path = xml_path or self.default_path
-        self.spec, self._mj_model, self._mj_data, self.mjx_model, mjx_data = self.setup_mj()
+        self.spec, self.mj_model, self.mj_data, self.mjx_model, mjx_data = self.setup_mj()
         self.viewer: MujocoRenderer | None = None
 
         # Allocate internal states and controls
-        drone_ids = [self._mj_model.body(f"drone:{i}").id for i in range(n_drones)]
+        drone_ids = [self.mj_model.body(f"drone:{i}").id for i in range(n_drones)]
         self.data = SimData(
             states=SimState.create(n_worlds, n_drones, self.device),
             states_deriv=SimStateDeriv.create(n_worlds, n_drones, self.device),
@@ -218,9 +218,10 @@ class Sim:
 
     def render(self):
         if self.viewer is None:
-            self.viewer = MujocoRenderer(self._mj_model, self._mj_data)
-        self._mj_data.qpos[:] = self.data.mjx_data.qpos[0, :]
-        mujoco.mj_forward(self._mj_model, self._mj_data)
+            patch_viewer()
+            self.viewer = MujocoRenderer(self.mj_model, self.mj_data, max_geom=1000)
+        self.mj_data.qpos[:] = self.data.mjx_data.qpos[0, :]
+        mujoco.mj_forward(self.mj_model, self.mj_data)
         self.viewer.render("human")
 
     def close(self):
@@ -273,9 +274,9 @@ class Sim:
         """
         if body is None:
             return self.data.mjx_data.contact.dist < 0
-        body_id = self._mj_model.body(body).id
-        geom_start = self._mj_model.body_geomadr[body_id]
-        geom_count = self._mj_model.body_geomnum[body_id]
+        body_id = self.mj_model.body(body).id
+        geom_start = self.mj_model.body_geomadr[body_id]
+        geom_count = self.mj_model.body_geomnum[body_id]
         return contacts(geom_start, geom_count, self.data.mjx_data)
 
     @staticmethod
