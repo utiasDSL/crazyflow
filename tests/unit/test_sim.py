@@ -318,3 +318,17 @@ def test_control_frequency(physics: Physics):
 
     sim_500.close()
     sim_1000.close()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("device", ["gpu", "cpu"])
+def test_seed(device: str):
+    skip_unavailable_device(device)
+    sim = Sim(rng_key=42, device=device)
+    assert (jax.random.key_data(sim.data.core.rng_key)[1] == 42).all(), "rng_key not set correctly"
+    assert sim.data.core.rng_key.device == sim.device, "__init__() must set device of rng_key"
+    # Test seed() method
+    sim.seed(43)
+    assert (jax.random.key_data(sim.data.core.rng_key)[1] == 43).all(), "seed() doesn't set rng_key"
+    assert sim.data.core.rng_key.device == sim.device, "seed() changes device of rng_key"
+    sim.close()
