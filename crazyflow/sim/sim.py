@@ -224,6 +224,15 @@ class Sim:
         mujoco.mj_forward(self.mj_model, self.mj_data)
         self.viewer.render("human")
 
+    def seed(self, seed: int):
+        """Set the JAX rng key for the simulation.
+
+        Args:
+            seed: The seed for the JAX rng.
+        """
+        rng_key = jax.device_put(jax.random.key(seed), self.device)
+        self.data = self.data.replace(core=self.data.core.replace(rng_key=rng_key))
+
     def close(self):
         if self.viewer is not None:
             self.viewer.close()
