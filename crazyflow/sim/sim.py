@@ -25,7 +25,7 @@ from crazyflow.sim.physics import (
     rpms2motor_forces,
     rpms2motor_torques,
     rpy_rates2ang_vel,
-    virtual_identified_collective_wrench,
+    surrogate_identified_collective_wrench,
 )
 from crazyflow.sim.structs import SimControls, SimCore, SimData, SimParams, SimState, SimStateDeriv
 from crazyflow.utils import grid_2d, leaf_replace, patch_viewer, pytree_replace, to_device
@@ -526,7 +526,7 @@ def identified_wrench(data: SimData) -> SimData:
     """Compute the wrench from the identified dynamics model."""
     states, controls = data.states, data.controls
     mass, J = data.params.mass, data.params.J
-    force, torque = virtual_identified_collective_wrench(
+    force, torque = surrogate_identified_collective_wrench(
         controls.attitude, states.quat, states.rpy_rates, mass, J, 1 / data.core.freq
     )
     return data.replace(states=data.states.replace(force=force, torque=torque))
