@@ -31,16 +31,16 @@ class Physics(str, Enum):
 
 
 @partial(vectorize, signature="(4),(4),(3),(1),(3,3)->(3),(3)", excluded=[5])
-def virtual_identified_collective_wrench(
+def surrogate_identified_collective_wrench(
     controls: Array, quat: Array, rpy_rates: Array, mass: Array, J: Array, dt: float
 ) -> tuple[Array, Array]:
-    """Virtual collective wrench for the identified dynamics model.
+    """Surrogate collective wrench for the identified dynamics model.
 
     Contrary to the other physics implementations, this function is not based on a physical model.
     Instead, we fit a linear model to the data collected on the real drone, and predict the next
     state based on the control inputs and the current state. Since we do not have a physical model,
     we cannot compute the actual forces and torques required by the simulation pipeline. Instead, we
-    return virtual forces and torques that result in the desired acceleration and rpy rates
+    return surrogate forces and torques that result in the desired acceleration and rpy rates
     derivative after converting back to the state derivative.
 
     Warning:
@@ -76,13 +76,13 @@ def virtual_identified_collective_wrench(
     rpy_rates_local_deriv = (rpy_rates_local - prev_rpy_rates) / dt
     # The identified dynamics model does not use forces or torques, because we assume no knowledge
     # of the drone's mass and inertia. However, to remain compatible with the physics pipeline, we
-    # return virtual forces and torques that result in the desired acceleration and rpy rates
+    # return surrogate forces and torques that result in the desired acceleration and rpy rates
     # derivative. When converting back to the state derivative, the mass and inertia will cancel
     # out, resulting in the correct acceleration and rpy rates derivative regardless of the model's
     # mass and inertia.
-    virtual_torques = rot.apply(J @ rpy_rates_local_deriv)
-    virtual_forces = acc * mass
-    return virtual_forces, virtual_torques
+    surrogate_torques = rot.apply(J @ rpy_rates_local_deriv)
+    surrogate_forces = acc * mass
+    return surrogate_forces, surrogate_torques
 
 
 @partial(vectorize, signature="(3),(1)->(3)")

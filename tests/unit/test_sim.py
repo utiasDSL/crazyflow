@@ -2,7 +2,6 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from flax.serialization import to_state_dict
 from jax import Array
 
 from crazyflow.control import Control

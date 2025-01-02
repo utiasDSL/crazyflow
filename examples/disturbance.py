@@ -1,5 +1,4 @@
 import jax
-import matplotlib.pyplot as plt
 import numpy as np
 from numpy.typing import NDArray
 
@@ -58,6 +57,9 @@ def plot_results(
     rpy: list[NDArray],
     rpy_disturbed: list[NDArray],
 ):
+    # Only import if plotting is desired to avoid a dependency on matplotlib
+    import matplotlib.pyplot as plt  # noqa: F401
+
     pos, pos_disturbed = np.array(pos), np.array(pos_disturbed)
     rpy, rpy_disturbed = np.array(rpy), np.array(rpy_disturbed)
     fig, ax = plt.subplots(3, 2)
