@@ -52,8 +52,8 @@ def main():
             pos.append(sim.data.states.pos[0, :])
             quat.append(sim.data.states.quat[0, :])
         if ((i * fps) % sim.control_freq) < fps:
-            sim.render()
             render_traces(sim.viewer, pos, quat)
+            sim.render()
     sim.close()
 
 
