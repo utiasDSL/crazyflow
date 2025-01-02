@@ -1,7 +1,8 @@
 import gymnasium
 import numpy as np
-from gymnasium.wrappers.vector import JaxToNumpy  #, JaxToTorch
+from gymnasium.wrappers.vector import JaxToNumpy  # , JaxToTorch
 from ml_collections import config_dict
+from scipy.interpolate import splev
 
 from crazyflow.control.controller import Control, Controller
 from crazyflow.gymnasium_envs import CrazyflowRL
@@ -21,9 +22,14 @@ def main():
 
     SEED = 42
 
+    # Create environment that contains a figure eight trajectory. You can parametrize the observation space, i.e., which part of the trajectory is contained in the observation. Please refer to the documentation of the environment for more information.
     envs = gymnasium.make_vec(
-        "DroneLanding-v0", # choose the environment
-        time_horizon_in_seconds=2,
+        "DroneFigureEightTrajectory-v0",
+        n_trajectory_sample_points=10,
+        dt_trajectory_sample_points=0.1,
+        trajectory_time=10.0,
+        render_trajectory_sample=True,  # useful for debug purposes
+        time_horizon_in_seconds=10.0,
         num_envs=sim_config.n_worlds,
         **sim_config,
     )
@@ -39,9 +45,14 @@ def main():
 
     # dummy action for going up (in attitude control)
     action = np.zeros((sim_config.n_worlds * sim_config.n_drones, 4), dtype=np.float32)
-    action[..., 0] = 0.4
+    action[..., 0] = 0.34
 
     obs, info = envs.reset(seed=SEED)
+
+    # The trajectory is defined as a scipy spline. Its parameter can be retrieved using `envs.unwrapped.tck`. The spline can be reconstructed using scipy's splev.
+    spline_params = envs.unwrapped.tck
+    tau = envs.unwrapped.tau  # 1D parameters of the spline for the current timestep, in [0,1]
+    value = splev(tau, spline_params)
 
     # Step through the environment
     for _ in range(1500):
@@ -49,6 +60,7 @@ def main():
         envs.render()
 
     envs.close()
+
 
 if __name__ == "__main__":
     main()
