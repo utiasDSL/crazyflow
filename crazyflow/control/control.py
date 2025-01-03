@@ -24,17 +24,28 @@ class Control(str, Enum):
     """Control type of the simulated onboard controller."""
 
     state = "state"
+    """State control takes [x, y, z, vx, vy, vz, ax, ay, az, yaw, roll_rate, pitch_rate, yaw_rate].
+    
+    Note:
+        Recommended frequency is >=20 Hz.
+
+    Warning:
+        Currently, we only use positions, velocities, and yaw. The rest of the state is ignored.
+        This is subject to change in the future.
+    """
     attitude = "attitude"
+    """Attitude control takes [collective thrust, roll, pitch, yaw].
+
+    Note:
+        Recommended frequency is >=100 Hz.
+    """
     thrust = "thrust"
+    """Thrust control takes [thrust1, thrust2, thrust3, thrust4] for each drone motor.
+
+    Note:
+        Recommended frequency is >=500 Hz.
+    """
     default = attitude
-
-
-class Controller(str, Enum):
-    """Controller type of the simulated onboard controller."""
-
-    pycffirmware = "pycffirmware"
-    emulatefirmware = "emulatefirmware"
-    default = emulatefirmware
 
 
 KF: float = 3.16e-10
@@ -90,27 +101,28 @@ def state2attitude(
 
 @partial(jnp.vectorize, signature="(4),(4),(3),(3)->(4),(3)", excluded=[4])
 def attitude2rpm(
-    cmd: Array, quat: Array, last_rpy: Array, rpy_err_i: Array, dt: float
+    controls: Array, quat: Array, last_rpy: Array, rpy_err_i: Array, dt: float
 ) -> tuple[Array, Array]:
-    """Convert the desired attitude and quaternion into motor RPMs."""
+    """Convert the desired collective thrust and attitude into motor RPMs."""
     rot = R.from_quat(quat)
-    target_rot = R.from_euler("xyz", cmd[..., 1:])
+    target_rot = R.from_euler("xyz", controls[1:])
     drot = (target_rot.inv() * rot).as_matrix()
-
     # Extract the anti-symmetric part of the relative rotation matrix.
     rot_e = jnp.array([drot[2, 1] - drot[1, 2], drot[0, 2] - drot[2, 0], drot[1, 0] - drot[0, 1]])
-    rpy_rates_e = -(rot.as_euler("xyz") - last_rpy) / dt  # Assuming zero rpy_rates target
+    # TODO: Assumes zero rpy_rates targets for now, use the actual target instead.
+    rpy_rates_e = -(rot.as_euler("xyz") - last_rpy) / dt
     rpy_err_i = rpy_err_i - rot_e * dt
     rpy_err_i = jnp.clip(rpy_err_i, -1500.0, 1500.0)
     rpy_err_i = rpy_err_i.at[:2].set(jnp.clip(rpy_err_i[:2], -1.0, 1.0))
     # PID target torques.
     target_torques = -P_T * rot_e + D_T * rpy_rates_e + I_T * rpy_err_i
     target_torques = jnp.clip(target_torques, -3200, 3200)
-    thrust_per_motor = cmd[0] / 4
+    thrust_per_motor = jnp.atleast_1d(controls[0]) / 4
     pwm = jnp.clip(thrust2pwm(thrust_per_motor) + MIX_MATRIX @ target_torques, MIN_PWM, MAX_PWM)
     return pwm2rpm(pwm), rpy_err_i
 
 
+@partial(jnp.vectorize, signature="(4)->(4)")
 def thrust2pwm(thrust: Array) -> Array:
     """Convert the desired thrust into motor PWM.
 
@@ -124,6 +136,7 @@ def thrust2pwm(thrust: Array) -> Array:
     return jnp.clip((jnp.sqrt(thrust / KF) - PWM2RPM_CONST) / PWM2RPM_SCALE, MIN_PWM, MAX_PWM)
 
 
+@partial(jnp.vectorize, signature="(4)->(4)")
 def pwm2rpm(pwm: Array) -> Array:
     """Convert the motors' PWMs into RPMs."""
     return PWM2RPM_CONST + PWM2RPM_SCALE * pwm
