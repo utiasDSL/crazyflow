@@ -1,0 +1,60 @@
+{
+    "name": "Crazyflow Development",
+    "build": {
+        "dockerfile": "Dockerfile",
+        "context": ".."
+    },
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-python.python",
+                "ms-python.pylance",
+                "charliermarsh.ruff",
+                "ms-vscode.test-adapter-converter",
+                "ms-python.pytest-adapter",
+                "nvidia.nsight-vscode-edition",
+                "ms-azuretools.vscode-docker",
+                "ms-toolsai.jupyter-renderers",
+                "ms-toolsai.jupyter",
+                "ms-toolsai.jupyter-keymap"
+            ],
+            "settings": {
+                "python.defaultInterpreterPath": "/home/vscode/venv/bin/python",
+                "python.testing.pytestEnabled": true, // test framework
+                "python.testing.pytestArgs": [
+                    "-m",
+                    "not render"
+                ],
+                "python.testing.unittestEnabled": false, // test framework
+                "python.testing.nosetestsEnabled": false, // test framework
+                "editor.formatOnSave": true,
+                "editor.codeActionsOnSave": {
+                    "source.fixAll.ruff": true,
+                    "source.organizeImports.ruff": true
+                },
+                "[python]": {
+                    "editor.defaultFormatter": "charliermarsh.ruff",
+                    "editor.formatOnSave": true,
+                    "editor.rulers": [
+                        100
+                    ]
+                }
+            }
+        }
+    },
+    // set environment variables inside container. localEnv copies from host.
+    "containerEnv": {
+        "DISPLAY": "${localEnv:DISPLAY}",
+        "XAUTHORITY": "${localEnv:XAUTHORITY}"
+    },
+    // clargs passed to the container
+    "runArgs": [
+        "--gpus=all",
+        "--interactive",
+        "--net=host",
+        "--ipc=host",
+        "--runtime=nvidia"
+    ],
+    "postCreateCommand": "pip install -e '.[test,gpu]'", //'.[test,gpu]'
+    "remoteUser": "vscode"
+}

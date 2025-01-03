@@ -45,6 +45,12 @@ ENV VIRTUAL_ENV=/home/vscode/venv
 RUN python -m venv $VIRTUAL_ENV
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
+# Set proper ownership of virtual environment
+RUN chown -R vscode:vscode $VIRTUAL_ENV
+
+# Switch to non-root user
+USER $USERNAME
+
 # Install development tools
 RUN pip install --no-cache-dir ruff
 
@@ -52,13 +58,12 @@ RUN pip install --no-cache-dir ruff
 WORKDIR /tmp/install
 
 # Copy only pyproject.toml for dependency installation
-COPY pyproject.toml .
+COPY --chown=vscode:vscode pyproject.toml .
 
 # Install all dependencies including test and gpu extras
+# ".[test,gpu]"
 RUN pip install --no-cache-dir -e ".[test,gpu]"
 
-# Switch to non-root user
-USER $USERNAME
 
 # Set final working directory
 WORKDIR /workspace
