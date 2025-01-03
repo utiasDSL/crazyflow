@@ -34,7 +34,7 @@ def main():
     obs, info = envs.reset(seed=SEED)
 
     # Step through the environment
-    for _ in range(300):
+    for _ in range(1500):
         observation, reward, terminated, truncated, info = envs.step(action)
         envs.render()
 

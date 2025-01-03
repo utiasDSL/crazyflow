@@ -6,32 +6,14 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3.11 \
-    python3.11-dev \
     python3-pip \
     python3.11-venv \
-    git \
     build-essential \
+    git \
     curl \
     ssh \
-    pkg-config \
-    patchelf \
-    software-properties-common \
     mesa-utils \
-    libgl1-mesa-glx \
-    libgl1-mesa-dri \
-    libzmq3-dev \
-    '^libxcb.*-dev' \
-    libx11-dev \
-    libx11-xcb-dev \
-    libxi-dev \
-    libxrender-dev \
-    libxkbcommon-dev \
-    libxkbcommon-x11-dev \
-    libglu1-mesa-dev \
-    python3-tk \
-    && rm -rf /var/lib/apt/lists/* \
-    libglfw3-dev\
-    kbd
+    && rm -rf /var/lib/apt/lists/* && apt-get clean
 
 # Create symbolic links for python
 RUN ln -sf /usr/bin/python3.11 /usr/bin/python \
@@ -48,9 +30,6 @@ RUN groupadd --gid $USER_GID $USERNAME \
     && apt-get install -y sudo \
     && echo $USERNAME ALL=\(root\) NOPASSWD:ALL > /etc/sudoers.d/$USERNAME \
     && chmod 0440 /etc/sudoers.d/$USERNAME
-
-# Install pip
-RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python3.11
 
 # Set environment variables for CUDA
 ENV PATH="/usr/local/cuda-12.0/bin:${PATH}"
