@@ -1,8 +1,7 @@
 import numpy as np
 
-from crazyflow.control.controller import Control, Controller
-from crazyflow.sim.core import Sim
-from crazyflow.sim.physics import Physics
+from crazyflow.control import Control
+from crazyflow.sim import Physics, Sim
 
 
 def main():
@@ -11,9 +10,9 @@ def main():
         n_drones=1,
         physics=Physics.analytical,
         control=Control.state,
-        controller=Controller.emulatefirmware,
         freq=500,
-        control_freq=500,
+        attitude_freq=500,
+        state_freq=100,
         device="cpu",
     )
 
@@ -21,14 +20,14 @@ def main():
     duration = 5.0
     fps = 60
 
-    for i in range(int(duration * sim.freq)):
-        if sim.controllable:
-            # State cmd is [x, y, z, vx, vy, vz, ax, ay, az, yaw, roll_rate, pitch_rate, yaw_rate]
-            cmd = np.zeros((sim.n_worlds, sim.n_drones, 13))
-            cmd[..., 2] = 0.1
-            sim.state_control(cmd)
-        sim.step()
-        if ((i * fps) % sim.freq) < fps:
+    # State cmd is [x, y, z, vx, vy, vz, ax, ay, az, yaw, roll_rate, pitch_rate, yaw_rate]
+    cmd = np.zeros((sim.n_worlds, sim.n_drones, 13))
+    cmd[..., :3] = 0.1
+
+    for i in range(int(duration * sim.control_freq)):
+        sim.state_control(cmd)
+        sim.step(sim.freq // sim.control_freq)
+        if ((i * fps) % sim.control_freq) < fps:
             sim.render()
     sim.close()
 

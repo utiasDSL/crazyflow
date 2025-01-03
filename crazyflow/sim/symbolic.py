@@ -15,14 +15,13 @@ with the nonlinear dynamics of the drone in a symbolic framework, allowing for a
 differentiation and optimization.
 """
 
-
 import casadi as cs
 from casadi import MX
 from numpy.typing import NDArray
 
 from crazyflow.constants import ARM_LEN, GRAVITY, SIGN_MIX_MATRIX
-from crazyflow.control.controller import KF, KM
-from crazyflow.sim.core import Sim
+from crazyflow.control.control import KF, KM
+from crazyflow.sim import Sim
 
 
 class SymbolicModel:
@@ -227,7 +226,7 @@ def symbolic_from_sim(sim: Sim) -> SymbolicModel:
         The model is expected to deviate from the true dynamics when the sim parameters are
         randomized.
     """
-    mass, J = sim.defaults["params"].mass[0, 0], sim.defaults["params"].J[0, 0]
+    mass, J = sim.default_data.params.mass[0, 0], sim.default_data.params.J[0, 0]
     return symbolic(mass, J, 1 / sim.freq)
 
 

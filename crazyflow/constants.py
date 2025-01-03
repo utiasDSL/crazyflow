@@ -5,7 +5,7 @@ from jax import Array
 GRAVITY: float = 9.81
 
 # Drone constants
-ARM_LEN: float = 0.46
+ARM_LEN: float = 0.0325 * jnp.sqrt(2)
 MIX_MATRIX: Array = jnp.array([[-0.5, -0.5, -1], [-0.5, 0.5, 1], [0.5, 0.5, -1], [0.5, -0.5, 1]])
 SIGN_MIX_MATRIX: Array = jnp.sign(MIX_MATRIX)
 MASS: float = 0.027
