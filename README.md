@@ -1,3 +1,11 @@
+# Use with devcontainer
+0. Install docker(, and make sure docker daemon is running).
+2. Install vscode
+3. Open this project in vscode. Vscode should automatically detect the devcontainer and prompt you to install the [required extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers), and subsequently prompt you to `Reopen in container`. Note: Re-opening in the container might take a while (up to 10mins) for the first time, as the container is pulled from the web and build.
+
+4. Known Issues:
+   - if building docker container fails at `RUN apt-get update`, make sure your host systems time is set correct: https://askubuntu.com/questions/1511514/docker-build-fails-at-run-apt-update-error-failed-to-solve-process-bin-sh
+
 # crazyflow
 Fast, parallelizable simulations of Crazyflies with JAX and MuJoCo.
 
