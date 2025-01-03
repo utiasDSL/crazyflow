@@ -1,6 +1,7 @@
 from gymnasium.envs.registration import register
 
 from crazyflow.gymnasium_envs.crazyflow import (
+    CrazyflowEnvFigureEightTrajectory,
     CrazyflowEnvLanding,
     CrazyflowEnvReachGoal,
     CrazyflowEnvTargetVelocity,
@@ -12,6 +13,7 @@ __all__ = [
     "CrazyflowEnvTargetVelocity",
     "CrazyflowEnvLanding",
     "CrazyflowRL",
+    "CrazyflowEnvFigureEightTrajectory",
 ]
 
 register(
@@ -24,8 +26,12 @@ register(
     vector_entry_point="crazyflow.gymnasium_envs.crazyflow:CrazyflowEnvTargetVelocity",
 )
 
-
 register(
     id="DroneLanding-v0",
     vector_entry_point="crazyflow.gymnasium_envs.crazyflow:CrazyflowEnvLanding",
+)
+
+register(
+    id="DroneFigureEightTrajectory-v0",
+    vector_entry_point="crazyflow.gymnasium_envs.crazyflow:CrazyflowEnvFigureEightTrajectory",
 )

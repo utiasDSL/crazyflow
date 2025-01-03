@@ -12,7 +12,7 @@ def main():
     sim_config = config_dict.ConfigDict()
     sim_config.device = "cpu"
     sim_config.physics = Physics.sys_id
-    sim_config.control = Control.default
+    sim_config.control = Control.attitude
     sim_config.attitude_freq = 50
     sim_config.n_drones = 1
     sim_config.n_worlds = 20
@@ -20,14 +20,14 @@ def main():
     SEED = 42
 
     envs = gymnasium.make_vec(
-        "DroneReachPos-v0", time_horizon_in_seconds=2, num_envs=sim_config.n_worlds, **sim_config
+        "DroneLanding-v0", time_horizon_in_seconds=2, num_envs=sim_config.n_worlds, **sim_config
     )
 
     # This wrapper makes it possible to interact with the environment using numpy arrays, if
     # desired. JaxToTorch is available as well.
     envs = JaxToNumpy(envs)
 
-    # Action for going up (in attitude control)
+    # dummy action for going up (in attitude control)
     action = np.zeros((sim_config.n_worlds * sim_config.n_drones, 4), dtype=np.float32)
     action[..., 0] = 0.4
 
