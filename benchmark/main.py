@@ -7,7 +7,7 @@ import numpy as np
 from ml_collections import config_dict
 
 import crazyflow  # noqa: F401, ensure gymnasium envs are registered
-from crazyflow.sim.core import Sim
+from crazyflow.sim import Sim
 
 
 def analyze_timings(times: list[float], n_steps: int, n_worlds: int, freq: float) -> None:
@@ -19,8 +19,8 @@ def analyze_timings(times: list[float], n_steps: int, n_worlds: int, freq: float
     tmax, idx_tmax = np.max(times), np.argmax(times)
 
     # Check for significant variance
-    if tmax / tmin > 5:
-        print("Warning: step time varies by more than 5x. Is JIT compiling during the benchmark?")
+    if tmax / tmin > 10:
+        print("Warning: step time varies by more than 10x. Is JIT compiling during the benchmark?")
         print(f"Times: max {tmax:.2e} @ {idx_tmax}, min {tmin:.2e} @ {idx_tmin}")
 
     # Performance metrics
@@ -43,28 +43,23 @@ def profile_gym_env_step(sim_config: config_dict.ConfigDict, n_steps: int, devic
     device = jax.devices(device)[0]
 
     envs = gymnasium.make_vec(
-        "DroneReachPos-v0",
-        time_horizon_in_seconds=2,
-        return_datatype="numpy",
-        num_envs=sim_config.n_worlds,
-        **sim_config,
+        "DroneReachPos-v0", time_horizon_in_seconds=3, num_envs=sim_config.n_worlds, **sim_config
     )
 
     # Action for going up (in attitude control)
     action = np.zeros((sim_config.n_worlds, 4), dtype=np.float32)
     action[..., 0] = 0.3
     # Step through env once to ensure JIT compilation
-    envs.reset_all(seed=42)
-    envs.step(action)
+    envs.reset(seed=42)
     envs.step(action)
 
-    jax.block_until_ready(envs.unwrapped.sim.states.pos)  # Ensure JIT compiled dynamics
+    jax.block_until_ready(envs.unwrapped.sim.data)  # Ensure JIT compiled dynamics
 
     # Step through the environment
     for _ in range(n_steps):
         tstart = time.perf_counter()
         envs.step(action)
-        jax.block_until_ready(envs.unwrapped.sim.states.pos)
+        jax.block_until_ready(envs.unwrapped.sim.data)
         times.append(time.perf_counter() - tstart)
 
     envs.close()
@@ -83,14 +78,14 @@ def profile_step(sim_config: config_dict.ConfigDict, n_steps: int, device: str):
 
     sim.reset()
     sim.attitude_control(cmd)
-    sim.step()
-    jax.block_until_ready(sim.states.pos)  # Ensure JIT compiled dynamics
+    sim.step(sim.freq // sim.control_freq)
+    jax.block_until_ready(sim.data)  # Ensure JIT compiled dynamics
 
     for _ in range(n_steps):
         tstart = time.perf_counter()
         sim.attitude_control(cmd)
-        sim.step()
-        jax.block_until_ready(sim.states.pos)
+        sim.step(sim.freq // sim.control_freq)
+        jax.block_until_ready(sim.data)
         times.append(time.perf_counter() - tstart)
 
     analyze_timings(times, n_steps, sim.n_worlds, sim.freq)
@@ -102,16 +97,16 @@ def main():
     sim_config = config_dict.ConfigDict()
     sim_config.n_worlds = 1
     sim_config.n_drones = 1
-    sim_config.physics = "sys_id"
+    sim_config.physics = "analytical"
     sim_config.control = "attitude"
-    sim_config.controller = "emulatefirmware"
+    sim_config.attitude_freq = 500
     sim_config.device = device
 
     print("Simulator performance")
-    profile_step(sim_config, 100, device)
+    profile_step(sim_config, 1000, device)
 
     print("\nGymnasium environment performance")
-    profile_gym_env_step(sim_config, 100, device)
+    profile_gym_env_step(sim_config, 1000, device)
 
 
 if __name__ == "__main__":

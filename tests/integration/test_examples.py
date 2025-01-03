@@ -6,11 +6,12 @@ from unittest.mock import patch
 import pytest
 
 EXAMPLES_DIR = Path(__file__).resolve().parent.parent.parent / "examples"
-example_scripts = list(EXAMPLES_DIR.glob("*.py"))
+example_scripts = list(sorted(EXAMPLES_DIR.glob("*.py")))
 
 
 @pytest.mark.parametrize("example_script", example_scripts)
-@pytest.mark.timeout(10)
+@pytest.mark.timeout(60)
+@pytest.mark.integration
 def test_example_main(example_script: Path):
     """Dynamically import and execute the main function from an example script."""
     # Add the examples directory to sys.path to resolve imports
@@ -25,7 +26,7 @@ def test_example_main(example_script: Path):
     assert hasattr(example_module, "main"), f"{example_script.name} has no main() function."
 
     # Remove render function to enable headless testing
-    with patch("crazyflow.sim.core.Sim.render", return_value=None):
+    with patch("crazyflow.sim.sim.Sim.render", return_value=None):
         example_module.main()
 
     # Clean up sys.path

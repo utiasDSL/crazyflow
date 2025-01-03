@@ -12,8 +12,8 @@ from gymnasium.vector.utils import batch_space
 from jax import Array
 from scipy.interpolate import splev, splprep
 
-from crazyflow.control.controller import MAX_THRUST, MIN_THRUST, Control
-from crazyflow.sim.core import Sim
+from crazyflow.control.control import MAX_THRUST, MIN_THRUST, Control
+from crazyflow.sim import Sim
 from crazyflow.sim.structs import SimState
 
 
@@ -99,12 +99,11 @@ class CrazyflowBaseEnv(VectorEnv):
         self.observation_space = batch_space(self.single_observation_space, self.sim.n_worlds)
 
     def step(self, action: Array) -> tuple[Array, Array, Array, Array, dict]:
-        assert self.action_space.contains(action), f"{action!r} ({type(action)}) invalid"
+        assert self.action_space.contains(np.array(action)), f"{action!r} ({type(action)}) invalid"
         action = self._sanitize_action(action, self.sim.n_worlds, self.sim.n_drones, self.device)
         self._apply_action(action)
 
-        for _ in range(self.n_substeps):
-            self.sim.step()
+        self.sim.step(self.n_substeps)
         # Reset all environments which terminated or were truncated in the last step
         if jnp.any(self.prev_done):
             self.reset_masked(mask=self.prev_done)
@@ -148,11 +147,11 @@ class CrazyflowBaseEnv(VectorEnv):
         if seed is not None:
             self.jax_key = jax.random.key(seed)
 
-        self.reset_masked(mask=jnp.ones((self.sim.n_worlds), dtype=jnp.bool_))  # reset all envs
-        self.prev_done = jnp.zeros((self.sim.n_worlds), dtype=jnp.bool_)
+        self.reset_masked(mask=jnp.ones((self.sim.n_worlds), dtype=bool, device=self.device))
+        self.prev_done = jnp.zeros((self.sim.n_worlds), dtype=bool, device=self.device)
         return self._obs(), {}
 
-    def reset_masked(self, mask: Array, reset_params: dict = None) -> None:
+    def reset_masked(self, mask: Array, reset_params: dict | None = None) -> None:
         default_reset_params = {
             "pos_min": jnp.array([-1.0, -1.0, 1.0]),  # x,y,z
             "pos_max": jnp.array([1.0, 1.0, 2.0]),  # x,y,z
@@ -177,8 +176,10 @@ class CrazyflowBaseEnv(VectorEnv):
             minval=default_reset_params["pos_min"],
             maxval=default_reset_params["pos_max"],
         )
-        self.sim.states = self.sim.states.replace(
-            pos=jnp.where(mask3d, init_pos, self.sim.states.pos)
+        self.sim.data = self.sim.data.replace(
+            states=self.sim.data.states.replace(
+                pos=jnp.where(mask3d, init_pos, self.sim.data.states.pos)
+            )
         )
         # Sample initial vel
         self.jax_key, subkey = jax.random.split(self.jax_key)
@@ -188,17 +189,19 @@ class CrazyflowBaseEnv(VectorEnv):
             minval=default_reset_params["vel_min"],
             maxval=default_reset_params["vel_max"],
         )
-        self.sim.states = self.sim.states.replace(
-            vel=jnp.where(mask3d, init_vel, self.sim.states.vel)
+        self.sim.data = self.sim.data.replace(
+            states=self.sim.data.states.replace(
+                vel=jnp.where(mask3d, init_vel, self.sim.data.states.vel)
+            )
         )
 
     @property
     def reward(self) -> Array:
-        return self._reward(self.prev_done, self.terminated, self.sim.states)
+        return self._reward(self.prev_done, self.terminated, self.sim.data.states)
 
     @property
     def terminated(self) -> Array:
-        return self._terminated(self.prev_done, self.sim.states, self.sim.contacts())
+        return self._terminated(self.prev_done, self.sim.data.states, self.sim.contacts())
 
     @property
     def truncated(self) -> Array:
@@ -220,7 +223,7 @@ class CrazyflowBaseEnv(VectorEnv):
     @staticmethod
     @jax.jit
     def _truncated(dones: Array, time: Array, time_horizon_in_seconds: float) -> Array:
-        truncated = time >= time_horizon_in_seconds
+        truncated = (time >= time_horizon_in_seconds).squeeze()
         return jnp.where(dones, False, truncated)
 
     def render(self):
@@ -228,7 +231,7 @@ class CrazyflowBaseEnv(VectorEnv):
 
     def _obs(self) -> dict[str, Array]:
         fields = self.obs_keys
-        states = [getattr(self.sim.states, field) for field in fields]
+        states = [getattr(self.sim.data.states, field) for field in fields]
         return {k: v for k, v in zip(fields, states)}
 
 
@@ -247,12 +250,7 @@ class CrazyflowEnvReachGoal(CrazyflowBaseEnv):
 
     @property
     def reward(self) -> Array:
-        return self._reward(
-            self.prev_done,
-            self.terminated,
-            self.sim.states,
-            self.goal.reshape(self.sim.n_worlds, 1, 3),
-        )
+        return self._reward(self.prev_done, self.terminated, self.sim.data.states, self.goal)
 
     @staticmethod
     @jax.jit
@@ -278,7 +276,7 @@ class CrazyflowEnvReachGoal(CrazyflowBaseEnv):
 
     def _obs(self) -> dict[str, Array]:
         obs = super()._obs()
-        obs["difference_to_goal"] = [self.goal - self.sim.states.pos]
+        obs["difference_to_goal"] = [self.goal - self.sim.data.states.pos]
         return obs
 
 
@@ -296,12 +294,7 @@ class CrazyflowEnvTargetVelocity(CrazyflowBaseEnv):
 
     @property
     def reward(self) -> Array:
-        return self._reward(
-            self.prev_done,
-            self.terminated,
-            self.sim.states,
-            self.target_vel.reshape(self.sim.n_worlds, 1, 3),
-        )
+        return self._reward(self.prev_done, self.terminated, self.sim.data.states, self.target_vel)
 
     @staticmethod
     @jax.jit
@@ -327,7 +320,7 @@ class CrazyflowEnvTargetVelocity(CrazyflowBaseEnv):
 
     def _obs(self) -> dict[str, Array]:
         obs = super()._obs()
-        obs["difference_to_target_vel"] = [self.target_vel - self.sim.states.vel]
+        obs["difference_to_target_vel"] = [self.target_vel - self.sim.data.states.vel]
         return obs
 
 
@@ -347,12 +340,7 @@ class CrazyflowEnvLanding(CrazyflowBaseEnv):
 
     @property
     def reward(self) -> Array:
-        return self._reward(
-            self.prev_done,
-            self.terminated,
-            self.sim.states,
-            self.goal.reshape(self.sim.n_worlds, 1, 3),
-        )
+        return self._reward(self.prev_done, self.terminated, self.sim.data.states, self.goal)
 
     @staticmethod
     @jax.jit
@@ -369,11 +357,11 @@ class CrazyflowEnvLanding(CrazyflowBaseEnv):
 
     def _obs(self) -> dict[str, Array]:
         obs = super()._obs()
-        obs["difference_to_goal"] = [self.goal - self.sim.states.pos]
+        obs["difference_to_goal"] = [self.goal - self.sim.data.states.pos]
         return obs
 
 
-def render_trajectory(viewer: MujocoRenderer, pos: Array) -> None:
+def render_trajectory(viewer: MujocoRenderer | None, pos: Array) -> None:
     """Render trajectory."""
     if viewer is None:
         return
@@ -392,7 +380,14 @@ def render_trajectory(viewer: MujocoRenderer, pos: Array) -> None:
 
 
 class CrazyflowEnvFigureEightTrajectory(CrazyflowBaseEnv):
-    """JAX Gymnasium environment for Crazyfly simulation. This environment is used to follow a figure-eight trajectory. The trajectory is defined as a parametrized scipy spline using `splprep` in 3D space. Sampling of the trajectory for the observations can be configured in the `__init__` method. The observations contain the relative position errors to the next `n_trajectory_sample_points` points that are distanced by `dt_trajectory_sample_points`. The reward is based on the distance to the next trajectory point."""
+    """JAX Gymnasium environment for Crazyfly simulation.
+
+    This environment is used to follow a figure-eight trajectory. The trajectory is defined as a
+    parametrized scipy spline using `splprep` in 3D space. Sampling of the trajectory for the
+    observations can be configured in the `__init__` method. The observations contain the relative
+    position errors to the next `n_trajectory_sample_points` points that are distanced by
+    `dt_trajectory_sample_points`. The reward is based on the distance to the next trajectory point.
+    """
 
     def __init__(
         self,
@@ -405,11 +400,11 @@ class CrazyflowEnvFigureEightTrajectory(CrazyflowBaseEnv):
         """Initializes the environment.
 
         Args:
-            n_trajectory_sample_points (int, optional): number of next trajectory points to sample for observations. Defaults to 3.
-            dt_trajectory_sample_points (float, optional): time between trajectory sample points in seconds. Defaults to 0.2.
-            trajectory_time (float, optional): total time for completing the figure-eight trajectory in seconds. Defaults to 7.0.
-            render_trajectory (bool, optional): whether to render the trajectory sample. Defaults to False.
-            **kwargs: arguments passed to the Crazyfly simulation.
+            n_trajectory_sample_points: Number of next trajectory points to sample for observations.
+            dt_trajectory_sample_points: Time between trajectory sample points in seconds.
+            trajectory_time: Total time for completing the figure-eight trajectory in seconds.
+            render_trajectory_sample: Flag to enable/disable rendering of the trajectory sample.
+            **kwargs: Arguments passed to the Crazyfly simulation.
         """
         assert kwargs["n_drones"] == 1, "Currently only supported for one drone"
 
@@ -456,7 +451,7 @@ class CrazyflowEnvFigureEightTrajectory(CrazyflowBaseEnv):
         return self._reward(
             self.prev_done,
             self.terminated,
-            self.sim.states,
+            self.sim.data.states,
             jnp.array(splev(self.sim.time + self.dt_trajectory_sample_points, self.tck)).reshape(
                 (self.sim.n_worlds, self.sim.n_drones, 3)
             ),  # next trajectory point
@@ -490,7 +485,7 @@ class CrazyflowEnvFigureEightTrajectory(CrazyflowBaseEnv):
         if self.render_trajectory_sample:
             render_trajectory(self.sim.viewer, next_trajectory)
 
-        obs["difference_to_next_trajectory"] = next_trajectory - self.sim.states.pos
+        obs["difference_to_next_trajectory"] = next_trajectory - self.sim.data.states.pos
 
         return obs
 
@@ -506,8 +501,9 @@ class CrazyflowEnvFigureEightTrajectory(CrazyflowBaseEnv):
 
 class CrazyflowRL(VectorWrapper):
     """Wrapper to use the crazyflow JAX environments with common DRL frameworks.
-    Currently, this wrapper clips the expected actions to [-1,1]
-    and rescales them to the action space expected in simulation.
+
+    Currently, this wrapper clips the expected actions to [-1,1] and rescales them to the action
+    space expected in simulation.
     """
 
     def __init__(self, env: VectorEnv):
@@ -530,7 +526,7 @@ class CrazyflowRL(VectorWrapper):
         actions = np.clip(actions, -1.0, 1.0)
         return self.env.step(self.actions(actions))
 
-    def actions(self, actions):
+    def actions(self, actions: Array) -> Array:
         """Rescale and clip actions from [-1, 1] to [action_sim_low, action_sim_high]."""
         # Rescale actions using the computed scale and mean
         rescaled_actions = actions * self.action_scale + self.action_mean
