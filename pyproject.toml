@@ -27,6 +27,7 @@ dependencies = [
     "flax",
     "ml_collections",
     "casadi",
+    "numpy",
 ]
 
 [project.optional-dependencies]

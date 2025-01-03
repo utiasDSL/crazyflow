@@ -1,10 +1,9 @@
 import gymnasium
 import numpy as np
-from gymnasium.wrappers.vector import JaxToNumpy  #, JaxToTorch
+from gymnasium.wrappers.vector import JaxToNumpy  # , JaxToTorch
 from ml_collections import config_dict
 
 from crazyflow.control.controller import Control, Controller
-from crazyflow.gymnasium_envs import CrazyflowRL
 from crazyflow.sim.physics import Physics
 
 
@@ -22,7 +21,7 @@ def main():
     SEED = 42
 
     envs = gymnasium.make_vec(
-        "DroneLanding-v0", # choose the environment
+        "DroneLanding-v0",  # choose the environment
         time_horizon_in_seconds=2,
         num_envs=sim_config.n_worlds,
         **sim_config,
@@ -44,11 +43,12 @@ def main():
     obs, info = envs.reset(seed=SEED)
 
     # Step through the environment
-    for _ in range(1500):
+    for _ in range(300):
         observation, reward, terminated, truncated, info = envs.step(action)
         envs.render()
 
     envs.close()
+
 
 if __name__ == "__main__":
     main()
