@@ -3,11 +3,7 @@ import numpy as np
 from gymnasium.wrappers.vector import JaxToNumpy  # , JaxToTorch
 from ml_collections import config_dict
 
-<<<<<<< HEAD
-from crazyflow.control.controller import Control, Controller
-=======
 from crazyflow.control import Control
->>>>>>> main
 from crazyflow.sim.physics import Physics
 
 
