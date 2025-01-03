@@ -1,5 +1,5 @@
 from crazyflow.constants import MASS, J
-from crazyflow.sim.core import Sim
+from crazyflow.sim import Sim
 from crazyflow.sim.symbolic import symbolic, symbolic_from_sim
 
 
