@@ -39,7 +39,7 @@ ENV NVIDIA_VISIBLE_DEVICES ${NVIDIA_VISIBLE_DEVICES:-all}
 ENV NVIDIA_DRIVER_CAPABILITIES ${NVIDIA_DRIVER_CAPABILITIES:+$NVIDIA_DRIVER_CAPABILITIES,}graphics
 
 # Create and set proper permissions for workspace directory
-RUN mkdir -p /workspace && chown -R $USERNAME:$USERNAME /workspace
+RUN mkdir -p /workspace && chown -R $USERNAME:$USERNAME /workspace && sudo chmod -R 777 /workspace
 
 # Create virtual environment with proper permissions
 ENV VIRTUAL_ENV=/home/vscode/venv
@@ -64,8 +64,3 @@ RUN pip install --no-cache-dir -e ".[test,gpu]"
 
 # Set final working directory and ensure proper permissions
 WORKDIR /workspace
-
-# Add write permissions for workspace and potential mount points
-RUN sudo chmod -R 777 /workspace && \
-    sudo mkdir -p /workspaces && \
-    sudo chown -R $USERNAME:$USERNAME /workspaces

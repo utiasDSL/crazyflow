@@ -10,4 +10,6 @@ saves
 build
 .venv
 !/.devcontainer/devcontainer.json
+!/.devcontainer/devcontainer.linux.json
+!/.devcontainer/devcontainer.wsl2.json
 !/.vscode/launch.json

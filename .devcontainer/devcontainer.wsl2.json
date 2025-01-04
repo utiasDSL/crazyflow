@@ -42,17 +42,18 @@
             }
         }
     },
-    "mounts": [], // mounts are configured in setup-mounts.sh
-    "postStartCommand": "chmod +x /workspaces/crazyflow/scripts/setup-mounts.sh && /workspaces/crazyflow/scripts/setup-mounts.sh",
-    // set environment variables inside container. localEnv copies from host.
-    "containerEnv": {
+    // mounts required for WSL2 X11
+    "mounts": [
+        "source=/tmp/.X11-unix,target=/tmp/.X11-unix,type=bind",
+        "source=/mnt/wslg,target=/mnt/wslg,type=bind",
+        "source=/usr/lib/wsl,target=/usr/lib/wsl,type=bind"
+    ],"containerEnv": {
         "DISPLAY": "${localEnv:DISPLAY}",
         "XAUTHORITY": "${localEnv:XAUTHORITY}",
-        "WAYLAND_DISPLAY": "${localEnv:WAYLAND_DISPLAY}", // windows
-        "XDG_RUNTIME_DIR": "${localEnv:XDG_RUNTIME_DIR}", // windows
-        "PULSE_SERVER": "${localEnv:PULSE_SERVER}" // windows
+        "WAYLAND_DISPLAY": "${localEnv:WAYLAND_DISPLAY}", // WSL2
+        "XDG_RUNTIME_DIR": "${localEnv:XDG_RUNTIME_DIR}", // WSL2
+        "PULSE_SERVER": "${localEnv:PULSE_SERVER}" // WSL2
     },
-    // clargs passed to the container
     "runArgs": [
         "--gpus=all",
         "--interactive",
@@ -60,6 +61,6 @@
         "--ipc=host",
         "--runtime=nvidia"
     ],
-    "postCreateCommand": "pip install -e '.[test,gpu]'", //'.[test,gpu]'
+    "postCreateCommand": "python -m pip install -e '.[test,gpu]'",
     "remoteUser": "vscode"
 }
