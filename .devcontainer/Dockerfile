@@ -35,18 +35,17 @@ RUN groupadd --gid $USER_GID $USERNAME \
 ENV PATH="/usr/local/cuda-12.0/bin:${PATH}"
 ENV LD_LIBRARY_PATH="/usr/local/cuda-12.0/lib64:${LD_LIBRARY_PATH}"
 
-ENV NVIDIA_VISIBLE_DEVICES \
-    ${NVIDIA_VISIBLE_DEVICES:-all}
-ENV NVIDIA_DRIVER_CAPABILITIES \
-    ${NVIDIA_DRIVER_CAPABILITIES:+$NVIDIA_DRIVER_CAPABILITIES,}graphics
+ENV NVIDIA_VISIBLE_DEVICES ${NVIDIA_VISIBLE_DEVICES:-all}
+ENV NVIDIA_DRIVER_CAPABILITIES ${NVIDIA_DRIVER_CAPABILITIES:+$NVIDIA_DRIVER_CAPABILITIES,}graphics
 
-# Create virtual environment
+# Create and set proper permissions for workspace directory
+RUN mkdir -p /workspace && chown -R $USERNAME:$USERNAME /workspace
+
+# Create virtual environment with proper permissions
 ENV VIRTUAL_ENV=/home/vscode/venv
-RUN python -m venv $VIRTUAL_ENV
+RUN python -m venv $VIRTUAL_ENV && \
+    chown -R $USERNAME:$USERNAME $VIRTUAL_ENV
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
-
-# Set proper ownership of virtual environment
-RUN chown -R vscode:vscode $VIRTUAL_ENV
 
 # Switch to non-root user
 USER $USERNAME
@@ -54,16 +53,19 @@ USER $USERNAME
 # Install development tools
 RUN pip install --no-cache-dir ruff
 
-# Create a temporary directory for installation
+# Create a temporary directory for installation with proper permissions
 WORKDIR /tmp/install
 
-# Copy only pyproject.toml for dependency installation
-COPY --chown=vscode:vscode pyproject.toml .
+# Copy pyproject.toml with correct ownership
+COPY --chown=$USERNAME:$USERNAME pyproject.toml .
 
-# Install all dependencies including test and gpu extras
-# ".[test,gpu]"
+# Install dependencies as non-root user
 RUN pip install --no-cache-dir -e ".[test,gpu]"
 
-
-# Set final working directory
+# Set final working directory and ensure proper permissions
 WORKDIR /workspace
+
+# Add write permissions for workspace and potential mount points
+RUN sudo chmod -R 777 /workspace && \
+    sudo mkdir -p /workspaces && \
+    sudo chown -R $USERNAME:$USERNAME /workspaces

@@ -42,10 +42,18 @@
             }
         }
     },
+    // mounts required for windows X11
+    "mounts": [
+        "source=/tmp/.X11-unix,target=/tmp/.X11-unix,type=bind",
+        "source=/mnt/wslg,target=/mnt/wslg,type=bind",
+        "source=/usr/lib/wsl,target=/usr/lib/wsl,type=bind"
+    ],
     // set environment variables inside container. localEnv copies from host.
     "containerEnv": {
         "DISPLAY": "${localEnv:DISPLAY}",
-        "XAUTHORITY": "${localEnv:XAUTHORITY}"
+        "WAYLAND_DISPLAY": "${localEnv:WAYLAND_DISPLAY}",
+        "XDG_RUNTIME_DIR": "${localEnv:XDG_RUNTIME_DIR}",
+        "PULSE_SERVER": "${localEnv:PULSE_SERVER}"
     },
     // clargs passed to the container
     "runArgs": [
