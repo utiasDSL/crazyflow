@@ -42,18 +42,15 @@
             }
         }
     },
-    // mounts required for windows X11
-    "mounts": [
-        "source=/tmp/.X11-unix,target=/tmp/.X11-unix,type=bind",
-        "source=/mnt/wslg,target=/mnt/wslg,type=bind",
-        "source=/usr/lib/wsl,target=/usr/lib/wsl,type=bind"
-    ],
+    "mounts": [], // mounts are configured in setup-mounts.sh
+    "postStartCommand": "/workspaces/crazyflow/scripts/setup-mounts.sh",
     // set environment variables inside container. localEnv copies from host.
     "containerEnv": {
         "DISPLAY": "${localEnv:DISPLAY}",
-        "WAYLAND_DISPLAY": "${localEnv:WAYLAND_DISPLAY}",
-        "XDG_RUNTIME_DIR": "${localEnv:XDG_RUNTIME_DIR}",
-        "PULSE_SERVER": "${localEnv:PULSE_SERVER}"
+        "XAUTHORITY": "${localEnv:XAUTHORITY}",
+        "WAYLAND_DISPLAY": "${localEnv:WAYLAND_DISPLAY}", // windows
+        "XDG_RUNTIME_DIR": "${localEnv:XDG_RUNTIME_DIR}", // windows
+        "PULSE_SERVER": "${localEnv:PULSE_SERVER}" // windows
     },
     // clargs passed to the container
     "runArgs": [
