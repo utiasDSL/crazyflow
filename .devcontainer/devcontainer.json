@@ -43,7 +43,7 @@
         }
     },
     "mounts": [], // mounts are configured in setup-mounts.sh
-    "postStartCommand": "/workspaces/crazyflow/scripts/setup-mounts.sh",
+    "postStartCommand": "chmod +x /workspaces/crazyflow/scripts/setup-mounts.sh && /workspaces/crazyflow/scripts/setup-mounts.sh",
     // set environment variables inside container. localEnv copies from host.
     "containerEnv": {
         "DISPLAY": "${localEnv:DISPLAY}",
