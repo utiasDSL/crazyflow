@@ -305,8 +305,7 @@ def test_control_frequency(physics: Physics):
     sim_500.step()
 
     sim_1000.state_control(cmd)
-    sim_1000.step()
-    sim_1000.step()
+    sim_1000.step(2)
 
     # Check that the controls are the same
     assert np.all(sim_500.data.controls.rpms == sim_1000.data.controls.rpms)

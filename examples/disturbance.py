@@ -36,7 +36,7 @@ def main(plot: bool = False):
 
     # Second run
     sim.disturbance_fn = disturbance_fn
-    sim.build()
+    sim.build(mjx=False, data=False, step=True)
     pos_disturbed, rpy_disturbed = [], []
     sim.reset()
     for _ in range(3 * sim.control_freq):

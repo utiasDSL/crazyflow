@@ -66,37 +66,22 @@ class Sim:
 
         # Initialize MuJoCo world and data
         self._xml_path = xml_path or self.default_path
-        self.spec, self.mj_model, self.mj_data, self.mjx_model, mjx_data = self.setup_mj()
+        self.spec = self.init_mjx_spec()
+        self.mj_model, self.mj_data, self.mjx_model, mjx_data = self.init_mjx_model(self.spec)
         self.viewer: MujocoRenderer | None = None
 
-        # Allocate internal states and controls
-        drone_ids = [self.mj_model.body(f"drone:{i}").id for i in range(n_drones)]
-        self.data = SimData(
-            states=SimState.create(n_worlds, n_drones, self.device),
-            states_deriv=SimStateDeriv.create(n_worlds, n_drones, self.device),
-            controls=SimControls.create(
-                n_worlds, n_drones, state_freq, attitude_freq, thrust_freq, self.device
-            ),
-            params=SimParams.create(n_worlds, n_drones, MASS, J, J_INV, self.device),
-            core=SimCore.create(freq, n_worlds, n_drones, drone_ids, rng_key, self.device),
-            mjx_data=mjx_data,
-            mjx_model=None,
+        self.data, self.default_data = self.init_data(
+            state_freq, attitude_freq, thrust_freq, rng_key, mjx_data
         )
-        if self.n_drones > 1:  # If multiple drones, arrange them in a grid
-            grid = grid_2d(self.n_drones)
-            states = self.data.states.replace(pos=self.data.states.pos.at[..., :2].set(grid))
-            self.data: SimData = self.data.replace(states=states)
-
-        self.data = self.sync_sim2mjx(self.data, self.mjx_model)
-        self.default_data = self.data.replace()  # TODO: Only save the data of one world
 
         # Default functions for the simulation pipeline
         self.disturbance_fn: Callable[[SimData], SimData] | None = None
 
         # Build the simulation pipeline and overwrite the default _step implementation with it
-        self.build()
+        self.init_step_fn()
 
-    def setup_mj(self) -> tuple[Any, Any, Any, Model, Data]:
+    def init_mjx_spec(self) -> mujoco.MjSpec:
+        """Build the MuJoCo model specification for the simulation."""
         assert self._xml_path.exists(), f"Model file {self._xml_path} does not exist"
         spec = mujoco.MjSpec.from_file(str(self._xml_path))
         spec.option.timestep = 1 / self.freq
@@ -110,7 +95,10 @@ class Sim:
         for i in range(self.n_drones):
             drone = frame.attach_body(drone_spec.find_body("drone"), "", f":{i}")
             drone.add_freejoint()
-        # Compile and create data structures
+        return spec
+
+    def init_mjx_model(self, spec: mujoco.MjSpec) -> tuple[Any, Any, Model, Data]:
+        """Build the MuJoCo model and data structures for the simulation."""
         mj_model = spec.compile()
         mj_data = mujoco.MjData(mj_model)
         mjx_model = mjx.put_model(mj_model, device=self.device)
@@ -120,9 +108,9 @@ class Sim:
         # https://github.com/jax-ml/jax/issues/4274#issuecomment-692406759
         # Tracking issue: https://github.com/google-deepmind/mujoco/issues/2306
         mjx_data = mjx_data.replace(time=jnp.float32(mjx_data.time))
-        return spec, mj_model, mj_data, mjx_model, mjx_data
+        return mj_model, mj_data, mjx_model, mjx_data
 
-    def build(self):
+    def init_step_fn(self):
         """Setup the chain of functions that are called in Sim.step().
 
         We know all the functions that are called in succession since the simulation is configured
@@ -178,6 +166,62 @@ class Sim:
             return data
 
         self._step = step
+
+    def init_data(
+        self, state_freq: int, attitude_freq: int, thrust_freq: int, rng_key: Array, mjx_data: Data
+    ) -> tuple[SimData, SimData]:
+        """Initialize the simulation data."""
+        drone_ids = [self.mj_model.body(f"drone:{i}").id for i in range(self.n_drones)]
+        N, D = self.n_worlds, self.n_drones
+        data = SimData(
+            states=SimState.create(N, D, self.device),
+            states_deriv=SimStateDeriv.create(N, D, self.device),
+            controls=SimControls.create(N, D, state_freq, attitude_freq, thrust_freq, self.device),
+            params=SimParams.create(N, D, MASS, J, J_INV, self.device),
+            core=SimCore.create(self.freq, N, D, drone_ids, rng_key, self.device),
+            mjx_data=mjx_data,
+            mjx_model=None,
+        )
+        if D > 1:  # If multiple drones, arrange them in a grid
+            grid = grid_2d(D)
+            states = data.states.replace(pos=data.states.pos.at[..., :2].set(grid))
+            data = data.replace(states=states)
+        data = self.sync_sim2mjx(data, self.mjx_model)
+
+        return data, data.replace()  # TODO: Only save the data of one world
+
+    def build(self, mjx: bool = True, data: bool = True, step: bool = True):
+        """Build the simulation pipeline.
+
+        This method is used to (re)build the simulation pipeline after changing the MuJoCo
+        model specification or any of the default functions that are used in the compiled step
+        function.
+
+        Warning:
+            Depending on what you build, you reset the simulation state. For example, rebuilding the
+            simulation data will reset the drone states.
+
+        Args:
+            mjx: Flag to (re)build the MuJoCo model and data structures.
+            data: Flag to (re)build the simulation data.
+            step: Flag to (re)build the simulation step function.
+        """
+        # TODO: Write tests for all options
+        if mjx:
+            if self.viewer is not None:
+                self.viewer.close()
+                self.viewer = None
+            self.mj_model, self.mj_data, self.mjx_model, mjx_data = self.init_mjx_model(self.spec)
+        if data:
+            self.data, self.default_data = self.init_data(
+                self.data.controls.state_freq,
+                self.data.controls.attitude_freq,
+                self.data.controls.thrust_freq,
+                self.data.core.rng_key,
+                self.data.mjx_data if not mjx else mjx_data,
+            )
+        if step:
+            self.init_step_fn()
 
     def reset(self, mask: Array | None = None):
         """Reset the simulation to the initial state.
@@ -299,6 +343,7 @@ class Sim:
         qvel = rearrange(jnp.concat([vel, local_ang_vel], axis=-1), "w d qvel -> w (d qvel)")
         mjx_data = data.mjx_data
         mjx_model = data.mjx_model if mjx_model is None else mjx_model
+        assert mjx_model is not None, "MuJoCo model is not initialized"
         mjx_data = mjx_data.replace(qpos=qpos, qvel=qvel)
         mjx_data = mjx_kinematics(mjx_model, mjx_data)
         mjx_data = mjx_collision(mjx_model, mjx_data)
