@@ -1,25 +1,31 @@
-### Using the project with vscode devcontainer
+### Using the project with VSCode devcontainers
+
+**Running on CPU**: by default the containers run on CPU. You don't need to take any action.
+
+**Running on GPU**: The devcontsainers can easily run using your computer's NVIDIA GPU on Linux and Windows. In order to work you need to install the [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads?target_os=Linux&target_arch=x86_64&Distribution=WSL-Ubuntu&target_version=2.0&target_type=deb_local), [NVIDIA Container runtime](https://developer.nvidia.com/container-runtime) for your computer. Finally, enable GPU access to the devcontainers by setting the commented out `"--gpus=all"` and `"--runtime=nvidia"` flags in `devcontainer.json`. 
+
+
 **Linux**
 
-0. Install docker: https://docs.docker.com/engine/install/ (, and make sure docker daemon is running)
-2. Install [vscode](https://code.visualstudio.com/), with [devcontainer extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers), and [remote dev pack](https://marketplace.visualstudio.com/items?itemName=ms-azuretools.vscode-docker).
+1. Install [Docker](https://docs.docker.com/engine/install/) (, and make sure Docker Daemon is running)
+2. Install [VSCode](https://code.visualstudio.com/), with [devcontainer extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers), and [remote dev pack](https://marketplace.visualstudio.com/items?itemName=ms-azuretools.vscode-docker).
 3. Clone this project's code. Rename `/.devcontainer/devcontainer.linux.json` to `/.devcontainer/devcontainer.json`.
-4. Open this project in vscode. Vscode should automatically detect the devcontainer and prompt you to `Reopen in container`. If not, see [here](https://code.visualstudio.com/docs/devcontainers/containers#_quick-start-open-an-existing-folder-in-a-container). Note: Opening the container for the first time might take a while (up to 10mins), as the container is pulled from the web and build.
+4. Open this project in VSCode. VSCode should automatically detect the devcontainer and prompt you to `Reopen in container`. If not, see [here](https://code.visualstudio.com/docs/devcontainers/containers#_quick-start-open-an-existing-folder-in-a-container) to open manually. Note: Opening the container for the first time might take a while (up to 15 min), as the container is pulled from the web and build.
 
 **Windows** (requires Windows 10 or later)
 
-For windows, we require WSL2 to run the devcontainer. Full instructions can be found [in the official docs](https://code.visualstudio.com/blogs/2020/07/01/containers-wsl#_getting-started). Here are the important steps:
-1. Install docker: https://docs.docker.com/desktop/setup/install/windows-install/, and WSL2, and Ubuntu 22.04 LTS (, and make sure docker daemon is running)
-2. Docker will recognize that you have WSL installed and prompt you via Windows Notifications to enable WSL integration -> confirm with `Enable WSL integration`. If not, open `Docker Desktop`, navigate to the settings, and manually enable WSL integration. (There are TWO setting options for this. Make sure to enable both!)
-3. Install [vscode](https://code.visualstudio.com/), with the [WSL extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-wsl), [devcontainer extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers), and [remote dev pack](https://marketplace.visualstudio.com/items?itemName=ms-azuretools.vscode-docker).
-4. Clone the source code for the exercises in the WSL2 file system to `/home` (`~`), or wherever you like. (Performance when working on the WSL file system is much better compared to Windows filesystem). You can access the WSL filesystem either by starting a WSL/Ubuntu console, or via the Windows File Explorer at `\\wsl.localhost\Ubuntu\home` (replace `Ubuntu` with your distro, if necessary).
+For windows, we require WSL2 to run the devcontainer. (So its actually Linux with extra steps.) Full instructions can be found [in the official docs](https://code.visualstudio.com/blogs/2020/07/01/containers-wsl#_getting-started). Here are the important steps:
+1. Install [Docker](https://docs.docker.com/desktop/setup/install/windows-install/), and WSL2, and Ubuntu 22.04 LTS (, and make sure Docker Daemon is running)
+2. Docker will recognize that you have WSL installed and prompt you via Windows Notifications to enable WSL integration -> confirm this with `Enable WSL integration`. If not, open `Docker Desktop`, navigate to the settings, and manually enable WSL integration. (There are TWO setting options for this. Make sure to enable BOTH!)
+3. Install [VSCode](https://code.visualstudio.com/), with the [WSL extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-wsl), [devcontainer extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers), and [remote dev pack](https://marketplace.visualstudio.com/items?itemName=ms-azuretools.vscode-docker).
+4. Clone the source code for the exercises in the WSL2 file system to `/home` (`~`), or wherever you like. (Performance when working on the WSL file system is much better compared to Windows file system). You can access the WSL filesystem either by starting a WSL/Ubuntu console, or via the Windows File Explorer at `\\wsl.localhost\Ubuntu\home` (replace `Ubuntu` with your distro, if necessary).
 7. Rename `/.devcontainer/devcontainer.windows.json` to `/.devcontainer/devcontainer.json`.
-8. Open this project in vscode. The easiest way to do so is to start an WSL/Ubuntu shell, navigate via `cd` to the source code, then type `code .` to open VSCode. Vscode should automatically detect the devcontainer and prompt you to `Reopen in container`. If not, [here](https://code.visualstudio.com/docs/devcontainers/containers#_quick-start-open-an-existing-folder-in-a-container). Note: Opening the container for the first time might take a while (up to 10mins), as the container is pulled from the web and build.
+8. Open this project in VSCode. The easiest way to do so is by starting a WSL/Ubuntu shell, navigating via `cd` to the source code, then type `code .` to open VSCode. VSCode should automatically detect the devcontainer and prompt you to `Reopen in container`. If not, see [here](https://code.visualstudio.com/docs/devcontainers/containers#_quick-start-open-an-existing-folder-in-a-container) to open manually. Note: Opening the container for the first time might take a while (up to 15 min), as the container is pulled from the web and build.
 
 
-**Mac**
+**MacOS**
 
-Should work like Ubuntu. Untested.
+Should work like Linux. Untested.
 
 ____________
 

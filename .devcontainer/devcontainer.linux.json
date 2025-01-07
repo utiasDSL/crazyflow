@@ -47,11 +47,11 @@
         "XAUTHORITY": "${localEnv:XAUTHORITY}"
     },
     "runArgs": [
-        "--gpus=all",
         "--interactive",
         "--net=host",
         "--ipc=host",
-        "--runtime=nvidia"
+        // "--gpus=all", //use only with GPU
+        // "--runtime=nvidia" //use only with GPU
     ],
     "postCreateCommand": "python -m pip install -e '.[test,gpu]'",
     "remoteUser": "vscode"
