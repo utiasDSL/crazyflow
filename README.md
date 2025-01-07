@@ -2,7 +2,7 @@
 
 **Running on CPU**: by default the containers run on CPU. You don't need to take any action.
 
-**Running on GPU**: The devcontsainers can easily run using your computer's NVIDIA GPU on Linux and Windows. In order to work you need to install the [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads?target_os=Linux&target_arch=x86_64&Distribution=WSL-Ubuntu&target_version=2.0&target_type=deb_local), [NVIDIA Container runtime](https://developer.nvidia.com/container-runtime) for your computer. Finally, enable GPU access to the devcontainers by setting the commented out `"--gpus=all"` and `"--runtime=nvidia"` flags in `devcontainer.json`. 
+**Running on GPU**: The devcontsainers can easily run using your computer's NVIDIA GPU on Linux and Windows. This makes sense if you want to accelerate simulation by running thousands of simulation in parallel. In order to work you need to install the [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads?target_os=Linux&target_arch=x86_64&Distribution=WSL-Ubuntu&target_version=2.0&target_type=deb_local), [NVIDIA Container runtime](https://developer.nvidia.com/container-runtime) for your computer. Finally, enable GPU access to the devcontainers by setting the commented out `"--gpus=all"` and `"--runtime=nvidia"` flags in `devcontainer.json`. 
 
 
 **Linux**
