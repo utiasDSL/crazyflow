@@ -178,7 +178,10 @@ def symbolic(mass: float, J: NDArray, dt: float) -> SymbolicModel:
     params_acc = [20.907574256269616, 3.653687545690674]
     params_roll_rate = [-130.3, -16.33, 119.3]
     params_pitch_rate = [-99.94, -13.3, 84.73]
-    params_yaw_rate = [0, 0, 0]
+    # params_yaw_rate = [0, 0, 0], because we always keep yaw as 0 when we identified the parameters.
+    # We introduce a small negative offset here to make sure that we could get result of LQR ect..
+    # TODO: identify params_yaw_rate
+    params_yaw_rate = [-0.01, 0, 0]
 
     # Define dynamics equations.
     # TODO: create a parameter for the new quad model
