@@ -87,7 +87,8 @@ def collective_force2acceleration(force: Array, mass: Array) -> Array:
 @partial(vectorize, signature="(3),(4),(3,3)->(3)")
 def collective_torque2rpy_rates_deriv(torque: Array, quat: Array, J_INV: Array) -> Array:
     """Convert torques to rpy_rates_deriv."""
-    return R.from_quat(quat).apply(J_INV @ torque)
+    rot = R.from_quat(quat)
+    return rot.apply(J_INV @ rot.apply(torque, inverse=True))
 
 
 @partial(vectorize, signature="(4),(4),(3),(3,3)->(3),(3)")
