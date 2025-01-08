@@ -64,3 +64,48 @@ def test_attitude_symbolic():
     err_msg = "Symbolic and simulation prediction do not match approximately"
     assert np.allclose(x_sym_log, x_sim_log, rtol=1e-2, atol=1e-2), err_msg
     sim.close()
+
+
+@pytest.mark.integration
+def test_thrust_symbolic():
+    sim = Sim(physics="analytical", control="thrust")
+    sym = symbolic_from_sim(sim)
+
+    x0 = np.zeros(12)
+
+    # Simulate with both models for 0.5 seconds
+    t_end = 0.5
+    dt = 1 / sim.freq
+    steps = int(t_end / dt)
+
+    # Track states over time
+    x_sym_log = []
+    x_sim_log = []
+
+    # Initialize logs with initial state
+    x_sym = x0.copy()
+    x_sim = x0.copy()
+    x_sym_log.append(x_sym)
+    x_sim_log.append(x_sim)
+
+    rng = np.random.default_rng(seed=42)
+
+    # Run simulation
+    for _ in range(steps):
+        u_rand = rng.uniform(MIN_THRUST, MIN_THRUST, 4)
+        # Simulate with symbolic model
+        res = sym.fd_func(x0=x_sym, p=u_rand)
+        x_sym = res["xf"].full().flatten()
+        x_sym_log.append(x_sym)
+        # Simulate with attitude controller
+        sim.thrust_control(u_rand.reshape(1, 1, 4))
+        sim.step(sim.freq // sim.control_freq)
+        x_sim_log.append(sim_state2symbolic_state(sim.data.states))
+
+    x_sym_log = np.array(x_sym_log)
+    x_sim_log = np.array(x_sim_log)
+
+    # Check if states match throughout simulation
+    err_msg = "Symbolic and simulation prediction do not match approximately"
+    assert np.allclose(x_sym_log, x_sim_log, rtol=1e-2, atol=1e-3), err_msg
+    sim.close()

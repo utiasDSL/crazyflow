@@ -10,7 +10,7 @@ from crazyflow.constants import ARM_LEN, GRAVITY, SIGN_MIX_MATRIX
 from crazyflow.control.control import KF, KM
 
 SYS_ID_PARAMS = {
-    "acc": jnp.array([20.91, 3.65]),
+    "acc": jnp.array([20.907574256269616, 3.653687545690674]),
     "roll_acc": jnp.array([-130.3, -16.33, 119.3]),
     "pitch_acc": jnp.array([-99.94, -13.3, 84.73]),
     "yaw_acc": jnp.array([0.0, 0.0, 0.0]),
