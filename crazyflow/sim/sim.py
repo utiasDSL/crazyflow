@@ -280,6 +280,7 @@ class Sim:
     def close(self):
         if self.viewer is not None:
             self.viewer.close()
+        self.viewer = None
 
     @property
     def time(self) -> Array:
