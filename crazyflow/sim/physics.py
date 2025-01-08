@@ -10,14 +10,10 @@ from crazyflow.constants import ARM_LEN, GRAVITY, SIGN_MIX_MATRIX
 from crazyflow.control.control import KF, KM
 
 SYS_ID_PARAMS = {
-    "acc_k1": 20.91,
-    "acc_k2": 3.65,
-    "roll_alpha": -3.96,
-    "roll_beta": 4.08,
-    "pitch_alpha": -6.00,
-    "pitch_beta": 6.21,
-    "yaw_alpha": 0.00,
-    "yaw_beta": 0.00,
+    "acc": jnp.array([20.91, 3.65]),
+    "roll_acc": jnp.array([-130.3, -16.33, 119.3]),
+    "pitch_acc": jnp.array([-99.94, -13.3, 84.73]),
+    "yaw_acc": jnp.array([0.0, 0.0, 0.0]),
 }
 
 
@@ -60,27 +56,24 @@ def surrogate_identified_collective_wrench(
     rot = R.from_quat(quat)
     thrust = rot.apply(jnp.array([0, 0, collective_thrust]))
     drift = rot.apply(jnp.array([0, 0, 1]))
-    prev_rpy_rates = rot.apply(rpy_rates, inverse=True)
-    a1, a2 = SYS_ID_PARAMS["acc_k1"], SYS_ID_PARAMS["acc_k2"]
-    acc = thrust * a1 + drift * a2
-    # rpy_rates_deriv have no real meaning in this context, since the identified dynamics set the
-    # rpy_rates to the commanded values directly. However, since we use a unified integration
-    # interface for all physics models, we cannot access states directly. Instead, we calculate
-    # which rpy_rates_deriv would have resulted in the desired rpy_rates, and return that.
-    roll_cmd, pitch_cmd, yaw_cmd = attitude
+    rpy_rates_local = rot.apply(rpy_rates, inverse=True)
+    k1, k2 = SYS_ID_PARAMS["acc"]
+    acc = thrust * k1 + drift * k2
     rpy = rot.as_euler("xyz")
-    roll_rate = SYS_ID_PARAMS["roll_alpha"] * rpy[0] + SYS_ID_PARAMS["roll_beta"] * roll_cmd
-    pitch_rate = SYS_ID_PARAMS["pitch_alpha"] * rpy[1] + SYS_ID_PARAMS["pitch_beta"] * pitch_cmd
-    yaw_rate = SYS_ID_PARAMS["yaw_alpha"] * rpy[2] + SYS_ID_PARAMS["yaw_beta"] * yaw_cmd
-    rpy_rates_local = jnp.array([roll_rate, pitch_rate, yaw_rate])
-    rpy_rates_local_deriv = (rpy_rates_local - prev_rpy_rates) / dt
+    k1, k2, k3 = SYS_ID_PARAMS["roll_acc"]
+    roll_rate_deriv = k1 * rpy[0] + k2 * rpy_rates_local[0] + k3 * attitude[1]
+    k1, k2, k3 = SYS_ID_PARAMS["pitch_acc"]
+    pitch_rate_deriv = k1 * rpy[1] + k2 * rpy_rates_local[1] + k3 * attitude[2]
+    k1, k2, k3 = SYS_ID_PARAMS["yaw_acc"]
+    yaw_rate_deriv = k1 * rpy[2] + k2 * rpy_rates_local[2] + k3 * attitude[3]
+    rpy_rates_deriv = jnp.array([roll_rate_deriv, pitch_rate_deriv, yaw_rate_deriv])
     # The identified dynamics model does not use forces or torques, because we assume no knowledge
     # of the drone's mass and inertia. However, to remain compatible with the physics pipeline, we
     # return surrogate forces and torques that result in the desired acceleration and rpy rates
     # derivative. When converting back to the state derivative, the mass and inertia will cancel
     # out, resulting in the correct acceleration and rpy rates derivative regardless of the model's
     # mass and inertia.
-    surrogate_torques = rot.apply(J @ rpy_rates_local_deriv)
+    surrogate_torques = rot.apply(J @ rpy_rates_deriv)
     surrogate_forces = acc * mass
     return surrogate_forces, surrogate_torques
 
