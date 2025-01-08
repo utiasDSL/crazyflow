@@ -149,59 +149,59 @@ def symbolic(mass: float, J: NDArray, dt: float) -> SymbolicModel:
     Returns:
         The CasADi symbolic model of the environment.
     """
-    # Define states.
+    # # Define states.
     z = MX.sym("z")
     z_dot = MX.sym("z_dot")
-
-    # Set up the dynamics model for a 3D quadrotor.
+    g = GRAVITY
+    # # Set up the dynamics model for a 3D quadrotor.
     nx, nu = 12, 4
-    Ixx, Iyy, Izz = J.diagonal()
-    J = cs.blockcat([[Ixx, 0.0, 0.0], [0.0, Iyy, 0.0], [0.0, 0.0, Izz]])
-    Jinv = cs.blockcat([[1.0 / Ixx, 0.0, 0.0], [0.0, 1.0 / Iyy, 0.0], [0.0, 0.0, 1.0 / Izz]])
-    gamma = KM / KF
-    # System state variables
-    x, y = MX.sym("x"), MX.sym("y")
-    x_dot, y_dot = MX.sym("x_dot"), MX.sym("y_dot")
-    phi, theta, psi = MX.sym("phi"), MX.sym("theta"), MX.sym("psi")
-    p, q, r = MX.sym("p"), MX.sym("q"), MX.sym("r")
-    # Rotation matrix transforming a vector in the body frame to the world frame. PyBullet Euler
-    # angles use the SDFormat for rotation matrices.
-    Rob = csRotXYZ(phi, theta, psi)
-    # Define state variables.
-    X = cs.vertcat(x, x_dot, y, y_dot, z, z_dot, phi, theta, psi, p, q, r)
-    # Define inputs.
-    f1, f2, f3, f4 = MX.sym("f1"), MX.sym("f2"), MX.sym("f3"), MX.sym("f4")
-    U = cs.vertcat(f1, f2, f3, f4)
+    # Define states.
+    x = cs.MX.sym('x')
+    x_dot = cs.MX.sym('x_dot')
+    y = cs.MX.sym('y')
+    y_dot = cs.MX.sym('y_dot')
+    phi = cs.MX.sym('phi')  # roll angle [rad]
+    phi_dot = cs.MX.sym('phi_dot')
+    theta = cs.MX.sym('theta')  # pitch angle [rad]
+    theta_dot = cs.MX.sym('theta_dot')
+    psi = cs.MX.sym('psi')  # yaw angle [rad]
+    psi_dot = cs.MX.sym('psi_dot')
+    X = cs.vertcat(x, x_dot, y, y_dot, z, z_dot, phi, theta, psi, phi_dot, theta_dot, psi_dot)
+    # Define input collective thrust and theta.
+    T = cs.MX.sym('T_c')  # normalized thrust [N]
+    R = cs.MX.sym('R_c')  # desired roll angle [rad]
+    P = cs.MX.sym('P_c')  # desired pitch angle [rad]
+    Y = cs.MX.sym('Y_c')  # desired yaw angle [rad]
+    U = cs.vertcat(T, R, P, Y)
+    # The thrust in PWM is converted from the normalized thrust.
+    # With the formulat F_desired = b_F * T + a_F
+    params_acc = [20.907574256269616, 3.653687545690674]
+    params_roll_rate = [-130.3, -16.33, 119.3]
+    params_pitch_rate = [-99.94, -13.3, 84.73]
+    # params_yaw_rate = [0, 0, 0], because we always keep yaw as 0 when we identified the parameters.
+    # We introduce a small negative offset here to make sure that we could get result of LQR ect..
+    # TODO: identify params_yaw_rate
+    params_yaw_rate = [-0.01, 0, 0]
 
-    # From Ch. 2 of Luis, Carlos, and Jérôme Le Ny. "Design of a trajectory tracking
-    # controller for a nanoquadcopter." arXiv preprint arXiv:1608.05786 (2016).
+    # Define dynamics equations.
+    # TODO: create a parameter for the new quad model
+    X_dot = cs.vertcat(x_dot,
+                        (params_acc[0] * T + params_acc[1]) * (
+                            cs.cos(phi) * cs.sin(theta) * cs.cos(psi) + cs.sin(phi) * cs.sin(psi)),
+                        y_dot,
+                        (params_acc[0] * T + params_acc[1]) * (
+                            cs.cos(phi) * cs.sin(theta) * cs.sin(psi) - cs.sin(phi) * cs.cos(psi)),
+                        z_dot,
+                        (params_acc[0] * T + params_acc[1]) * cs.cos(phi) * cs.cos(theta) - g,
+                        phi_dot,
+                        theta_dot,
+                        psi_dot,
+                        params_roll_rate[0] * phi + params_roll_rate[1] * phi_dot + params_roll_rate[2] * R,
+                        params_pitch_rate[0] * theta + params_pitch_rate[1] * theta_dot + params_pitch_rate[2] * P,
+                        params_yaw_rate[0] * psi + params_yaw_rate[1] * psi_dot + params_yaw_rate[2] * Y)
+    # Define observation.
+    Y = cs.vertcat(x, x_dot, y, y_dot, z, z_dot, phi, theta, psi, phi_dot, theta_dot, psi_dot)
 
-    # Defining the dynamics function.
-    # We are using the velocity of the base wrt to the world frame expressed in the world frame.
-    # Note that the reference expresses this in the body frame.
-    oVdot_cg_o = Rob @ cs.vertcat(0, 0, f1 + f2 + f3 + f4) / mass - cs.vertcat(0, 0, GRAVITY)
-    pos_ddot = oVdot_cg_o
-    pos_dot = cs.vertcat(x_dot, y_dot, z_dot)
-    # We use the spin directions (signs) from the mix matrix used in the simulation.
-    sx, sy, sz = SIGN_MIX_MATRIX[..., 0], SIGN_MIX_MATRIX[..., 1], SIGN_MIX_MATRIX[..., 2]
-    Mb = cs.vertcat(
-        ARM_LEN / cs.sqrt(2.0) * (sx[0] * f1 + sx[1] * f2 + sx[2] * f3 + sx[3] * f4),
-        ARM_LEN / cs.sqrt(2.0) * (sy[0] * f1 + sy[1] * f2 + sy[2] * f3 + sy[3] * f4),
-        gamma * (sz[0] * f1 + sz[1] * f2 + sz[2] * f3 + sz[3] * f4),
-    )
-    rate_dot = Jinv @ (Mb - (cs.skew(cs.vertcat(p, q, r)) @ J @ cs.vertcat(p, q, r)))
-    ang_dot = cs.blockcat(
-        [
-            [1, cs.sin(phi) * cs.tan(theta), cs.cos(phi) * cs.tan(theta)],
-            [0, cs.cos(phi), -cs.sin(phi)],
-            [0, cs.sin(phi) / cs.cos(theta), cs.cos(phi) / cs.cos(theta)],
-        ]
-    ) @ cs.vertcat(p, q, r)
-    X_dot = cs.vertcat(
-        pos_dot[0], pos_ddot[0], pos_dot[1], pos_ddot[1], pos_dot[2], pos_ddot[2], ang_dot, rate_dot
-    )
-
-    Y = cs.vertcat(x, x_dot, y, y_dot, z, z_dot, phi, theta, psi, p, q, r)
 
     # Define cost (quadratic form).
     Q, R = MX.sym("Q", nx, nx), MX.sym("R", nu, nu)
