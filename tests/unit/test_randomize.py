@@ -7,15 +7,12 @@ from crazyflow.constants import J
 from crazyflow.control import Control
 from crazyflow.randomize import randomize_inertia, randomize_mass
 from crazyflow.sim import Sim
-from tests.unit.test_sim import skip_unavailable_device
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("device", ["gpu", "cpu"])
 @pytest.mark.parametrize("n_worlds", [1, 3])
-def test_randomize_mass(device: str, n_worlds: int):
-    skip_unavailable_device(device)
-    sim = Sim(n_worlds=n_worlds, n_drones=4, control=Control.state, device=device)
+def test_randomize_mass(n_worlds: int):
+    sim = Sim(n_worlds=n_worlds, n_drones=4, control=Control.state)
 
     add_on_mass = np.random.uniform(-0.005, 0.005, size=(sim.n_worlds, sim.n_drones))
     masses = np.ones((sim.n_worlds, sim.n_drones)) * 0.025
@@ -34,10 +31,8 @@ def test_randomize_mass(device: str, n_worlds: int):
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("device", ["gpu", "cpu"])
-def test_randomize_mass_masked(device: str):
-    skip_unavailable_device(device)
-    sim = Sim(n_worlds=3, n_drones=4, control=Control.state, device=device)
+def test_randomize_mass_masked():
+    sim = Sim(n_worlds=3, n_drones=4, control=Control.state)
 
     add_on_mass = np.random.uniform(-0.005, 0.005, size=(sim.n_worlds, sim.n_drones))
     masses = np.ones((sim.n_worlds, sim.n_drones)) * 0.025
@@ -62,10 +57,8 @@ def test_randomize_mass_masked(device: str):
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("device", ["gpu", "cpu"])
-def test_randomize_inertia(device: str):
-    skip_unavailable_device(device)
-    sim = Sim(n_worlds=2, n_drones=4, control=Control.state, device=device)
+def test_randomize_inertia():
+    sim = Sim(n_worlds=2, n_drones=4, control=Control.state)
 
     add_on_j = np.random.uniform(-1.5e-5, 1.5e-5, size=(sim.n_worlds, sim.n_drones, 3, 3))
     randomized_j = J + add_on_j
@@ -83,10 +76,8 @@ def test_randomize_inertia(device: str):
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("device", ["gpu", "cpu"])
-def test_randomize_inertia_masked(device: str):
-    skip_unavailable_device(device)
-    sim = Sim(n_worlds=3, n_drones=4, control=Control.state, device=device)
+def test_randomize_inertia_masked():
+    sim = Sim(n_worlds=3, n_drones=4, control=Control.state)
 
     add_on_j = np.random.uniform(-1.5e-5, 1.5e-5, size=(sim.n_worlds, sim.n_drones, 3, 3))
     randomized_j = J + add_on_j

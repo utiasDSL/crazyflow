@@ -2,7 +2,6 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from flax.serialization import to_state_dict
 from jax import Array
 
 from crazyflow.control import Control
@@ -63,8 +62,8 @@ def test_sim_init(physics: Physics, device: str, control: Control, n_worlds: int
     n_drones = 1
     skip_unavailable_device(device)
 
-    if physics != Physics.analytical and control == Control.thrust:
-        with pytest.raises(ConfigError):  # TODO: Remove when supported with sys_id
+    if physics == Physics.sys_id and control == Control.thrust:
+        with pytest.raises(ConfigError):
             Sim(n_worlds=n_worlds, physics=physics, device=device, control=control)
         return
     sim = Sim(n_worlds=n_worlds, physics=physics, device=device, control=control)
@@ -107,18 +106,17 @@ def test_reset(device: str, physics: Physics, n_worlds: int, n_drones: int):
     sim.data = data.replace(states=states, controls=controls, params=params, core=core)
     sim.reset()
 
-    members = to_state_dict(sim.data).values()
-    default_members = to_state_dict(sim.default_data).values()
-    for member, default_member in zip(members, default_members):
-        for k, v in to_state_dict(member).items():
-            default = default_member[k]
-            if isinstance(v, jnp.ndarray):
-                array_compare_assert(v, default, name=k)
-            else:
-                assert v == default, f"{k} value mismatch"
+    data = jax.tree.flatten_with_path(sim.data)[0]
+    default_data = jax.tree.flatten(sim.default_data)[0]
+    for i, (path, value) in enumerate(data):
+        default_value = default_data[i]
+        if isinstance(value, jnp.ndarray):
+            array_compare_assert(value, default_value, name=path)
+        else:
+            assert value == default_value, f"{path} value mismatch"
 
-    assert jnp.all(data.core.steps == 0), "Steps must be reset to 0"
-    assert jnp.all(data.controls.attitude_steps == -1), "Control steps not reset to -1"
+    assert jnp.all(sim.data.core.steps == 0), "Steps must be reset to 0"
+    assert jnp.all(sim.data.controls.attitude_steps == -1), "Control steps not reset to -1"
 
 
 @pytest.mark.unit
@@ -145,18 +143,18 @@ def test_reset_masked(device: str, physics: Physics):
     sim.reset(mask)
 
     # Check world 1 was reset to defaults
-    members = to_state_dict(sim.data).values()
-    default_members = to_state_dict(sim.default_data).values()
-    for member, default_member in zip(members, default_members):
-        for k, v in to_state_dict(member).items():
-            default = default_member[k]
-            if isinstance(v, jnp.ndarray):
-                array_compare_assert(v, default, name=k, value=False)
-                if v.ndim >= 1:  # Do not check zero-dimensional arrays common to all worlds
-                    # Only check values for the first world
-                    assert jnp.all(v[0] == default[0]), f"{k} value mismatch"
-            else:
-                assert v == default, f"{k} value mismatch"
+    data = jax.tree.flatten_with_path(sim.data)[0]
+    default_data = jax.tree.flatten(sim.default_data)[0]
+    for i, (path, value) in enumerate(data):
+        default_value = default_data[i]
+        if isinstance(value, jnp.ndarray):
+            array_compare_assert(value, default_value, name=path, value=False)
+            # Do not check zero-shaped arrays common to all worlds
+            if value.ndim >= 1 and default_value.shape[0] > 0:
+                # Only check values for the first world
+                assert jnp.all(value[0] == default_value[0]), f"{path} value mismatch"
+        else:
+            assert value == default_value, f"{path} value mismatch"
 
     # Check world 2 kept modifications
     data = sim.data
@@ -173,11 +171,10 @@ def test_reset_masked(device: str, physics: Physics):
 @pytest.mark.parametrize("device", ["gpu", "cpu"])
 def test_sim_step(n_worlds: int, n_drones: int, physics: Physics, control: Control, device: str):
     skip_unavailable_device(device)
-    if physics != Physics.analytical and control == Control.thrust:
-        return  # TODO: Remove when supported with sys_id
+    if physics == Physics.sys_id and control == Control.thrust:
+        return
     sim = Sim(n_worlds=n_worlds, n_drones=n_drones, physics=physics, device=device, control=control)
-    for _ in range(2):
-        sim.step()
+    sim.step(2)
 
 
 @pytest.mark.unit
@@ -275,7 +272,7 @@ def test_device(device: str):
     sim = Sim(n_worlds=2, physics=Physics.sys_id, device=device)
     sim.step()
     assert sim.data.states.pos.device == jax.devices(device)[0]
-    assert sim.mjx_data.qpos.device == jax.devices(device)[0]
+    assert sim.data.mjx_data.qpos.device == jax.devices(device)[0]
 
 
 @pytest.mark.unit
@@ -285,10 +282,10 @@ def test_device(device: str):
 def test_shape_consistency(device: str, n_drones: int, n_worlds: int):
     skip_unavailable_device(device)
     sim = Sim(n_worlds=n_worlds, n_drones=n_drones, physics=Physics.sys_id, device=device)
-    qpos_shape, qvel_shape = sim.mjx_data.qpos.shape, sim.mjx_data.qvel.shape
+    qpos_shape, qvel_shape = sim.data.mjx_data.qpos.shape, sim.data.mjx_data.qvel.shape
     sim.step()
-    assert sim.mjx_data.qpos.shape == qpos_shape, "step() should not change qpos shape"
-    assert sim.mjx_data.qvel.shape == qvel_shape, "step() should not change qvel shape"
+    assert sim.data.mjx_data.qpos.shape == qpos_shape, "step() should not change qpos shape"
+    assert sim.data.mjx_data.qvel.shape == qvel_shape, "step() should not change qvel shape"
 
 
 @pytest.mark.unit
@@ -308,8 +305,7 @@ def test_control_frequency(physics: Physics):
     sim_500.step()
 
     sim_1000.state_control(cmd)
-    sim_1000.step()
-    sim_1000.step()
+    sim_1000.step(2)
 
     # Check that the controls are the same
     assert np.all(sim_500.data.controls.rpms == sim_1000.data.controls.rpms)
@@ -320,3 +316,17 @@ def test_control_frequency(physics: Physics):
 
     sim_500.close()
     sim_1000.close()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("device", ["gpu", "cpu"])
+def test_seed(device: str):
+    skip_unavailable_device(device)
+    sim = Sim(rng_key=42, device=device)
+    assert (jax.random.key_data(sim.data.core.rng_key)[1] == 42).all(), "rng_key not set correctly"
+    assert sim.data.core.rng_key.device == sim.device, "__init__() must set device of rng_key"
+    # Test seed() method
+    sim.seed(43)
+    assert (jax.random.key_data(sim.data.core.rng_key)[1] == 43).all(), "seed() doesn't set rng_key"
+    assert sim.data.core.rng_key.device == sim.device, "seed() changes device of rng_key"
+    sim.close()
