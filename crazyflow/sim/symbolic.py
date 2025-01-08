@@ -19,8 +19,7 @@ import casadi as cs
 from casadi import MX
 from numpy.typing import NDArray
 
-from crazyflow.constants import ARM_LEN, GRAVITY, SIGN_MIX_MATRIX
-from crazyflow.control.control import KF, KM
+from crazyflow.constants import GRAVITY
 from crazyflow.sim import Sim
 
 
@@ -156,22 +155,22 @@ def symbolic(mass: float, J: NDArray, dt: float) -> SymbolicModel:
     # # Set up the dynamics model for a 3D quadrotor.
     nx, nu = 12, 4
     # Define states.
-    x = cs.MX.sym('x')
-    x_dot = cs.MX.sym('x_dot')
-    y = cs.MX.sym('y')
-    y_dot = cs.MX.sym('y_dot')
-    phi = cs.MX.sym('phi')  # roll angle [rad]
-    phi_dot = cs.MX.sym('phi_dot')
-    theta = cs.MX.sym('theta')  # pitch angle [rad]
-    theta_dot = cs.MX.sym('theta_dot')
-    psi = cs.MX.sym('psi')  # yaw angle [rad]
-    psi_dot = cs.MX.sym('psi_dot')
+    x = cs.MX.sym("x")
+    x_dot = cs.MX.sym("x_dot")
+    y = cs.MX.sym("y")
+    y_dot = cs.MX.sym("y_dot")
+    phi = cs.MX.sym("phi")  # roll angle [rad]
+    phi_dot = cs.MX.sym("phi_dot")
+    theta = cs.MX.sym("theta")  # pitch angle [rad]
+    theta_dot = cs.MX.sym("theta_dot")
+    psi = cs.MX.sym("psi")  # yaw angle [rad]
+    psi_dot = cs.MX.sym("psi_dot")
     X = cs.vertcat(x, x_dot, y, y_dot, z, z_dot, phi, theta, psi, phi_dot, theta_dot, psi_dot)
     # Define input collective thrust and theta.
-    T = cs.MX.sym('T_c')  # normalized thrust [N]
-    R = cs.MX.sym('R_c')  # desired roll angle [rad]
-    P = cs.MX.sym('P_c')  # desired pitch angle [rad]
-    Y = cs.MX.sym('Y_c')  # desired yaw angle [rad]
+    T = cs.MX.sym("T_c")  # normalized thrust [N]
+    R = cs.MX.sym("R_c")  # desired roll angle [rad]
+    P = cs.MX.sym("P_c")  # desired pitch angle [rad]
+    Y = cs.MX.sym("Y_c")  # desired yaw angle [rad]
     U = cs.vertcat(T, R, P, Y)
     # The thrust in PWM is converted from the normalized thrust.
     # With the formulat F_desired = b_F * T + a_F
@@ -185,23 +184,24 @@ def symbolic(mass: float, J: NDArray, dt: float) -> SymbolicModel:
 
     # Define dynamics equations.
     # TODO: create a parameter for the new quad model
-    X_dot = cs.vertcat(x_dot,
-                        (params_acc[0] * T + params_acc[1]) * (
-                            cs.cos(phi) * cs.sin(theta) * cs.cos(psi) + cs.sin(phi) * cs.sin(psi)),
-                        y_dot,
-                        (params_acc[0] * T + params_acc[1]) * (
-                            cs.cos(phi) * cs.sin(theta) * cs.sin(psi) - cs.sin(phi) * cs.cos(psi)),
-                        z_dot,
-                        (params_acc[0] * T + params_acc[1]) * cs.cos(phi) * cs.cos(theta) - g,
-                        phi_dot,
-                        theta_dot,
-                        psi_dot,
-                        params_roll_rate[0] * phi + params_roll_rate[1] * phi_dot + params_roll_rate[2] * R,
-                        params_pitch_rate[0] * theta + params_pitch_rate[1] * theta_dot + params_pitch_rate[2] * P,
-                        params_yaw_rate[0] * psi + params_yaw_rate[1] * psi_dot + params_yaw_rate[2] * Y)
+    X_dot = cs.vertcat(
+        x_dot,
+        (params_acc[0] * T + params_acc[1])
+        * (cs.cos(phi) * cs.sin(theta) * cs.cos(psi) + cs.sin(phi) * cs.sin(psi)),
+        y_dot,
+        (params_acc[0] * T + params_acc[1])
+        * (cs.cos(phi) * cs.sin(theta) * cs.sin(psi) - cs.sin(phi) * cs.cos(psi)),
+        z_dot,
+        (params_acc[0] * T + params_acc[1]) * cs.cos(phi) * cs.cos(theta) - g,
+        phi_dot,
+        theta_dot,
+        psi_dot,
+        params_roll_rate[0] * phi + params_roll_rate[1] * phi_dot + params_roll_rate[2] * R,
+        params_pitch_rate[0] * theta + params_pitch_rate[1] * theta_dot + params_pitch_rate[2] * P,
+        params_yaw_rate[0] * psi + params_yaw_rate[1] * psi_dot + params_yaw_rate[2] * Y,
+    )
     # Define observation.
     Y = cs.vertcat(x, x_dot, y, y_dot, z, z_dot, phi, theta, psi, phi_dot, theta_dot, psi_dot)
-
 
     # Define cost (quadratic form).
     Q, R = MX.sym("Q", nx, nx), MX.sym("R", nu, nu)
