@@ -61,11 +61,11 @@ def surrogate_identified_collective_wrench(
     acc = thrust * k1 + drift * k2
     rpy = rot.as_euler("xyz")
     k1, k2, k3 = SYS_ID_PARAMS["roll_acc"]
-    roll_rate_deriv = k1 * rpy[0] + k2 * rpy_rates_local[0] + k3 * attitude[1]
+    roll_rate_deriv = k1 * rpy[0] + k2 * rpy_rates_local[0] + k3 * attitude[0]
     k1, k2, k3 = SYS_ID_PARAMS["pitch_acc"]
-    pitch_rate_deriv = k1 * rpy[1] + k2 * rpy_rates_local[1] + k3 * attitude[2]
+    pitch_rate_deriv = k1 * rpy[1] + k2 * rpy_rates_local[1] + k3 * attitude[1]
     k1, k2, k3 = SYS_ID_PARAMS["yaw_acc"]
-    yaw_rate_deriv = k1 * rpy[2] + k2 * rpy_rates_local[2] + k3 * attitude[3]
+    yaw_rate_deriv = k1 * rpy[2] + k2 * rpy_rates_local[2] + k3 * attitude[2]
     rpy_rates_deriv = jnp.array([roll_rate_deriv, pitch_rate_deriv, yaw_rate_deriv])
     # The identified dynamics model does not use forces or torques, because we assume no knowledge
     # of the drone's mass and inertia. However, to remain compatible with the physics pipeline, we
