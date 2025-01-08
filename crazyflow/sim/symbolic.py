@@ -20,7 +20,7 @@ from casadi import MX
 from numpy.typing import NDArray
 
 from crazyflow.constants import ARM_LEN, GRAVITY, SIGN_MIX_MATRIX
-from crazyflow.control.control import KF, KM
+from crazyflow.control.control import KF, KM, Control
 from crazyflow.sim import Sim
 
 
@@ -143,8 +143,86 @@ class SymbolicModel:
         self.loss = cs.Function("loss", l_inputs, l_outputs, l_inputs_str, l_outputs_str)
 
 
-def symbolic(mass: float, J: NDArray, dt: float) -> SymbolicModel:
+def symbolic_attitude(dt: float) -> SymbolicModel:
     """Create symbolic (CasADi) models for dynamics, observation, and cost of a quadcopter.
+
+    This model is based on the identified model derived from real-world data of the Crazyflie 2.1.
+
+    Returns:
+        The CasADi symbolic model of the environment.
+    """
+    # # Define states.
+    z = MX.sym("z")
+    z_dot = MX.sym("z_dot")
+    g = GRAVITY
+    # # Set up the dynamics model for a 3D quadrotor.
+    nx, nu = 12, 4
+    # Define states.
+    x = cs.MX.sym("x")
+    x_dot = cs.MX.sym("x_dot")
+    y = cs.MX.sym("y")
+    y_dot = cs.MX.sym("y_dot")
+    phi = cs.MX.sym("phi")  # roll angle [rad]
+    phi_dot = cs.MX.sym("phi_dot")
+    theta = cs.MX.sym("theta")  # pitch angle [rad]
+    theta_dot = cs.MX.sym("theta_dot")
+    psi = cs.MX.sym("psi")  # yaw angle [rad]
+    psi_dot = cs.MX.sym("psi_dot")
+    X = cs.vertcat(x, x_dot, y, y_dot, z, z_dot, phi, theta, psi, phi_dot, theta_dot, psi_dot)
+    # Define input collective thrust and theta.
+    T = cs.MX.sym("T_c")  # normalized thrust [N]
+    R = cs.MX.sym("R_c")  # desired roll angle [rad]
+    P = cs.MX.sym("P_c")  # desired pitch angle [rad]
+    Y = cs.MX.sym("Y_c")  # desired yaw angle [rad]
+    U = cs.vertcat(T, R, P, Y)
+    # The thrust in PWM is converted from the normalized thrust.
+    # With the formulat F_desired = b_F * T + a_F
+    params_acc = [20.907574256269616, 3.653687545690674]
+    params_roll_rate = [-130.3, -16.33, 119.3]
+    params_pitch_rate = [-99.94, -13.3, 84.73]
+    # The identified model sets params_yaw_rate to [0, 0, 0], because the training data did not
+    # contain any data with yaw != 0. Therefore, it cannot infer the impact of setting the yaw
+    # attitude to a non-zero value on the dynamics. However, using a zero vector will make the
+    # system matrix ill-conditioned for control methods like LQR. Therefore, we introduce a small
+    # spring-like term to the yaw dynamics that leads to a non-singular system matrix.
+    # TODO: identify proper parameters for yaw_rate from real data.
+    params_yaw_rate = [-0.01, 0, 0]
+
+    # Define dynamics equations.
+    X_dot = cs.vertcat(
+        x_dot,
+        (params_acc[0] * T + params_acc[1])
+        * (cs.cos(phi) * cs.sin(theta) * cs.cos(psi) + cs.sin(phi) * cs.sin(psi)),
+        y_dot,
+        (params_acc[0] * T + params_acc[1])
+        * (cs.cos(phi) * cs.sin(theta) * cs.sin(psi) - cs.sin(phi) * cs.cos(psi)),
+        z_dot,
+        (params_acc[0] * T + params_acc[1]) * cs.cos(phi) * cs.cos(theta) - g,
+        phi_dot,
+        theta_dot,
+        psi_dot,
+        params_roll_rate[0] * phi + params_roll_rate[1] * phi_dot + params_roll_rate[2] * R,
+        params_pitch_rate[0] * theta + params_pitch_rate[1] * theta_dot + params_pitch_rate[2] * P,
+        params_yaw_rate[0] * psi + params_yaw_rate[1] * psi_dot + params_yaw_rate[2] * Y,
+    )
+    # Define observation.
+    Y = cs.vertcat(x, x_dot, y, y_dot, z, z_dot, phi, theta, psi, phi_dot, theta_dot, psi_dot)
+
+    # Define cost (quadratic form).
+    Q, R = MX.sym("Q", nx, nx), MX.sym("R", nu, nu)
+    Xr, Ur = MX.sym("Xr", nx, 1), MX.sym("Ur", nu, 1)
+    cost_func = 0.5 * (X - Xr).T @ Q @ (X - Xr) + 0.5 * (U - Ur).T @ R @ (U - Ur)
+    # Define dynamics and cost dictionaries.
+    dynamics = {"dyn_eqn": X_dot, "obs_eqn": Y, "vars": {"X": X, "U": U}}
+    cost = {"cost_func": cost_func, "vars": {"X": X, "U": U, "Xr": Xr, "Ur": Ur, "Q": Q, "R": R}}
+    return SymbolicModel(dynamics=dynamics, cost=cost, dt=dt)
+
+
+def symbolic_thrust(mass: float, J: NDArray, dt: float) -> SymbolicModel:
+    """Create symbolic (CasADi) models for dynamics, observation, and cost of a quadcopter.
+
+    This model is based on the analytical model of Luis, Carlos, and Jérôme Le Ny. "Design of a
+    trajectory tracking controller for a nanoquadcopter." arXiv preprint arXiv:1608.05786 (2016).
 
     Returns:
         The CasADi symbolic model of the environment.
@@ -172,9 +250,6 @@ def symbolic(mass: float, J: NDArray, dt: float) -> SymbolicModel:
     # Define inputs.
     f1, f2, f3, f4 = MX.sym("f1"), MX.sym("f2"), MX.sym("f3"), MX.sym("f4")
     U = cs.vertcat(f1, f2, f3, f4)
-
-    # From Ch. 2 of Luis, Carlos, and Jérôme Le Ny. "Design of a trajectory tracking
-    # controller for a nanoquadcopter." arXiv preprint arXiv:1608.05786 (2016).
 
     # Defining the dynamics function.
     # We are using the velocity of the base wrt to the world frame expressed in the world frame.
@@ -226,8 +301,14 @@ def symbolic_from_sim(sim: Sim) -> SymbolicModel:
         The model is expected to deviate from the true dynamics when the sim parameters are
         randomized.
     """
-    mass, J = sim.default_data.params.mass[0, 0], sim.default_data.params.J[0, 0]
-    return symbolic(mass, J, 1 / sim.freq)
+    match sim.control:
+        case Control.attitude:
+            return symbolic_attitude(1 / sim.freq)
+        case Control.thrust:
+            mass, J = sim.default_data.params.mass[0, 0], sim.default_data.params.J[0, 0]
+            return symbolic_thrust(mass, J, 1 / sim.freq)
+        case _:
+            raise ValueError(f"Unsupported control type for symbolic model: {sim.control}")
 
 
 def csRotXYZ(phi: float, theta: float, psi: float) -> MX:
