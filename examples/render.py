@@ -7,6 +7,7 @@ from gymnasium.envs.mujoco.mujoco_rendering import MujocoRenderer
 from numpy.typing import NDArray
 from scipy.spatial.transform import Rotation as R
 
+from crazyflow.constants import GRAVITY, MASS
 from crazyflow.sim import Physics, Sim
 
 
@@ -15,7 +16,8 @@ def main():
     n_worlds, n_drones = 1, 25
     sim = Sim(n_worlds=n_worlds, n_drones=n_drones, physics=Physics.sys_id, device="cpu")
     fps = 60
-    cmd = np.array([[[0.3, 0, 0, 0] for _ in range(sim.n_drones)]])
+    cmd = np.zeros((sim.n_worlds, sim.n_drones, 4))
+    cmd[..., 0] = MASS * GRAVITY * 1.2
 
     pos = deque(maxlen=16)
     rot = deque(maxlen=15)
