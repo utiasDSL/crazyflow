@@ -66,8 +66,8 @@ class Sim:
 
         # Initialize MuJoCo world and data
         self._xml_path = xml_path or self.default_path
-        self.spec = self.init_mjx_spec()
-        self.mj_model, self.mj_data, self.mjx_model, mjx_data = self.init_mjx_model(self.spec)
+        self.spec = self.build_mjx_spec()
+        self.mj_model, self.mj_data, self.mjx_model, mjx_data = self.build_mjx_model(self.spec)
         self.viewer: MujocoRenderer | None = None
 
         self.data, self.default_data = self.init_data(
@@ -75,12 +75,14 @@ class Sim:
         )
 
         # Default functions for the simulation pipeline
-        self.disturbance_fn: Callable[[SimData], SimData] | None = None
+        self.disturbance_fn: Callable[[SimData], SimData] = identity
+        self.reset_hook: Callable[[SimData, Array[bool] | None], SimData] = identity
 
         # Build the simulation pipeline and overwrite the default _step implementation with it
-        self.init_step_fn()
+        self.build_reset_fn()
+        self.build_step_fn()
 
-    def init_mjx_spec(self) -> mujoco.MjSpec:
+    def build_mjx_spec(self) -> mujoco.MjSpec:
         """Build the MuJoCo model specification for the simulation."""
         assert self._xml_path.exists(), f"Model file {self._xml_path} does not exist"
         spec = mujoco.MjSpec.from_file(str(self._xml_path))
@@ -97,7 +99,7 @@ class Sim:
             drone.add_freejoint()
         return spec
 
-    def init_mjx_model(self, spec: mujoco.MjSpec) -> tuple[Any, Any, Model, Data]:
+    def build_mjx_model(self, spec: mujoco.MjSpec) -> tuple[Any, Any, Model, Data]:
         """Build the MuJoCo model and data structures for the simulation."""
         mj_model = spec.compile()
         mj_data = mujoco.MjData(mj_model)
@@ -110,7 +112,7 @@ class Sim:
         mjx_data = mjx_data.replace(time=jnp.float32(mjx_data.time))
         return mj_model, mj_data, mjx_model, mjx_data
 
-    def init_step_fn(self):
+    def build_step_fn(self):
         """Setup the chain of functions that are called in Sim.step().
 
         We know all the functions that are called in succession since the simulation is configured
@@ -125,7 +127,7 @@ class Sim:
         # simulation pipeline.
         ctrl_fn = generate_control_fn(self.control)
         wrench_fn = generate_wrench_fn(self.physics)
-        disturbance_fn = identity if self.disturbance_fn is None else self.disturbance_fn
+        disturbance_fn = self.disturbance_fn
         physics_fn = generate_physics_fn(self.physics, self.integrator)
         sync_fn = generate_sync_fn(self.physics)
 
@@ -190,7 +192,20 @@ class Sim:
 
         return data, data.replace()  # TODO: Only save the data of one world
 
-    def build(self, mjx: bool = True, data: bool = True, step: bool = True):
+    def build_reset_fn(self):
+        """Build the reset function for the current simulation configuration."""
+        reset_hook = self.reset_hook
+
+        @jax.jit
+        def reset(data: SimData, default_data: SimData, mask: Array | None = None) -> SimData:
+            data = pytree_replace(data, default_data, mask)
+            data = reset_hook(data, mask)
+            data = self.sync_sim2mjx(data, self.mjx_model)
+            return data
+
+        self._reset = reset
+
+    def build(self, *, mjx: bool = True, data: bool = True, reset: bool = True, step: bool = True):
         """Build the simulation pipeline.
 
         This method is used to (re)build the simulation pipeline after changing the MuJoCo
@@ -204,6 +219,7 @@ class Sim:
         Args:
             mjx: Flag to (re)build the MuJoCo model and data structures.
             data: Flag to (re)build the simulation data.
+            reset: Flag to (re)build the reset function.
             step: Flag to (re)build the simulation step function.
         """
         # TODO: Write tests for all options
@@ -211,7 +227,7 @@ class Sim:
             if self.viewer is not None:
                 self.viewer.close()
                 self.viewer = None
-            self.mj_model, self.mj_data, self.mjx_model, mjx_data = self.init_mjx_model(self.spec)
+            self.mj_model, self.mj_data, self.mjx_model, mjx_data = self.build_mjx_model(self.spec)
         if data:
             self.data, self.default_data = self.init_data(
                 self.data.controls.state_freq,
@@ -220,8 +236,10 @@ class Sim:
                 self.data.core.rng_key,
                 self.data.mjx_data if not mjx else mjx_data,
             )
+        if reset:
+            self.build_reset_fn()
         if step:
-            self.init_step_fn()
+            self.build_step_fn()
 
     def reset(self, mask: Array | None = None):
         """Reset the simulation to the initial state.
@@ -232,7 +250,6 @@ class Sim:
         """
         assert mask is None or mask.shape == (self.n_worlds,), f"Mask shape mismatch {mask.shape}"
         self.data = self._reset(self.data, self.default_data, mask)
-        self.data = self.sync_sim2mjx(self.data, self.mjx_model)
 
     def step(self, n_steps: int = 1):
         """Simulate all drones in all worlds for n time steps."""
@@ -370,12 +387,12 @@ class Sim:
         return data.replace(states=states)
 
     @staticmethod
-    @jax.jit
     def _reset(data: SimData, default_data: SimData, mask: Array | None = None) -> SimData:
-        return pytree_replace(data, default_data, mask)
+        raise NotInitializedError("_reset call before building the simulation pipeline.")
 
-    def _step(self, data: SimData, n_steps: int) -> SimData:
-        raise NotInitializedError("_step call before compiling the simulation pipeline.")
+    @staticmethod
+    def _step(data: SimData, n_steps: int) -> SimData:
+        raise NotInitializedError("_step call before building the simulation pipeline.")
 
 
 def generate_control_fn(control: Control) -> Callable[[SimData], SimData]:
@@ -608,7 +625,7 @@ def mjx_physics_fn(data: SimData, mjx_model: Model | None = None) -> SimData:
     return data.replace(mjx_data=mjx_data)
 
 
-def identity(data: SimData) -> SimData:
+def identity(data: SimData, *args: Any, **kwargs: Any) -> SimData:
     """Identity function for the simulation pipeline.
 
     Used as default function for optional pipeline steps.
