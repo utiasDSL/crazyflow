@@ -2,6 +2,7 @@ from enum import Enum
 from functools import partial
 
 import jax.numpy as jnp
+import numpy as np
 from jax import Array
 from jax.numpy import vectorize
 from jax.scipy.spatial.transform import Rotation as R
@@ -10,10 +11,10 @@ from crazyflow.constants import ARM_LEN, GRAVITY, SIGN_MIX_MATRIX
 from crazyflow.control.control import KF, KM
 
 SYS_ID_PARAMS = {
-    "acc": jnp.array([20.907574256269616, 3.653687545690674]),
-    "roll_acc": jnp.array([-130.3, -16.33, 119.3]),
-    "pitch_acc": jnp.array([-99.94, -13.3, 84.73]),
-    "yaw_acc": jnp.array([0.0, 0.0, 0.0]),
+    "acc": np.array([20.907574256269616, 3.653687545690674]),
+    "roll_acc": np.array([-130.3, -16.33, 119.3]),
+    "pitch_acc": np.array([-99.94, -13.3, 84.73]),
+    "yaw_acc": np.array([0.0, 0.0, 0.0]),
 }
 
 
@@ -33,16 +34,11 @@ def surrogate_identified_collective_wrench(
     """Surrogate collective wrench for the identified dynamics model.
 
     Contrary to the other physics implementations, this function is not based on a physical model.
-    Instead, we fit a linear model to the data collected on the real drone, and predict the next
-    state based on the control inputs and the current state. Since we do not have a physical model,
-    we cannot compute the actual forces and torques required by the simulation pipeline. Instead, we
-    return surrogate forces and torques that result in the desired acceleration and rpy rates
-    derivative after converting back to the state derivative.
-
-    Warning:
-        The identified dynamics model does not include second-order derivatives of the orientation.
-        Since the integration interface requires derivatives for all states, we leverage the
-        rpy_rates_deriv that will integrate to the model's rpy_rates instead.
+    Instead, we use a predefined model structure, fit its parameters to data collected on a real
+    drone, and predict the next state based on the control inputs and the current state. Since we do
+    not have a physical model, we cannot compute the actual forces and torques required by the
+    simulation pipeline. Instead, we return surrogate forces and torques that result in the desired
+    acceleration and rpy rates derivative after converting back to the state derivative.
 
     Args:
         controls: The 4D control input consisting of the desired collective thrust and attitude.
@@ -56,16 +52,15 @@ def surrogate_identified_collective_wrench(
     rot = R.from_quat(quat)
     thrust = rot.apply(jnp.array([0, 0, collective_thrust]))
     drift = rot.apply(jnp.array([0, 0, 1]))
-    rpy_rates_local = rot.apply(rpy_rates, inverse=True)
     k1, k2 = SYS_ID_PARAMS["acc"]
     acc = thrust * k1 + drift * k2
     rpy = rot.as_euler("xyz")
     k1, k2, k3 = SYS_ID_PARAMS["roll_acc"]
-    roll_rate_deriv = k1 * rpy[0] + k2 * rpy_rates_local[0] + k3 * attitude[0]
+    roll_rate_deriv = k1 * rpy[0] + k2 * rpy_rates[0] + k3 * attitude[0]
     k1, k2, k3 = SYS_ID_PARAMS["pitch_acc"]
-    pitch_rate_deriv = k1 * rpy[1] + k2 * rpy_rates_local[1] + k3 * attitude[1]
+    pitch_rate_deriv = k1 * rpy[1] + k2 * rpy_rates[1] + k3 * attitude[1]
     k1, k2, k3 = SYS_ID_PARAMS["yaw_acc"]
-    yaw_rate_deriv = k1 * rpy[2] + k2 * rpy_rates_local[2] + k3 * attitude[2]
+    yaw_rate_deriv = k1 * rpy[2] + k2 * rpy_rates[2] + k3 * attitude[2]
     rpy_rates_deriv = jnp.array([roll_rate_deriv, pitch_rate_deriv, yaw_rate_deriv])
     # The identified dynamics model does not use forces or torques, because we assume no knowledge
     # of the drone's mass and inertia. However, to remain compatible with the physics pipeline, we
@@ -73,7 +68,7 @@ def surrogate_identified_collective_wrench(
     # derivative. When converting back to the state derivative, the mass and inertia will cancel
     # out, resulting in the correct acceleration and rpy rates derivative regardless of the model's
     # mass and inertia.
-    surrogate_torques = rot.apply(J @ rpy_rates_deriv)
+    surrogate_torques = rot.apply(J @ rpy_rates_deriv)  # Rotate torques into global frame
     surrogate_forces = acc * mass
     return surrogate_forces, surrogate_torques
 
@@ -87,8 +82,7 @@ def collective_force2acceleration(force: Array, mass: Array) -> Array:
 @partial(vectorize, signature="(3),(4),(3,3)->(3)")
 def collective_torque2rpy_rates_deriv(torque: Array, quat: Array, J_INV: Array) -> Array:
     """Convert torques to rpy_rates_deriv."""
-    rot = R.from_quat(quat)
-    return rot.apply(J_INV @ rot.apply(torque, inverse=True))
+    return J_INV @ R.from_quat(quat).apply(torque, inverse=True)
 
 
 @partial(vectorize, signature="(4),(4),(3),(3,3)->(3),(3)")
@@ -120,12 +114,11 @@ def rpms2body_torque(
     rpms: Array, quat: Array, rpy_rates: Array, motor_forces: Array, J: Array
 ) -> Array:
     """Convert RPMs to torques in the body frame."""
-    body_rpy_rates = R.from_quat(quat).apply(rpy_rates, inverse=True)  # Now in body frame
     motor_torques = rpms2motor_torques(rpms)
-    z_torque = SIGN_MIX_MATRIX[..., 3] @ motor_torques
+    z_torque = SIGN_MIX_MATRIX[..., 2] @ motor_torques
     x_torque = SIGN_MIX_MATRIX[..., 0] @ motor_forces * (ARM_LEN / jnp.sqrt(2))
     y_torque = SIGN_MIX_MATRIX[..., 1] @ motor_forces * (ARM_LEN / jnp.sqrt(2))
-    return jnp.array([x_torque, y_torque, z_torque]) - jnp.cross(body_rpy_rates, J @ body_rpy_rates)
+    return jnp.array([x_torque, y_torque, z_torque]) - jnp.cross(rpy_rates, J @ rpy_rates)
 
 
 @partial(vectorize, signature="(3),(4)->(3)")

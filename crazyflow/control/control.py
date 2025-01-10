@@ -14,6 +14,7 @@ from enum import Enum
 from functools import partial
 
 import jax.numpy as jnp
+import numpy as np
 from jax import Array
 from jax.scipy.spatial.transform import Rotation as R
 
@@ -50,13 +51,13 @@ class Control(str, Enum):
 
 KF: float = 3.16e-10
 KM: float = 7.94e-12
-P_F: Array = jnp.array([0.4, 0.4, 1.25])
-I_F: Array = jnp.array([0.05, 0.05, 0.05])
-D_F: Array = jnp.array([0.2, 0.2, 0.5])
-I_F_RANGE: Array = jnp.array([2.0, 2.0, 0.4])
-P_T: Array = jnp.array([70000.0, 70000.0, 60000.0])
-I_T: Array = jnp.array([0.0, 0.0, 500.0])
-D_T: Array = jnp.array([20000.0, 20000.0, 12000.0])
+P_F: Array = np.array([0.4, 0.4, 1.25])
+I_F: Array = np.array([0.05, 0.05, 0.05])
+D_F: Array = np.array([0.2, 0.2, 0.5])
+I_F_RANGE: Array = np.array([2.0, 2.0, 0.4])
+P_T: Array = np.array([70000.0, 70000.0, 60000.0])
+I_T: Array = np.array([0.0, 0.0, 500.0])
+D_T: Array = np.array([20000.0, 20000.0, 12000.0])
 PWM2RPM_SCALE: float = 0.2685
 PWM2RPM_CONST: float = 4070.3
 MIN_PWM: float = 20000

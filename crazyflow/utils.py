@@ -11,8 +11,9 @@ from gymnasium.envs.mujoco.mujoco_rendering import BaseRender
 from jax import Array
 
 
-def grid_2d(n: int, spacing: float = 1.0, center: Array = jnp.zeros(2)) -> Array:
+def grid_2d(n: int, spacing: float = 1.0, center: Array | None = None) -> Array:
     """Generate a 2D grid of points."""
+    center = jnp.zeros(2) if center is None else center
     N = int(jnp.ceil(jnp.sqrt(n)))
     points = jnp.linspace(-0.5 * spacing * (N - 1), 0.5 * spacing * (N - 1), N)
     x, y = jnp.meshgrid(points, points)

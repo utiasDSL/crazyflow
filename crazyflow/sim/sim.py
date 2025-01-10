@@ -257,7 +257,14 @@ class Sim:
         self.data = self._step(self.data, n_steps=n_steps)
 
     def attitude_control(self, controls: Array):
-        """Set the desired attitude for all drones in all worlds."""
+        """Set the desired attitude for all drones in all worlds.
+
+        We need to stage the attitude controls because the sys_id physics mode operates directly on
+        the attitude controls. If we were to directly update the controls, this would effectively
+        bypass the control frequency and run the attitude controller at the physics update rate. By
+        staging the controls, we ensure that the physics module sees the old controls until the
+        controller updates at its correct frequency.
+        """
         assert controls.shape == (self.n_worlds, self.n_drones, 4), "controls shape mismatch"
         assert self.control == Control.attitude, "Attitude control is not enabled by the sim config"
         controls = to_device(controls, self.device)
@@ -355,10 +362,10 @@ class Sim:
     def sync_sim2mjx(data: SimData, mjx_model: Model | None = None) -> SimData:
         states = data.states
         pos, quat, vel, rpy_rates = states.pos, states.quat, states.vel, states.rpy_rates
+        ang_vel = rpy_rates2ang_vel(rpy_rates, quat)
         quat = quat[..., [3, 0, 1, 2]]  # MuJoCo quat is [w, x, y, z], ours is [x, y, z, w]
         qpos = rearrange(jnp.concat([pos, quat], axis=-1), "w d qpos -> w (d qpos)")
-        local_ang_vel = R.from_quat(quat).apply(rpy_rates2ang_vel(rpy_rates, quat), inverse=True)
-        qvel = rearrange(jnp.concat([vel, local_ang_vel], axis=-1), "w d qvel -> w (d qvel)")
+        qvel = rearrange(jnp.concat([vel, ang_vel], axis=-1), "w d qvel -> w (d qvel)")
         mjx_data = data.mjx_data
         mjx_model = data.mjx_model if mjx_model is None else mjx_model
         assert mjx_model is not None, "MuJoCo model is not initialized"
@@ -380,9 +387,9 @@ class Sim:
         qpos = mjx_data.qpos.reshape(data.core.n_worlds, data.core.n_drones, 7)
         qvel = mjx_data.qvel.reshape(data.core.n_worlds, data.core.n_drones, 6)
         pos, quat = jnp.split(qpos, [3], axis=-1)
+        vel, ang_vel = jnp.split(qvel, [3], axis=-1)
         quat = quat[..., [1, 2, 3, 0]]  # MuJoCo quat is [w, x, y, z], ours is [x, y, z, w]
-        vel, local_ang_vel = jnp.split(qvel, [3], axis=-1)
-        rpy_rates = R.from_quat(quat).apply(ang_vel2rpy_rates(local_ang_vel, quat))
+        rpy_rates = ang_vel2rpy_rates(ang_vel, quat)
         states = data.states.replace(pos=pos, quat=quat, vel=vel, rpy_rates=rpy_rates)
         return data.replace(states=states)
 
@@ -467,34 +474,6 @@ def generate_sync_fn(physics: Physics) -> Callable[[SimData], SimData]:
             return Sim.sync_mjx2sim
         case _:
             raise NotImplementedError(f"Physics mode {physics} not implemented")
-
-
-@partial(jax.jit, static_argnames="device")
-def state_control(controls: Array, data: SimData, device: str) -> SimData:
-    """Set the desired state for all drones in all worlds."""
-    controls = jnp.array(controls, device=device)
-    return data.replace(controls=data.controls.replace(state=controls))
-
-
-@partial(jax.jit, static_argnames="device")
-def attitude_control(controls: Array, data: SimData, device: str) -> SimData:
-    """Stage the desired attitude for all drones in all worlds.
-
-    We need to stage the attitude controls because the sys_id physics mode operates directly on
-    the attitude controls. If we were to directly update the controls, this would effectively
-    bypass the control frequency and run the attitude controller at the physics update rate. By
-    staging the controls, we ensure that the physics module sees the old controls until the
-    controller updates at its correct frequency.
-    """
-    controls = jnp.array(controls, device=device)
-    return data.replace(controls=data.controls.replace(staged_attitude=controls))
-
-
-@partial(jax.jit, static_argnames="device")
-def thrust_control(controls: Array, data: SimData, device: str) -> SimData:
-    """Set the desired thrust for all drones in all worlds."""
-    controls = jnp.array(controls, device=device)
-    return data.replace(controls=data.controls.replace(thrust=controls))
 
 
 @jax.jit
@@ -612,7 +591,7 @@ def mujoco_wrench(data: SimData) -> SimData:
 batched_mjx_step = jax.vmap(mjx.step, in_axes=(None, 0))
 
 
-def mjx_physics_fn(data: SimData, mjx_model: Model | None = None) -> SimData:
+def mjx_physics_fn(data: SimData) -> SimData:
     """Step the MuJoCo simulation."""
     force_torques = jnp.concatenate([data.states.motor_forces, data.states.motor_torques], axis=-1)
     force_torques = rearrange(force_torques, "w d ft -> w (d ft)")
@@ -621,7 +600,7 @@ def mjx_physics_fn(data: SimData, mjx_model: Model | None = None) -> SimData:
     xfrc = jnp.concatenate([data.states.force, data.states.torque], axis=-1)
     xfrc_applied = data.mjx_data.xfrc_applied.at[:, data.core.drone_ids, :].set(xfrc)
     mjx_data = mjx_data.replace(xfrc_applied=xfrc_applied)
-    mjx_data = batched_mjx_step(data.mjx_model if mjx_model is None else mjx_model, mjx_data)
+    mjx_data = batched_mjx_step(data.mjx_model, mjx_data)
     return data.replace(mjx_data=mjx_data)
 
 

@@ -100,13 +100,9 @@ def _integrate(
         The next position, quaternion, velocity, and roll, pitch, and yaw rates of the drone.
     """
     rot = R.from_quat(quat)
-    rpy_rates_local = rot.apply(rpy_rates, inverse=True)
-    drot_local = rot.apply(drot, inverse=True)  # Also rpy rates, but from the derivative data
-    drpy_rates_local = rot.apply(drpy_rates, inverse=True)
     next_pos = pos + dpos * dt
-    next_rot = R.from_euler("xyz", rot.as_euler("xyz") + drot_local * dt)
+    next_rot = R.from_euler("xyz", rot.as_euler("xyz") + drot * dt)
     next_quat = next_rot.as_quat()
     next_vel = vel + dvel * dt
-    next_rpy_rates_local = rpy_rates_local + drpy_rates_local * dt
-    next_rpy_rates = next_rot.apply(next_rpy_rates_local)
+    next_rpy_rates = rpy_rates + drpy_rates * dt
     return next_pos, next_quat, next_vel, next_rpy_rates
