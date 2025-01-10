@@ -189,11 +189,18 @@ class SimCore:
 
     @staticmethod
     def create(
-        freq: int, n_worlds: int, n_drones: int, drone_ids: Array, rng_key: int, device: Device
+        freq: int,
+        n_worlds: int,
+        n_drones: int,
+        drone_ids: Array,
+        rng_key: int | Array,
+        device: Device,
     ) -> SimCore:
         """Create a default set of core simulation parameters."""
         steps = jnp.zeros((n_worlds, 1), dtype=jnp.int32, device=device)
-        rng_key = jax.device_put(jax.random.key(rng_key), device)
+        if isinstance(rng_key, int):  # Only convert to an PRNG key if its not already one
+            rng_key = jax.random.key(rng_key)
+        rng_key = jax.device_put(rng_key, device)
         return SimCore(
             freq=freq,
             steps=steps,
