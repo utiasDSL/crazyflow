@@ -70,9 +70,8 @@ class Sim:
         self.mj_model, self.mj_data, self.mjx_model, mjx_data = self.build_mjx_model(self.spec)
         self.viewer: MujocoRenderer | None = None
 
-        self.data, self.default_data = self.init_data(
-            state_freq, attitude_freq, thrust_freq, rng_key, mjx_data
-        )
+        self.data = self.init_data(state_freq, attitude_freq, thrust_freq, rng_key, mjx_data)
+        self.default_data = self.init_default_data()
 
         # Default functions for the simulation pipeline
         self.disturbance_fn: Callable[[SimData], SimData] = identity
@@ -189,8 +188,15 @@ class Sim:
             states = data.states.replace(pos=data.states.pos.at[..., :2].set(grid))
             data = data.replace(states=states)
         data = self.sync_sim2mjx(data, self.mjx_model)
+        return data
 
-        return data, data.replace()  # TODO: Only save the data of one world
+    def init_default_data(self) -> SimData:
+        """Initialize the default data for the simulation.
+
+        Todo:
+            Only save the data of one world.
+        """
+        return self.data.replace()
 
     def build_reset_fn(self):
         """Build the reset function for the current simulation configuration."""
@@ -205,7 +211,15 @@ class Sim:
 
         self._reset = reset
 
-    def build(self, *, mjx: bool = True, data: bool = True, reset: bool = True, step: bool = True):
+    def build(
+        self,
+        *,
+        mjx: bool = True,
+        data: bool = True,
+        default_data: bool = True,
+        reset: bool = True,
+        step: bool = True,
+    ):
         """Build the simulation pipeline.
 
         This method is used to (re)build the simulation pipeline after changing the MuJoCo
@@ -219,6 +233,8 @@ class Sim:
         Args:
             mjx: Flag to (re)build the MuJoCo model and data structures.
             data: Flag to (re)build the simulation data.
+            default_data: Flag to (re)build the default data. Useful for setting the reset state to
+                the current state.
             reset: Flag to (re)build the reset function.
             step: Flag to (re)build the simulation step function.
         """
@@ -229,13 +245,15 @@ class Sim:
                 self.viewer = None
             self.mj_model, self.mj_data, self.mjx_model, mjx_data = self.build_mjx_model(self.spec)
         if data:
-            self.data, self.default_data = self.init_data(
+            self.data = self.init_data(
                 self.data.controls.state_freq,
                 self.data.controls.attitude_freq,
                 self.data.controls.thrust_freq,
                 self.data.core.rng_key,
                 self.data.mjx_data if not mjx else mjx_data,
             )
+        if default_data:
+            self.default_data = self.init_default_data()
         if reset:
             self.build_reset_fn()
         if step:
