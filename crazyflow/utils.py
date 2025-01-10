@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from functools import partial
+from pathlib import Path
 from typing import TypeVar
 
 import jax
@@ -99,3 +100,17 @@ def patch_viewer():
         self.scn.ngeom += 1
 
     BaseRender._add_marker_to_scene = _add_marker_to_scene
+
+
+def enable_cache(
+    cache_path: Path = Path("/tmp/jax_cache"),
+    min_entry_size_bytes: int = -1,
+    min_compile_time_secs: int = 0,
+    enable_xla_caches: bool = False,
+):
+    """Enable JAX cache."""
+    jax.config.update("jax_compilation_cache_dir", str(cache_path))
+    jax.config.update("jax_persistent_cache_min_entry_size_bytes", min_entry_size_bytes)
+    jax.config.update("jax_persistent_cache_min_compile_time_secs", min_compile_time_secs)
+    if enable_xla_caches:
+        jax.config.update("jax_persistent_cache_enable_xla_caches", "all")

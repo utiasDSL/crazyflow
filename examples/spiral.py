@@ -13,7 +13,7 @@ def control(start_xy: np.ndarray, t: float) -> np.ndarray:
 
 
 def main():
-    sim = Sim(n_drones=4, control=Control.state, integrator="rk4", physics="mujoco")
+    sim = Sim(n_drones=4, control=Control.state, integrator="rk4", physics="analytical")
     sim.reset()
     duration = 5.0
     fps = 60

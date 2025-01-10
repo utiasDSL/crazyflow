@@ -1,3 +1,4 @@
+import jax
 import numpy as np
 import pytest
 from scipy.spatial.transform import Rotation as R
@@ -31,6 +32,7 @@ def test_state_interface(physics: Physics):
 def test_attitude_interface(physics: Physics):
     sim = Sim(physics=physics, control=Control.attitude)
     target_pos = np.array([0.0, 0.0, 1.0])
+    jit_state2attitude = jax.jit(state2attitude)
 
     i_error = np.zeros((1, 1, 3))
 
@@ -38,7 +40,7 @@ def test_attitude_interface(physics: Physics):
         pos, vel, quat = sim.data.states.pos, sim.data.states.vel, sim.data.states.quat
         des_pos = np.array([[[0, 0, 1.0]]])
         dt = 1 / sim.data.controls.attitude_freq
-        cmd, i_error = state2attitude(
+        cmd, i_error = jit_state2attitude(
             pos, vel, quat, des_pos, np.zeros((1, 1, 3)), np.zeros((1, 1, 1)), i_error, dt
         )
         sim.attitude_control(cmd)
