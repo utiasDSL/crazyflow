@@ -20,6 +20,12 @@
             ],
             "settings": {
                 "python.defaultInterpreterPath": "/home/vscode/venv/bin/python",
+                "jupyter.kernels.excludePythonEnvironments": [
+                    "/usr/bin/python",
+                    "/usr/bin/python3.10",
+                    "/usr/python3.10",
+                    "/usr/python3.10"
+                ], // hide unrequired python interpreters, so that the right one gets selected for jupyter https://github.com/microsoft/vscode/issues/130946#issuecomment-1899389049
                 "python.testing.pytestEnabled": true, // test framework
                 "python.testing.pytestArgs": [
                     "-m",
