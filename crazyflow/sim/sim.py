@@ -580,7 +580,7 @@ identified_derivative = analytical_derivative  # We can use the same derivative 
 def mujoco_wrench(data: SimData) -> SimData:
     """Compute the wrench from the MuJoCo dynamics model."""
     forces = rpms2motor_forces(data.controls.rpms)
-    torques = SIGN_MIX_MATRIX[..., 3] * rpms2motor_torques(data.controls.rpms)
+    torques = SIGN_MIX_MATRIX[..., 2] * rpms2motor_torques(data.controls.rpms)
     # Zero out external forces and torques to avoid summation over multiple steps
     states = data.states
     force, torque = jnp.zeros_like(states.force), jnp.zeros_like(states.torque)

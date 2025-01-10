@@ -14,13 +14,21 @@ if TYPE_CHECKING:
 @dataclass
 class SimState:
     pos: Array  # (N, M, 3)
+    """Position of the drone's center of mass."""
     quat: Array  # (N, M, 4)
+    """Quaternion of the drone's orientation."""
     vel: Array  # (N, M, 3)
+    """Velocity of the drone's center of mass in the world frame."""
     rpy_rates: Array  # (N, M, 3)
+    """rpy rates for 'xyz' euler angles (see scipy.spatial.transform.Rotation) in the body frame."""
     force: Array  # (N, M, 3)  # CoM force
+    """Force applied to the drone's center of mass in the world frame."""
     torque: Array  # (N, M, 3)  # CoM torque
+    """Torque applied to the drone's center of mass in the world frame."""
     motor_forces: Array  # (N, M, 4)  # Motor forces along body frame z axis
+    """Motor forces along body frame z axis."""
     motor_torques: Array  # (N, M, 4)  # Motor torques around the body frame z axis
+    """Motor torques around the body frame z axis."""
 
     @staticmethod
     def create(n_worlds: int, n_drones: int, device: Device) -> SimState:
@@ -49,9 +57,13 @@ class SimState:
 @dataclass
 class SimStateDeriv:
     dpos: Array  # (N, M, 3)
+    """Derivative of the position of the drone's center of mass."""
     drot: Array  # (N, M, 3)
+    """rpy rates for the drone's orientation in the body frame following the 'xyz' convention."""
     dvel: Array  # (N, M, 3)
+    """Derivative of the velocity of the drone's center of mass."""
     drpy_rates: Array  # (N, M, 3)
+    """Derivative of the rpy rates for 'xyz' euler angles."""
 
     @staticmethod
     def create(n_worlds: int, n_drones: int, device: Device) -> SimStateDeriv:
@@ -66,19 +78,49 @@ class SimStateDeriv:
 @dataclass
 class SimControls:
     state: Array  # (N, M, 13)
+    """Full state control command for the drone.
+
+    A command consists of [x, y, z, vx, vy, vz, ax, ay, az, yaw, roll_rate, pitch_rate, yaw_rate].
+    We currently do not use the acceleration and angle rate components. This is subject to change.
+    """
     state_steps: Array  # (N, 1)
+    """Last simulation steps that the state control command was applied."""
     state_freq: int = field(pytree_node=False)
+    """Frequency of the state control command."""
     attitude: Array  # (N, M, 4)
+    """Attitude control command for the drone.
+
+    A command consists of [collective thrust, roll, pitch, yaw].
+    """
     staged_attitude: Array  # (N, M, 4)
+    """Staged attitude control command for the drone that has not been applied yet.
+
+    See `Sim.attitude_control` for more details.
+    """
     attitude_steps: Array  # (N, 1)
+    """Last simulation steps that the attitude control command was applied."""
     attitude_freq: int = field(pytree_node=False)
+    """Frequency of the attitude control command."""
     thrust: Array  # (N, M, 4)
+    """Thrust control command for the drone.
+
+    A command consists of [thrust1, thrust2, thrust3, thrust4] for each motor.
+    """
     thrust_steps: Array  # (N, 1)
+    """Last simulation steps that the thrust control command was applied."""
     thrust_freq: int = field(pytree_node=False)
+    """Frequency of the thrust control command."""
     rpms: Array  # (N, M, 4)
+    """RPMs for each motor."""
     rpy_err_i: Array  # (N, M, 3)
+    """Integral of the rpy error."""
     pos_err_i: Array  # (N, M, 3)
+    """Integral of the position error."""
     last_rpy: Array  # (N, M, 3)
+    """Last rpy for 'xyz' euler angles.
+
+    Required to compute the integral term in the attitude controller.
+    """
 
     @staticmethod
     def create(
@@ -112,8 +154,11 @@ class SimControls:
 @dataclass
 class SimParams:
     mass: Array  # (N, M, 1)
+    """Mass of the drone."""
     J: Array  # (N, M, 3, 3)
+    """Inertia matrix of the drone."""
     J_INV: Array  # (N, M, 3, 3)
+    """Inverse of the inertia matrix of the drone."""
 
     @staticmethod
     def create(
@@ -130,11 +175,17 @@ class SimParams:
 @dataclass
 class SimCore:
     freq: int = field(pytree_node=False)
+    """Frequency of the simulation."""
     steps: Array  # (N, 1)
+    """Simulation steps taken since the last reset."""
     n_worlds: int = field(pytree_node=False)
+    """Number of worlds in the simulation."""
     n_drones: int = field(pytree_node=False)
+    """Number of drones in the simulation."""
     drone_ids: Array  # (1, M)
+    """MuJoCo IDs of the drones in the simulation."""
     rng_key: Array  # (N, 1)
+    """Random number generator key for the simulation."""
 
     @staticmethod
     def create(
@@ -156,9 +207,19 @@ class SimCore:
 @dataclass
 class SimData:
     states: SimState
+    """State of the simulation."""
     states_deriv: SimStateDeriv
+    """Derivative of the state of the simulation."""
     controls: SimControls
+    """Drone control values."""
     params: SimParams
+    """Drone parameters."""
     core: SimCore
+    """Core parameters of the simulation."""
     mjx_data: Data
+    """MuJoCo data structure."""
     mjx_model: Model | None
+    """MuJoCo model structure.
+
+    Can be set to None for performance optimizations. See `Sim.build_step` for more details.
+    """

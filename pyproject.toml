@@ -33,6 +33,7 @@ dependencies = [
 [project.optional-dependencies]
 test = ["pytest>=8.0.0", "pytest-cov", "pytest-timeout"]
 gpu = ["jax[cuda12]"]
+benchmark = ["fire"]
 
 [tool.setuptools.packages]
 find = {}
