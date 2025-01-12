@@ -13,6 +13,7 @@ and multiple drones explicitly in the controller.
 from enum import Enum
 from functools import partial
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 from jax import Array
@@ -66,6 +67,10 @@ MIN_RPM: float = PWM2RPM_SCALE * MIN_PWM + PWM2RPM_CONST
 MAX_RPM: float = PWM2RPM_SCALE * MAX_PWM + PWM2RPM_CONST
 MIN_THRUST: float = KF * MIN_RPM**2
 MAX_THRUST: float = KF * MAX_RPM**2
+# Thrust curve parameters for brushed motors
+THRUST_CURVE_A: float = -1.1264
+THRUST_CURVE_B: float = 2.2541
+THRUST_CURVE_C: float = 0.0209
 
 
 @partial(jnp.vectorize, signature="(3),(3),(4),(3),(3),(1),(3)->(4),(3)", excluded=[7])
@@ -141,3 +146,24 @@ def thrust2pwm(thrust: Array) -> Array:
 def pwm2rpm(pwm: Array) -> Array:
     """Convert the motors' PWMs into RPMs."""
     return PWM2RPM_CONST + PWM2RPM_SCALE * pwm
+
+
+@jax.jit
+def thrust_curve(thrust: Array) -> Array:
+    """Compute the quadratic thrust curve of the crazyflie.
+
+    Warning:
+        This function is not used by the simulation. It is only used as interface to the firmware.
+
+    Todo:
+        Find out where this function is used in the firmware and emulate its use in our onboard
+        controller reimplementation.
+
+    Args:
+        thrust: The desired motor thrust.
+
+    Returns:
+        The motors' PWMs to apply to the quadrotor.
+    """
+    tau = THRUST_CURVE_A * thrust**2 + THRUST_CURVE_B * thrust + THRUST_CURVE_C
+    return jnp.clip(tau * MAX_PWM, MIN_PWM, MAX_PWM)
