@@ -38,9 +38,9 @@ def pytree_replace(tree: T, new_tree: T, mask: Array | None = None) -> T:
         # Do not replace leaves that are not broadcastable
         if x.ndim < 1 or (mask is not None and mask.shape[0] != x.shape[0]):
             return x
-        return jnp.where(broadcast_mask(mask, x.shape), x, y)
+        return jnp.where(broadcast_mask(mask, x.shape), y, x)
 
-    return jax.tree.map(_replace, new_tree, tree)
+    return jax.tree.map(_replace, tree, new_tree)
 
 
 def leaf_replace(tree: T, mask: Array | None = None, **kwargs: dict[str, Array]) -> T:

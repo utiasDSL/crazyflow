@@ -330,3 +330,12 @@ def test_seed(device: str):
     assert (jax.random.key_data(sim.data.core.rng_key)[1] == 43).all(), "seed() doesn't set rng_key"
     assert sim.data.core.rng_key.device == sim.device, "seed() changes device of rng_key"
     sim.close()
+
+
+@pytest.mark.unit
+def test_seed_reset():
+    sim = Sim(rng_key=42)
+    sim.seed(43)
+    sim.reset()
+    rng_key = jax.random.key_data(sim.data.core.rng_key)[1]
+    assert (rng_key == 43).all(), "rng_key was overwritten by reset()"

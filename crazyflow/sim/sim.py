@@ -91,7 +91,7 @@ class Sim:
             floor = next(g for g in spec.worldbody.geoms if g.name == "floor")
             floor.contype = 1
             floor.conaffinity = 1
-        frame = spec.worldbody.add_frame()
+        frame = spec.worldbody.add_frame(name="world")
         # Add drones and their actuators
         for i in range(self.n_drones):
             drone = frame.attach_body(drone_spec.find_body("drone"), "", f":{i}")
@@ -204,7 +204,7 @@ class Sim:
 
         @jax.jit
         def reset(data: SimData, default_data: SimData, mask: Array | None = None) -> SimData:
-            data = pytree_replace(data, default_data, mask)
+            data = pytree_replace(data, default_data, mask)  # Does not overwrite rng_key
             data = reset_hook(data, mask)
             data = self.sync_sim2mjx(data, self.mjx_model)
             return data
@@ -244,6 +244,8 @@ class Sim:
                 self.viewer.close()
                 self.viewer = None
             self.mj_model, self.mj_data, self.mjx_model, mjx_data = self.build_mjx_model(self.spec)
+            self.data = self.data.replace(mjx_data=mjx_data)
+            self.default_data = self.default_data.replace(mjx_data=mjx_data)
         if data:
             self.data = self.init_data(
                 self.data.controls.state_freq,
@@ -307,6 +309,8 @@ class Sim:
             patch_viewer()
             self.viewer = MujocoRenderer(self.mj_model, self.mj_data, max_geom=1000)
         self.mj_data.qpos[:] = self.data.mjx_data.qpos[0, :]
+        self.mj_data.mocap_pos[:] = self.data.mjx_data.mocap_pos[0, :]
+        self.mj_data.mocap_quat[:] = self.data.mjx_data.mocap_quat[0, :]
         mujoco.mj_forward(self.mj_model, self.mj_data)
         self.viewer.render("human")
 
@@ -388,8 +392,8 @@ class Sim:
         mjx_model = data.mjx_model if mjx_model is None else mjx_model
         assert mjx_model is not None, "MuJoCo model is not initialized"
         mjx_data = mjx_data.replace(qpos=qpos, qvel=qvel)
-        mjx_data = mjx_kinematics(mjx_model, mjx_data)
-        mjx_data = mjx_collision(mjx_model, mjx_data)
+        mjx_data = jax.vmap(mjx.kinematics, in_axes=(None, 0))(mjx_model, mjx_data)
+        mjx_data = jax.vmap(mjx.collision, in_axes=(None, 0))(mjx_model, mjx_data)
         data = data.replace(mjx_data=mjx_data)
         if data.mjx_model is None:  # Only modify model if it is part of data
             return data
@@ -628,7 +632,3 @@ def identity(data: SimData, *args: Any, **kwargs: Any) -> SimData:
     Used as default function for optional pipeline steps.
     """
     return data
-
-
-mjx_kinematics = jax.vmap(mjx.kinematics, in_axes=(None, 0))
-mjx_collision = jax.vmap(mjx.collision, in_axes=(None, 0))
