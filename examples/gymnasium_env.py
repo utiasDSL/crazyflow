@@ -20,7 +20,11 @@ def main():
     SEED = 42
 
     envs = gymnasium.make_vec(
-        "DroneLanding-v0", time_horizon_in_seconds=2, num_envs=sim_config.n_worlds, **sim_config
+        "DroneReachPos-v0",
+        render_goal_marker=True,
+        time_horizon_in_seconds=2,
+        num_envs=sim_config.n_worlds,
+        **sim_config,
     )
 
     # This wrapper makes it possible to interact with the environment using numpy arrays, if
