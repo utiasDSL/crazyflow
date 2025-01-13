@@ -241,6 +241,7 @@ class Sim:
                 self.viewer = None
             self.mj_model, self.mj_data, self.mjx_model, mjx_data = self.build_mjx_model(self.spec)
             self.data = self.data.replace(mjx_data=mjx_data)
+            self.data = self.sync_sim2mjx(self.data, self.mjx_model)
             self.default_data = self.default_data.replace(mjx_data=mjx_data)
         if data:
             self.data = self.init_data(
@@ -517,7 +518,7 @@ def contacts(geom_start: int, geom_count: int, data: Data) -> Array:
     geom1_valid &= data.contact.geom1 < geom_start + geom_count
     geom2_valid = data.contact.geom2 >= geom_start
     geom2_valid &= data.contact.geom2 < geom_start + geom_count
-    return data.contact.dist < 0 & (geom1_valid | geom2_valid)
+    return (data.contact.dist < 0) & (geom1_valid | geom2_valid)
 
 
 def step_state_controller(data: SimData) -> SimData:
