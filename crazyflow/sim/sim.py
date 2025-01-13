@@ -8,7 +8,7 @@ import mujoco
 import mujoco.mjx as mjx
 from einops import rearrange
 from gymnasium.envs.mujoco.mujoco_rendering import MujocoRenderer
-from jax import Array
+from jax import Array, Device
 from jax.scipy.spatial.transform import Rotation as R
 from mujoco.mjx import Data, Model
 
@@ -316,8 +316,7 @@ class Sim:
         Args:
             seed: The seed for the JAX rng.
         """
-        rng_key = jax.device_put(jax.random.key(seed), self.device)
-        self.data = self.data.replace(core=self.data.core.replace(rng_key=rng_key))
+        self.data = seed_sim(self.data, seed, self.device)
 
     def close(self):
         if self.viewer is not None:
@@ -352,9 +351,9 @@ class Sim:
             case Control.state:
                 control_steps, control_freq = controls.state_steps, controls.state_freq
             case Control.attitude:
-                control_steps, control_freq = controls.attitude_steps, controls.attitude_freq
+                control_steps, control_freq = (controls.attitude_steps, controls.attitude_freq)
             case Control.thrust:
-                control_steps, control_freq = controls.thrust_steps, controls.thrust_freq
+                control_steps, control_freq = (controls.thrust_steps, controls.thrust_freq)
             case _:
                 raise NotImplementedError(f"Control mode {self.control} not implemented")
         return controllable(self.data.core.steps, self.data.core.freq, control_steps, control_freq)
@@ -379,7 +378,7 @@ class Sim:
     @jax.jit
     def sync_sim2mjx(data: SimData, mjx_model: Model | None = None) -> SimData:
         states = data.states
-        pos, quat, vel, rpy_rates = states.pos, states.quat, states.vel, states.rpy_rates
+        pos, quat, vel, rpy_rates = (states.pos, states.quat, states.vel, states.rpy_rates)
         ang_vel = rpy_rates2ang_vel(rpy_rates, quat)
         quat = quat[..., [3, 0, 1, 2]]  # MuJoCo quat is [w, x, y, z], ours is [x, y, z, w]
         qpos = rearrange(jnp.concat([pos, quat], axis=-1), "w d qpos -> w (d qpos)")
@@ -576,7 +575,7 @@ def analytical_derivative(data: SimData) -> SimData:
     quat, mass, J_inv = data.states.quat, data.params.mass, data.params.J_INV
     acc = collective_force2acceleration(data.states.force, mass)
     rpy_rates_deriv = collective_torque2rpy_rates_deriv(data.states.torque, quat, J_inv)
-    vel, rpy_rates = data.states.vel, data.states.rpy_rates  # Already given in the states
+    vel, rpy_rates = (data.states.vel, data.states.rpy_rates)  # Already given in the states
     deriv = data.states_deriv
     deriv = deriv.replace(dpos=vel, drot=rpy_rates, dvel=acc, drpy_rates=rpy_rates_deriv)
     return data.replace(states_deriv=deriv)
@@ -628,3 +627,10 @@ def identity(data: SimData, *args: Any, **kwargs: Any) -> SimData:
     Used as default function for optional pipeline steps.
     """
     return data
+
+
+@partial(jax.jit, static_argnames="device")
+def seed_sim(data: SimData, seed: int, device: Device) -> SimData:
+    """JIT-compiled seeding function."""
+    rng_key = jax.device_put(jax.random.key(seed), device)
+    return data.replace(core=data.core.replace(rng_key=rng_key))
