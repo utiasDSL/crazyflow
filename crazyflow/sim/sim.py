@@ -87,10 +87,6 @@ class Sim:
         spec = mujoco.MjSpec.from_file(str(self._xml_path))
         spec.option.timestep = 1 / self.freq
         drone_spec = mujoco.MjSpec.from_file(str(self.drone_path))
-        if self.physics != Physics.mujoco:  # Make the floor a contact body for physics != mujoco
-            floor = next(g for g in spec.worldbody.geoms if g.name == "floor")
-            floor.contype = 1
-            floor.conaffinity = 1
         frame = spec.worldbody.add_frame(name="world")
         # Add drones and their actuators
         for i in range(self.n_drones):
