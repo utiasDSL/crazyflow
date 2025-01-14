@@ -19,8 +19,9 @@ def sim_state2symbolic_state(state: SimState) -> NDArray[np.float32]:
 
 
 @pytest.mark.integration
-def test_attitude_symbolic():
-    sim = Sim(physics="sys_id")
+@pytest.mark.parametrize("freq", [500, 1000])
+def test_attitude_symbolic(freq: int):
+    sim = Sim(physics="sys_id", freq=freq)
     sym = symbolic_from_sim(sim)
 
     x0 = np.zeros(12)
@@ -67,8 +68,9 @@ def test_attitude_symbolic():
 
 
 @pytest.mark.integration
-def test_thrust_symbolic():
-    sim = Sim(physics="analytical", control="thrust")
+@pytest.mark.parametrize("freq", [500, 1000])
+def test_thrust_symbolic(freq: int):
+    sim = Sim(physics="analytical", control="thrust", freq=freq)
     sym = symbolic_from_sim(sim)
 
     x0 = np.zeros(12)

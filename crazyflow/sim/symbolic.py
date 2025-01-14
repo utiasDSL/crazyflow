@@ -303,10 +303,10 @@ def symbolic_from_sim(sim: Sim) -> SymbolicModel:
     """
     match sim.control:
         case Control.attitude:
-            return symbolic_attitude(1 / sim.freq)
+            return symbolic_attitude(1 / sim.control_freq)
         case Control.thrust:
             mass, J = sim.default_data.params.mass[0, 0], sim.default_data.params.J[0, 0]
-            return symbolic_thrust(mass, J, 1 / sim.freq)
+            return symbolic_thrust(mass, J, 1 / sim.control_freq)
         case _:
             raise ValueError(f"Unsupported control type for symbolic model: {sim.control}")
 
