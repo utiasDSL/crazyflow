@@ -25,7 +25,9 @@ For windows, we require WSL2 to run the devcontainer. (So its actually Linux wit
 
 **MacOS**
 
-Should work like Linux. Untested.
+Unfortunately, we did not get the devcontainer to work with MacOS yet, even after following [those](https://gist.github.com/sorny/969fe55d85c9b0035b0109a31cbcb088) steps. We expect that the issue is related to Mujoco rendering from inside the Docker container and display forwarding with X11. There is also an [unresolved Issue](https://github.com/google-deepmind/mujoco/issues/1047) on GitHub. If you manage to make it work, please let us know.
+
+Until then, MacOS users are required to install this project using an python environment manager such as [conda](https://docs.anaconda.com/anaconda/install/) or [mamba](https://mamba.readthedocs.io/en/latest/). If you use conda, these are the required commands: ```conda create --name crazyflow -c conda-forge python=3.11```, ```conda activate crazyflow```, ```conda install pip```, ```pip install -e .```.
 
 ____________
 
