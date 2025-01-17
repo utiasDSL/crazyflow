@@ -20,7 +20,7 @@ def analyze_timings(times: list[float], n_steps: int, n_worlds: int, freq: float
 
     # Check for significant variance
     if tmax / tmin > 10:
-        print("Warning: step time varies by more than 10x. Is JIT compiling during the benchmark?")
+        print("Warning: Fn time varies by more than 10x. Is JIT compiling during the benchmark?")
         print(f"Times: max {tmax:.2e} @ {idx_tmax}, min {tmin:.2e} @ {idx_tmin}")
 
     # Performance metrics
@@ -32,8 +32,8 @@ def analyze_timings(times: list[float], n_steps: int, n_worlds: int, freq: float
     real_time_factor = (n_steps / freq) * n_worlds / total_time
 
     print(
-        f"Avg step time: {avg_step_time:.2e}s, std: {step_time_std:.2e}"
-        f"\nFPS: {fps:.3e}, Real time factor: {real_time_factor:.2e}"
+        f"Avg fn time: {avg_step_time:.2e}s, std: {step_time_std:.2e}"
+        f"\nFPS: {fps:.3e}, Real time factor: {real_time_factor:.2e}\n"
     )
 
 
@@ -63,7 +63,7 @@ def profile_gym_env_step(sim_config: config_dict.ConfigDict, n_steps: int, devic
         times.append(time.perf_counter() - tstart)
 
     envs.close()
-
+    print("Gym env step performance:")
     analyze_timings(times, n_steps, envs.unwrapped.sim.n_worlds, envs.unwrapped.sim.freq)
 
 
@@ -88,7 +88,44 @@ def profile_step(sim_config: config_dict.ConfigDict, n_steps: int, device: str):
         jax.block_until_ready(sim.data)
         times.append(time.perf_counter() - tstart)
 
+    print("Sim step performance:")
     analyze_timings(times, n_steps, sim.n_worlds, sim.freq)
+
+
+def profile_reset(sim_config: config_dict.ConfigDict, n_steps: int, device: str):
+    """Profile the Crazyflow simulator reset performance."""
+    sim = Sim(**sim_config)
+    times = []
+    times_masked = []
+    device = jax.devices(device)[0]
+
+    # Ensure JIT compiled reset
+    sim.reset()
+    jax.block_until_ready(sim.data)
+
+    # Test full reset
+    for _ in range(n_steps):
+        tstart = time.perf_counter()
+        sim.reset()
+        jax.block_until_ready(sim.data)
+        times.append(time.perf_counter() - tstart)
+
+    # Test masked reset (only reset first world)
+    mask = jnp.zeros(sim.n_worlds, dtype=bool, device=device)
+    mask = mask.at[0].set(True)
+    sim.reset(mask)
+    jax.block_until_ready(sim.data)
+
+    for _ in range(n_steps):
+        tstart = time.perf_counter()
+        sim.reset(mask)
+        jax.block_until_ready(sim.data)
+        times_masked.append(time.perf_counter() - tstart)
+
+    print("Sim reset performance:")
+    analyze_timings(times, n_steps, sim.n_worlds, sim.freq)
+    print("Sim masked reset performance:")
+    analyze_timings(times_masked, n_steps, sim.n_worlds, sim.freq)
 
 
 def main():
@@ -102,10 +139,11 @@ def main():
     sim_config.attitude_freq = 500
     sim_config.device = device
 
-    print("Simulator performance")
+    print("Simulator performance\n")
     profile_step(sim_config, 1000, device)
+    profile_reset(sim_config, 1000, device)
 
-    print("\nGymnasium environment performance")
+    print("Gymnasium environment performance\n")
     profile_gym_env_step(sim_config, 1000, device)
 
 
