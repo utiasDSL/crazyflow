@@ -68,7 +68,8 @@ def surrogate_identified_collective_wrench(
     # derivative. When converting back to the state derivative, the mass and inertia will cancel
     # out, resulting in the correct acceleration and rpy rates derivative regardless of the model's
     # mass and inertia.
-    surrogate_torques = rot.apply(J @ rpy_rates_deriv)  # Rotate torques into global frame
+    # Rotate torques into global frame
+    surrogate_torques = rot.apply(J @ rpy_rates2ang_vel(rpy_rates_deriv, quat))
     surrogate_forces = acc * mass
     return surrogate_forces, surrogate_torques
 
@@ -82,7 +83,8 @@ def collective_force2acceleration(force: Array, mass: Array) -> Array:
 @partial(vectorize, signature="(3),(4),(3,3)->(3)")
 def collective_torque2rpy_rates_deriv(torque: Array, quat: Array, J_INV: Array) -> Array:
     """Convert torques to rpy_rates_deriv."""
-    return J_INV @ R.from_quat(quat).apply(torque, inverse=True)
+    # TODO: Check if we can reuse the ang_vel2rpy_rates conversion for the derivative
+    return ang_vel2rpy_rates(J_INV @ R.from_quat(quat).apply(torque, inverse=True), quat)
 
 
 @partial(vectorize, signature="(4),(4),(3),(3,3)->(3),(3)")
@@ -118,7 +120,8 @@ def rpms2body_torque(
     z_torque = SIGN_MIX_MATRIX[..., 2] @ motor_torques
     x_torque = SIGN_MIX_MATRIX[..., 0] @ motor_forces * (ARM_LEN / jnp.sqrt(2))
     y_torque = SIGN_MIX_MATRIX[..., 1] @ motor_forces * (ARM_LEN / jnp.sqrt(2))
-    return jnp.array([x_torque, y_torque, z_torque]) - jnp.cross(rpy_rates, J @ rpy_rates)
+    ang_vel = rpy_rates2ang_vel(rpy_rates, quat)
+    return jnp.array([x_torque, y_torque, z_torque]) - jnp.cross(ang_vel, J @ ang_vel)
 
 
 @partial(vectorize, signature="(3),(4)->(3)")
