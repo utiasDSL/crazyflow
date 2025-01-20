@@ -31,7 +31,7 @@ def main(plot: bool = False):
         sim.state_control(control)
         sim.step(sim.freq // sim.control_freq)
         pos.append(sim.data.states.pos[0, 0])
-        rpy.append(sim.data.states.rpy_rates[0, 0])
+        rpy.append(sim.data.states.ang_vel[0, 0])
         sim.render()
 
     # Second run
@@ -43,7 +43,7 @@ def main(plot: bool = False):
         sim.state_control(control)
         sim.step(sim.freq // sim.control_freq)
         pos_disturbed.append(sim.data.states.pos[0, 0])
-        rpy_disturbed.append(sim.data.states.rpy_rates[0, 0])
+        rpy_disturbed.append(sim.data.states.ang_vel[0, 0])
         sim.render()
 
     sim.close()

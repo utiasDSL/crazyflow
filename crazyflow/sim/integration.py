@@ -60,14 +60,14 @@ def rk4_average(k1: SimData, k2: SimData, k3: SimData, k4: SimData) -> SimData:
 def integrate(data: SimData, deriv: SimData, dt: float) -> SimData:
     """Integrate the dynamics forward in time."""
     states, states_deriv = data.states, deriv.states_deriv
-    pos, quat, vel, rpy_rates = states.pos, states.quat, states.vel, states.rpy_rates
+    pos, quat, vel, ang_vel = states.pos, states.quat, states.vel, states.ang_vel
     dpos, drot = states_deriv.dpos, states_deriv.drot
-    dvel, drpy_rates = states_deriv.dvel, states_deriv.drpy_rates
-    next_pos, next_quat, next_vel, next_rpy_rates = _integrate(
-        pos, quat, vel, rpy_rates, dpos, drot, dvel, drpy_rates, dt
+    dvel, dang_vel = states_deriv.dvel, states_deriv.dang_vel
+    next_pos, next_quat, next_vel, next_ang_vel = _integrate(
+        pos, quat, vel, ang_vel, dpos, drot, dvel, dang_vel, dt
     )
     return data.replace(
-        states=states.replace(pos=next_pos, quat=next_quat, vel=next_vel, rpy_rates=next_rpy_rates)
+        states=states.replace(pos=next_pos, quat=next_quat, vel=next_vel, ang_vel=next_ang_vel)
     )
 
 
@@ -76,11 +76,11 @@ def _integrate(
     pos: Array,
     quat: Array,
     vel: Array,
-    rpy_rates: Array,
+    ang_vel: Array,
     dpos: Array,
     drot: Array,
     dvel: Array,
-    drpy_rates: Array,
+    dang_vel: Array,
     dt: float,
 ) -> SimData:
     """Integrate the dynamics forward in time.
@@ -89,20 +89,18 @@ def _integrate(
         pos: The position of the drone.
         quat: The orientation of the drone as a quaternion.
         vel: The velocity of the drone.
-        rpy_rates: The roll, pitch, and yaw rates of the drone.
+        ang_vel: The angular velocity of the drone.
         dpos: The derivative of the position of the drone.
-        drot: The derivative of the quaternion of the drone.
+        drot: The derivative of the quaternion of the drone (3D angular velocity).
         dvel: The derivative of the velocity of the drone.
-        drpy_rates: The derivative of the roll, pitch, and yaw rates of the drone.
+        dang_vel: The derivative of the angular velocity of the drone.
         dt: The time step to integrate over.
 
     Returns:
         The next position, quaternion, velocity, and roll, pitch, and yaw rates of the drone.
     """
-    rot = R.from_quat(quat)
     next_pos = pos + dpos * dt
-    next_rot = R.from_euler("xyz", rot.as_euler("xyz") + drot * dt)
-    next_quat = next_rot.as_quat()
+    next_quat = (R.from_quat(quat) * R.from_rotvec(drot * dt)).as_quat()
     next_vel = vel + dvel * dt
-    next_rpy_rates = rpy_rates + drpy_rates * dt
-    return next_pos, next_quat, next_vel, next_rpy_rates
+    next_ang_vel = ang_vel + dang_vel * dt
+    return next_pos, next_quat, next_vel, next_ang_vel

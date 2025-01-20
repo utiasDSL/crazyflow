@@ -32,7 +32,7 @@ def main():
     cache_dir = Path("/tmp/jax_cache_test")
     if use_cache := cache_dir.exists():
         print("Cache directory exists. This run will be fast.")
-        print("\nTo run without cache, delete the directory.")
+        print(f"\nTo run without cache, delete the directory {cache_dir}.")
     else:
         print("Cache directory does not exist. This run will be slow.")
         print("\nTo run with cache, run this script again.")

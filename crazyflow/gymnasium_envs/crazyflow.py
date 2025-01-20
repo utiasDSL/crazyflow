@@ -50,7 +50,7 @@ class CrazyflowBaseEnv(VectorEnv):
     The default action space is `attitude`.
     """
 
-    obs_keys = ["pos", "quat", "vel", "rpy_rates"]
+    obs_keys = ["pos", "quat", "vel", "ang_vel"]
 
     def __init__(
         self,
@@ -93,7 +93,7 @@ class CrazyflowBaseEnv(VectorEnv):
                 "pos": spaces.Box(-np.inf, np.inf, shape=(3,)),
                 "quat": spaces.Box(-np.inf, np.inf, shape=(4,)),
                 "vel": spaces.Box(-np.inf, np.inf, shape=(3,)),
-                "rpy_rates": spaces.Box(-np.inf, np.inf, shape=(3,)),
+                "ang_vel": spaces.Box(-np.inf, np.inf, shape=(3,)),
             }
         )
         self.observation_space = batch_space(self.single_observation_space, self.sim.n_worlds)

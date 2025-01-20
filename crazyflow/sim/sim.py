@@ -18,13 +18,11 @@ from crazyflow.exception import ConfigError, NotInitializedError
 from crazyflow.sim.integration import Integrator, euler, rk4
 from crazyflow.sim.physics import (
     Physics,
-    ang_vel2rpy_rates,
     collective_force2acceleration,
-    collective_torque2rpy_rates_deriv,
+    collective_torque2ang_vel_deriv,
     rpms2collective_wrench,
     rpms2motor_forces,
     rpms2motor_torques,
-    rpy_rates2ang_vel,
     surrogate_identified_collective_wrench,
 )
 from crazyflow.sim.structs import SimControls, SimCore, SimData, SimParams, SimState, SimStateDeriv
@@ -379,8 +377,7 @@ class Sim:
     @jax.jit
     def sync_sim2mjx(data: SimData, mjx_model: Model | None = None) -> SimData:
         states = data.states
-        pos, quat, vel, rpy_rates = (states.pos, states.quat, states.vel, states.rpy_rates)
-        ang_vel = rpy_rates2ang_vel(rpy_rates, quat)
+        pos, quat, vel, ang_vel = states.pos, states.quat, states.vel, states.ang_vel
         quat = quat[..., [3, 0, 1, 2]]  # MuJoCo quat is [w, x, y, z], ours is [x, y, z, w]
         qpos = rearrange(jnp.concat([pos, quat], axis=-1), "w d qpos -> w (d qpos)")
         qvel = rearrange(jnp.concat([vel, ang_vel], axis=-1), "w d qvel -> w (d qvel)")
@@ -407,8 +404,7 @@ class Sim:
         pos, quat = jnp.split(qpos, [3], axis=-1)
         vel, ang_vel = jnp.split(qvel, [3], axis=-1)
         quat = quat[..., [1, 2, 3, 0]]  # MuJoCo quat is [w, x, y, z], ours is [x, y, z, w]
-        rpy_rates = ang_vel2rpy_rates(ang_vel, quat)
-        states = data.states.replace(pos=pos, quat=quat, vel=vel, rpy_rates=rpy_rates)
+        states = data.states.replace(pos=pos, quat=quat, vel=vel, ang_vel=ang_vel)
         return data.replace(states=states)
 
     @staticmethod
@@ -567,7 +563,7 @@ def step_thrust_controller(data: SimData) -> SimData:
 def analytical_wrench(data: SimData) -> SimData:
     """Compute the wrench from the analytical dynamics model."""
     states, controls, params = data.states, data.controls, data.params
-    force, torque = rpms2collective_wrench(controls.rpms, states.quat, states.rpy_rates, params.J)
+    force, torque = rpms2collective_wrench(controls.rpms, states.quat, states.ang_vel, params.J)
     return data.replace(states=data.states.replace(force=force, torque=torque))
 
 
@@ -575,10 +571,10 @@ def analytical_derivative(data: SimData) -> SimData:
     """Compute the derivative of the states."""
     quat, mass, J_inv = data.states.quat, data.params.mass, data.params.J_INV
     acc = collective_force2acceleration(data.states.force, mass)
-    rpy_rates_deriv = collective_torque2rpy_rates_deriv(data.states.torque, quat, J_inv)
-    vel, rpy_rates = (data.states.vel, data.states.rpy_rates)  # Already given in the states
+    ang_vel_deriv = collective_torque2ang_vel_deriv(data.states.torque, quat, J_inv)
+    vel, ang_vel = (data.states.vel, data.states.ang_vel)  # Already given in the states
     deriv = data.states_deriv
-    deriv = deriv.replace(dpos=vel, drot=rpy_rates, dvel=acc, drpy_rates=rpy_rates_deriv)
+    deriv = deriv.replace(dpos=vel, drot=ang_vel, dvel=acc, dang_vel=ang_vel_deriv)
     return data.replace(states_deriv=deriv)
 
 
@@ -587,7 +583,7 @@ def identified_wrench(data: SimData) -> SimData:
     states, controls = data.states, data.controls
     mass, J = data.params.mass, data.params.J
     force, torque = surrogate_identified_collective_wrench(
-        controls.attitude, states.quat, states.rpy_rates, mass, J, 1 / data.core.freq
+        controls.attitude, states.quat, states.ang_vel, mass, J, 1 / data.core.freq
     )
     return data.replace(states=data.states.replace(force=force, torque=torque))
 

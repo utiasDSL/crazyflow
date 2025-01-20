@@ -1,6 +1,7 @@
 from enum import Enum
 from functools import partial
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 from jax import Array
@@ -29,7 +30,7 @@ class Physics(str, Enum):
 
 @partial(vectorize, signature="(4),(4),(3),(1),(3,3)->(3),(3)", excluded=[5])
 def surrogate_identified_collective_wrench(
-    controls: Array, quat: Array, rpy_rates: Array, mass: Array, J: Array, dt: float
+    controls: Array, quat: Array, ang_vel: Array, mass: Array, J: Array, dt: float
 ) -> tuple[Array, Array]:
     """Surrogate collective wrench for the identified dynamics model.
 
@@ -43,7 +44,7 @@ def surrogate_identified_collective_wrench(
     Args:
         controls: The 4D control input consisting of the desired collective thrust and attitude.
         quat: The current orientation.
-        rpy_rates: The current roll, pitch, and yaw rates.
+        ang_vel: The current angular velocity.
         mass: The drone's mass.
         J: The drone's inertia matrix.
         dt: The simulation time step.
@@ -55,6 +56,8 @@ def surrogate_identified_collective_wrench(
     k1, k2 = SYS_ID_PARAMS["acc"]
     acc = thrust * k1 + drift * k2
     rpy = rot.as_euler("xyz")
+    # TODO: Move to an angular velocity based model to avoid this conversion.
+    rpy_rates = ang_vel2rpy_rates(ang_vel, quat)
     k1, k2, k3 = SYS_ID_PARAMS["roll_acc"]
     roll_rate_deriv = k1 * rpy[0] + k2 * rpy_rates[0] + k3 * attitude[0]
     k1, k2, k3 = SYS_ID_PARAMS["pitch_acc"]
@@ -64,12 +67,12 @@ def surrogate_identified_collective_wrench(
     rpy_rates_deriv = jnp.array([roll_rate_deriv, pitch_rate_deriv, yaw_rate_deriv])
     # The identified dynamics model does not use forces or torques, because we assume no knowledge
     # of the drone's mass and inertia. However, to remain compatible with the physics pipeline, we
-    # return surrogate forces and torques that result in the desired acceleration and rpy rates
+    # return surrogate forces and torques that result in the desired linear and angular velocity
     # derivative. When converting back to the state derivative, the mass and inertia will cancel
-    # out, resulting in the correct acceleration and rpy rates derivative regardless of the model's
-    # mass and inertia.
-    # Rotate torques into global frame
-    surrogate_torques = rot.apply(J @ rpy_rates2ang_vel(rpy_rates_deriv, quat))
+    # out, resulting in the correct linear and angular acceleration regardless of the model's mass
+    # and inertia.
+    # Rotate surrogate torques into global frame
+    surrogate_torques = rot.apply(J @ rpy_rates_deriv)
     surrogate_forces = acc * mass
     return surrogate_forces, surrogate_torques
 
@@ -81,21 +84,20 @@ def collective_force2acceleration(force: Array, mass: Array) -> Array:
 
 
 @partial(vectorize, signature="(3),(4),(3,3)->(3)")
-def collective_torque2rpy_rates_deriv(torque: Array, quat: Array, J_INV: Array) -> Array:
-    """Convert torques to rpy_rates_deriv."""
-    # TODO: Check if we can reuse the ang_vel2rpy_rates conversion for the derivative
-    return ang_vel2rpy_rates(J_INV @ R.from_quat(quat).apply(torque, inverse=True), quat)
+def collective_torque2ang_vel_deriv(torque: Array, quat: Array, J_INV: Array) -> Array:
+    """Convert torques to ang_vel_deriv."""
+    return J_INV @ R.from_quat(quat).apply(torque, inverse=True)
 
 
 @partial(vectorize, signature="(4),(4),(3),(3,3)->(3),(3)")
 def rpms2collective_wrench(
-    rpms: Array, quat: Array, rpy_rates: Array, J: Array
+    rpms: Array, quat: Array, ang_vel: Array, J: Array
 ) -> tuple[Array, Array]:
     """Convert RPMs to forces and torques in the global frame."""
     rot = R.from_quat(quat)
     motor_forces = rpms2motor_forces(rpms)
     body_force = jnp.array([0, 0, jnp.sum(motor_forces)])
-    body_torque = rpms2body_torque(rpms, quat, rpy_rates, motor_forces, J)
+    body_torque = rpms2body_torque(rpms, ang_vel, motor_forces, J)
     return rot.apply(body_force), rot.apply(body_torque)
 
 
@@ -111,19 +113,17 @@ def rpms2motor_torques(rpms: Array) -> Array:
     return rpms**2 * KM
 
 
-@partial(vectorize, signature="(4),(4),(3),(4),(3,3)->(3)")
-def rpms2body_torque(
-    rpms: Array, quat: Array, rpy_rates: Array, motor_forces: Array, J: Array
-) -> Array:
+@partial(vectorize, signature="(4),(3),(4),(3,3)->(3)")
+def rpms2body_torque(rpms: Array, ang_vel: Array, motor_forces: Array, J: Array) -> Array:
     """Convert RPMs to torques in the body frame."""
     motor_torques = rpms2motor_torques(rpms)
     z_torque = SIGN_MIX_MATRIX[..., 2] @ motor_torques
     x_torque = SIGN_MIX_MATRIX[..., 0] @ motor_forces * (ARM_LEN / jnp.sqrt(2))
     y_torque = SIGN_MIX_MATRIX[..., 1] @ motor_forces * (ARM_LEN / jnp.sqrt(2))
-    ang_vel = rpy_rates2ang_vel(rpy_rates, quat)
     return jnp.array([x_torque, y_torque, z_torque]) - jnp.cross(ang_vel, J @ ang_vel)
 
 
+@jax.jit
 @partial(vectorize, signature="(3),(4)->(3)")
 def ang_vel2rpy_rates(ang_vel: Array, quat: Array) -> Array:
     """Convert angular velocity to rpy rates.
@@ -148,6 +148,7 @@ def ang_vel2rpy_rates(ang_vel: Array, quat: Array) -> Array:
     return conv_mat @ ang_vel
 
 
+@jax.jit
 @partial(vectorize, signature="(3),(4)->(3)")
 def rpy_rates2ang_vel(rpy_rates: Array, quat: Array) -> Array:
     """Convert rpy rates to angular velocity."""

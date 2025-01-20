@@ -19,8 +19,8 @@ class SimState:
     """Quaternion of the drone's orientation."""
     vel: Array  # (N, M, 3)
     """Velocity of the drone's center of mass in the world frame."""
-    rpy_rates: Array  # (N, M, 3)
-    """rpy rates for 'xyz' euler angles (see scipy.spatial.transform.Rotation) in the body frame."""
+    ang_vel: Array  # (N, M, 3)
+    """Angular velocity of the drone's center of mass in the world frame."""
     force: Array  # (N, M, 3)  # CoM force
     """Force applied to the drone's center of mass in the world frame."""
     torque: Array  # (N, M, 3)  # CoM torque
@@ -37,7 +37,7 @@ class SimState:
         quat = jnp.zeros((n_worlds, n_drones, 4), device=device)
         quat = quat.at[..., -1].set(1.0)
         vel = jnp.zeros((n_worlds, n_drones, 3), device=device)
-        rpy_rates = jnp.zeros((n_worlds, n_drones, 3), device=device)
+        ang_vel = jnp.zeros((n_worlds, n_drones, 3), device=device)
         force = jnp.zeros((n_worlds, n_drones, 3), device=device)
         torque = jnp.zeros((n_worlds, n_drones, 3), device=device)
         motor_forces = jnp.zeros((n_worlds, n_drones, 4), device=device)
@@ -50,7 +50,7 @@ class SimState:
             motor_forces=motor_forces,
             motor_torques=motor_torques,
             vel=vel,
-            rpy_rates=rpy_rates,
+            ang_vel=ang_vel,
         )
 
 
@@ -59,11 +59,11 @@ class SimStateDeriv:
     dpos: Array  # (N, M, 3)
     """Derivative of the position of the drone's center of mass."""
     drot: Array  # (N, M, 3)
-    """rpy rates for the drone's orientation in the body frame following the 'xyz' convention."""
+    """Derivative of the quaternion of the drone's orientation as angular velocity."""
     dvel: Array  # (N, M, 3)
     """Derivative of the velocity of the drone's center of mass."""
-    drpy_rates: Array  # (N, M, 3)
-    """Derivative of the rpy rates for 'xyz' euler angles."""
+    dang_vel: Array  # (N, M, 3)
+    """Derivative of the angular velocity of the drone's center of mass."""
 
     @staticmethod
     def create(n_worlds: int, n_drones: int, device: Device) -> SimStateDeriv:
@@ -71,8 +71,8 @@ class SimStateDeriv:
         dpos = jnp.zeros((n_worlds, n_drones, 3), device=device)
         drot = jnp.zeros((n_worlds, n_drones, 3), device=device)
         dvel = jnp.zeros((n_worlds, n_drones, 3), device=device)
-        drpy_rates = jnp.zeros((n_worlds, n_drones, 3), device=device)
-        return SimStateDeriv(dpos=dpos, drot=drot, dvel=dvel, drpy_rates=drpy_rates)
+        dang_vel = jnp.zeros((n_worlds, n_drones, 3), device=device)
+        return SimStateDeriv(dpos=dpos, drot=drot, dvel=dvel, dang_vel=dang_vel)
 
 
 @dataclass

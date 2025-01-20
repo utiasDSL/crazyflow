@@ -76,7 +76,7 @@ def test_sim_init(physics: Physics, device: str, control: Control, n_worlds: int
     array_meta_assert(sim.data.states.pos, (n_worlds, n_drones, 3), device, "pos")
     array_meta_assert(sim.data.states.quat, (n_worlds, n_drones, 4), device, "quat")
     array_meta_assert(sim.data.states.vel, (n_worlds, n_drones, 3), device, "vel")
-    array_meta_assert(sim.data.states.rpy_rates, (n_worlds, n_drones, 3), device, "rpy_rates")
+    array_meta_assert(sim.data.states.ang_vel, (n_worlds, n_drones, 3), device, "ang_vel")
 
     # Test control buffer shapes
     array_meta_assert(sim.data.controls.attitude, (n_worlds, n_drones, 4), device)
