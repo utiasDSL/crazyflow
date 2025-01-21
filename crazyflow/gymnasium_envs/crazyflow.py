@@ -1,5 +1,6 @@
 import warnings
 from functools import partial
+from typing import Literal
 
 import jax
 import jax.numpy as jnp
@@ -57,7 +58,9 @@ class CrazyflowBaseEnv(VectorEnv):
         *,
         num_envs: int = 1,  # required for VectorEnv
         time_horizon_in_seconds: float = 10.0,
-        **kwargs: dict,
+        physics: Literal["sys_id", "analytical"] = "sys_id",
+        freq: int = 500,
+        device: str = "cpu",
     ):
         """Initialize the CrazyflowEnv.
 
@@ -66,23 +69,26 @@ class CrazyflowBaseEnv(VectorEnv):
             time_horizon_in_seconds: The time horizon after which episodes are truncated.
             **kwargs: Takes arguments that are passed to the Crazyfly simulation.
         """
-        assert num_envs == kwargs["n_worlds"], "num_envs must be equal to n_worlds"
-        # Set random initial seed for JAX. For seeding, people should use the reset function
-        self.jax_key = jax.random.key(int(self.np_random.random() * 2**32))
-
         self.num_envs = num_envs
-        self.device = jax.devices(kwargs["device"])[0]
-        self.time_horizon_in_seconds = time_horizon_in_seconds
-        self.sim = Sim(**kwargs)
+        self.device = jax.devices(device)[0]
+        # Set random initial seed for JAX. For seeding, people should use the reset function
+        self.jax_key = jax.device_put(
+            jax.random.key(int(self.np_random.random() * 2**32)), self.device
+        )
 
+        self.time_horizon_in_seconds = time_horizon_in_seconds
+        assert physics in ("sys_id", "analytical"), "Invalid physics type"
+        self.sim = Sim(n_worlds=num_envs, n_drones=1, device=device, physics=physics)
+
+        self.freq = freq
         assert self.sim.freq >= self.sim.control_freq, "Sim freq must be higher than control freq"
-        if not self.sim.freq % self.sim.control_freq == 0:
+        if not self.sim.freq % self.freq == 0:
             # We can handle other cases, but it's not recommended
-            warnings.warn("Simulation frequency should be a multiple of control frequency.")
+            warnings.warn("Simulation frequency should be a multiple of env frequency.")
         if self.sim.control == Control.state:
             raise NotImplementedError("State control currently not supported")
 
-        self.n_substeps = self.sim.freq // self.sim.control_freq
+        self.n_substeps = self.sim.freq // self.freq
         self.prev_done = jnp.zeros((self.sim.n_worlds), dtype=jnp.bool_, device=self.device)
 
         self.single_action_space = action_space(self.sim.control)
@@ -232,15 +238,13 @@ class CrazyflowBaseEnv(VectorEnv):
     def _obs(self) -> dict[str, Array]:
         fields = self.obs_keys
         states = [getattr(self.sim.data.states, field) for field in fields]
-        return {k: v for k, v in zip(fields, states)}
+        return {k: v.squeeze() for k, v in zip(fields, states)}
 
 
 class CrazyflowEnvReachGoal(CrazyflowBaseEnv):
     """JAX Gymnasium environment for Crazyflie simulation."""
 
     def __init__(self, **kwargs: dict):
-        assert kwargs["n_drones"] == 1, "Currently only supported for one drone"
-
         super().__init__(**kwargs)
         spec = {k: v for k, v in self.single_observation_space.items()}
         spec["difference_to_goal"] = spaces.Box(-np.inf, np.inf, shape=(3,))
@@ -328,8 +332,6 @@ class CrazyflowEnvLanding(CrazyflowBaseEnv):
     """JAX Gymnasium environment for Crazyflie simulation."""
 
     def __init__(self, **kwargs: dict):
-        assert kwargs["n_drones"] == 1, "Currently only supported for one drone"
-
         super().__init__(**kwargs)
         spec = {k: v for k, v in self.single_observation_space.items()}
         spec["difference_to_goal"] = spaces.Box(-np.inf, np.inf, shape=(3,))
@@ -365,18 +367,14 @@ def render_trajectory(viewer: MujocoRenderer | None, pos: Array) -> None:
     """Render trajectory."""
     if viewer is None:
         return
-
-    pos = np.array(pos[0]).transpose(1, 0, 2)
-    n_trace, n_drones = len(pos) - 1, len(pos[0])
-
-    for i in range(n_trace):
-        for j in range(n_drones):
-            viewer.viewer.add_marker(
-                type=mujoco.mjtGeom.mjGEOM_SPHERE,
-                size=np.array([0.02, 0.02, 0.02]),
-                pos=pos[i][j],
-                rgba=np.array([1, 0, 0, 0.8]),
-            )
+    assert pos.ndim == 2 and pos.shape[1] == 3, f"Expected shape (n_points, 3), got {pos.shape}"
+    for p in pos:
+        viewer.viewer.add_marker(
+            type=mujoco.mjtGeom.mjGEOM_SPHERE,
+            size=np.array([0.02, 0.02, 0.02]),
+            pos=p,
+            rgba=np.array([1, 0, 0, 0.8]),
+        )
 
 
 class CrazyflowEnvFigureEightTrajectory(CrazyflowBaseEnv):
@@ -391,70 +389,51 @@ class CrazyflowEnvFigureEightTrajectory(CrazyflowBaseEnv):
 
     def __init__(
         self,
-        n_trajectory_sample_points: int = 10,
-        dt_trajectory_sample_points: float = 0.1,
-        trajectory_time: float = 7.0,
-        render_trajectory_sample: bool = False,
+        n_samples: int = 10,
+        samples_dt: float = 0.1,
+        trajectory_time: float = 10.0,
+        render_samples: bool = False,
         **kwargs: dict,
     ):
         """Initializes the environment.
 
         Args:
-            n_trajectory_sample_points: Number of next trajectory points to sample for observations.
+            n_samples: Number of next trajectory points to sample for observations.
             dt_trajectory_sample_points: Time between trajectory sample points in seconds.
             trajectory_time: Total time for completing the figure-eight trajectory in seconds.
-            render_trajectory_sample: Flag to enable/disable rendering of the trajectory sample.
+            render_samples: Flag to enable/disable rendering of the trajectory sample.
             **kwargs: Arguments passed to the Crazyfly simulation.
         """
-        assert kwargs["n_drones"] == 1, "Currently only supported for one drone"
-
         super().__init__(**kwargs)
+        if trajectory_time < self.time_horizon_in_seconds:
+            raise ValueError("Trajectory time must be greater than time horizon in seconds")
 
-        self.render_trajectory_sample = render_trajectory_sample
+        self.render_samples = render_samples
 
-        # Create the figure eight spline representation
-        t = np.linspace(0, 2 * np.pi, 100)
+        # Create the figure eight trajectory
+        n_steps = int(np.ceil(trajectory_time * self.freq))
+        t = np.linspace(0, 2 * np.pi, n_steps)
         radius = 1  # Radius for the circles
         y = np.zeros_like(t)  # x is 0 everywhere
         x = radius * np.sin(t)  # Scale amplitude for 1-meter diameter
         z = radius * np.sin(2 * t) + 1.2  # Scale amplitude for 1-meter diameter
-        self.tck, u = splprep([x, y, z], s=0)
+        self.trajectory = np.array([x, y, z]).T
+
+        self.sample_offsets = np.array(np.arange(n_samples) * self.freq * samples_dt, dtype=int)
 
         # Define trajectory sampling parameters
-        self.n_trajectory_sample_points = n_trajectory_sample_points
-        self.dt_trajectory_sample_points = dt_trajectory_sample_points
-        self.trajectory_time = trajectory_time
-
-        if self.trajectory_time < self.time_horizon_in_seconds:
-            warnings.warn(
-                "Time to complete full trajectory time should be smaller than the time horizon, otherwise episodes will truncate early."
-            )
-
-        self.trajectory_sampling_offsets = jnp.tile(
-            jnp.arange(
-                self.dt_trajectory_sample_points,
-                (1 + self.n_trajectory_sample_points) * self.dt_trajectory_sample_points,
-                self.dt_trajectory_sample_points,
-            ),
-            (self.sim.n_worlds, 1),
-        ).reshape(kwargs["n_worlds"], 1, -1)
+        self.n_samples = n_samples
+        self.samples_dt = samples_dt
 
         spec = {k: v for k, v in self.single_observation_space.items()}
-        spec["difference_to_next_trajectory"] = spaces.Box(
-            -np.inf, np.inf, shape=(3 * self.n_trajectory_sample_points,)
-        )
+        spec["local_samples"] = spaces.Box(-np.inf, np.inf, shape=(3 * self.n_samples,))
         self.single_observation_space = spaces.Dict(spec)
-        self.observation_space = batch_space(self.single_observation_space, kwargs["n_worlds"])
+        self.observation_space = batch_space(self.single_observation_space, self.sim.n_worlds)
 
     @property
     def reward(self) -> Array:
         return self._reward(
-            self.prev_done,
-            self.terminated,
-            self.sim.data.states,
-            jnp.array(splev(self.sim.time + self.dt_trajectory_sample_points, self.tck)).reshape(
-                (self.sim.n_worlds, self.sim.n_drones, 3)
-            ),  # next trajectory point
+            self.prev_done, self.terminated, self.sim.data.states, self.trajectory[self.steps]
         )
 
     @staticmethod
@@ -479,24 +458,18 @@ class CrazyflowEnvFigureEightTrajectory(CrazyflowBaseEnv):
 
     def _obs(self) -> dict[str, Array]:
         obs = super()._obs()
-
-        next_trajectory = jnp.array(splev(self.tau, self.tck)).transpose(1, 2, 3, 0)
-
-        if self.render_trajectory_sample:
-            render_trajectory(self.sim.viewer, next_trajectory)
-
-        obs["difference_to_next_trajectory"] = next_trajectory - self.sim.data.states.pos
-
+        idx = (self.steps + self.sample_offsets[None, ...]) % self.trajectory.shape[0]
+        next_trajectory = self.trajectory[idx, ...]
+        if self.render_samples:
+            render_trajectory(self.sim.viewer, next_trajectory[0])
+        dpos = next_trajectory - self.sim.data.states.pos
+        obs["local_samples"] = dpos.reshape(-1, 3 * self.n_samples)
         return obs
 
     @property
-    def tau(self) -> Array:
+    def steps(self) -> Array:
         """The parameters tau for the next trajectory. Must be in [0,1]."""
-        return (
-            (self.sim.time.reshape(-1, 1, 1) + self.trajectory_sampling_offsets)
-            % self.trajectory_time
-            / self.trajectory_time
-        )
+        return self.sim.data.core.steps // (self.sim.freq // self.freq) - 1
 
 
 class CrazyflowRL(VectorWrapper):
