@@ -37,6 +37,17 @@ ENV NVIDIA_DRIVER_CAPABILITIES ${NVIDIA_DRIVER_CAPABILITIES:+$NVIDIA_DRIVER_CAPA
 # Create and set proper permissions for workspace directory
 RUN mkdir -p /workspace && chown -R $USERNAME:$USERNAME /workspace && chmod -R 755 /workspace
 
+# Create and set permissions for Artemis testing directory
+# RUN mkdir -p /var/tmp/testing-dir && \
+#     chmod -R 755 /var/tmp/testing-dir && \
+#     chown -R $USERNAME:$USERNAME /var/tmp/testing-dir
+
+# # Ensure /var/tmp exists with correct permissions
+# RUN chmod 1777 /var/tmp && \
+#     touch /var/tmp/script.sh && \
+#     chmod 755 /var/tmp/script.sh && \
+#     chown $USERNAME:$USERNAME /var/tmp/script.sh
+
 # Create virtual environment with proper permissions
 ENV VIRTUAL_ENV=/home/vscode/venv
 RUN python -m venv $VIRTUAL_ENV && \
