@@ -11,7 +11,6 @@ from gymnasium.envs.mujoco.mujoco_rendering import MujocoRenderer
 from gymnasium.vector import VectorEnv, VectorWrapper
 from gymnasium.vector.utils import batch_space
 from jax import Array
-from numpy.typing import NDArray
 
 from crazyflow.control.control import MAX_THRUST, MIN_THRUST, Control
 from crazyflow.sim import Sim
