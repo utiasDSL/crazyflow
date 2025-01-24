@@ -11,7 +11,7 @@ from gymnasium.envs.mujoco.mujoco_rendering import MujocoRenderer
 from gymnasium.vector import VectorEnv, VectorWrapper
 from gymnasium.vector.utils import batch_space
 from jax import Array
-from scipy.interpolate import splev, splprep
+from numpy.typing import NDArray
 
 from crazyflow.control.control import MAX_THRUST, MIN_THRUST, Control
 from crazyflow.sim import Sim
@@ -434,7 +434,7 @@ class CrazyflowEnvFigureEightTrajectory(CrazyflowBaseEnv):
     def reward(self) -> Array:
         return self._reward(
             self.prev_done, self.terminated, self.sim.data.states, self.trajectory[self.steps]
-        )
+        ).reshape(-1)
 
     @staticmethod
     @jax.jit
@@ -495,16 +495,15 @@ class CrazyflowRL(VectorWrapper):
         self.single_action_space.high = np.ones_like(self.action_sim_high)
         self.action_space = batch_space(self.single_action_space, self.num_envs)
 
-    def step(self, actions: Array) -> tuple[Array, Array, Array, Array, dict]:
+    def step(self, actions: Array) -> tuple[dict, Array, Array, Array, dict]:
         actions = np.clip(actions, -1.0, 1.0)
-        return self.env.step(self.actions(actions))
+        obs, reward, terminated, truncated, info = self.env.step(self.actions(actions))
+        return obs, reward, terminated, truncated, info
 
     def actions(self, actions: Array) -> Array:
         """Rescale and clip actions from [-1, 1] to [action_sim_low, action_sim_high]."""
         # Rescale actions using the computed scale and mean
         rescaled_actions = actions * self.action_scale + self.action_mean
-
         # Ensure actions are within the valid range of the simulation action space
         rescaled_actions = np.clip(rescaled_actions, self.action_sim_low, self.action_sim_high)
-
         return rescaled_actions
