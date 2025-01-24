@@ -13,3 +13,4 @@ build
 !/.devcontainer/devcontainer.linux.json
 !/.devcontainer/devcontainer.wsl2.json
 !/.vscode/launch.json
+**/*.pt
