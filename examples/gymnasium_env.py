@@ -1,40 +1,28 @@
 import gymnasium
 import numpy as np
 from gymnasium.wrappers.vector import JaxToNumpy  # , JaxToTorch
-from ml_collections import config_dict
 
-from crazyflow.control import Control
-from crazyflow.sim.physics import Physics
+import crazyflow  # noqa: F401, register gymnasium envs
+from crazyflow.utils import enable_cache
 
 
 def main():
-    # set config for simulation
-    sim_config = config_dict.ConfigDict()
-    sim_config.device = "cpu"
-    sim_config.physics = Physics.sys_id
-    sim_config.control = Control.attitude
-    sim_config.attitude_freq = 50
-    sim_config.n_drones = 1
-    sim_config.n_worlds = 20
-
+    enable_cache()
     SEED = 42
-
-    envs = gymnasium.make_vec(
-        "DroneLanding-v0", time_horizon_in_seconds=2, num_envs=sim_config.n_worlds, **sim_config
-    )
+    envs = gymnasium.make_vec("DroneLanding-v0", num_envs=20, freq=50, time_horizon_in_seconds=2)
 
     # This wrapper makes it possible to interact with the environment using numpy arrays, if
     # desired. JaxToTorch is available as well.
     envs = JaxToNumpy(envs)
 
     # dummy action for going up (in attitude control)
-    action = np.zeros((sim_config.n_worlds * sim_config.n_drones, 4), dtype=np.float32)
+    action = np.zeros((20, 4), dtype=np.float32)
     action[..., 0] = 0.4
 
     obs, info = envs.reset(seed=SEED)
 
     # Step through the environment
-    for _ in range(1500):
+    for _ in range(100):
         observation, reward, terminated, truncated, info = envs.step(action)
         envs.render()
 
