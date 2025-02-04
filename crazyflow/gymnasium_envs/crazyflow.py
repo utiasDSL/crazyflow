@@ -66,7 +66,9 @@ class CrazyflowBaseEnv(VectorEnv):
         Args:
             num_envs: The number of environments to run in parallel.
             time_horizon_in_seconds: The time horizon after which episodes are truncated.
-            **kwargs: Takes arguments that are passed to the Crazyfly simulation.
+            physics: The crazyflow physics simulation model.
+            freq: The frequency at which the environment is run.
+            device: The device of the environment and the simulation.
         """
         self.num_envs = num_envs
         self.device = jax.devices(device)[0]
@@ -530,21 +532,3 @@ class CrazyflowRL(VectorWrapper):
         # Ensure actions are within the valid range of the simulation action space
         rescaled_actions = np.clip(rescaled_actions, self.action_sim_low, self.action_sim_high)
         return rescaled_actions
-
-
-def render_trajectory(viewer: MujocoRenderer | None, pos: Array) -> None:
-    """Render trajectory."""
-    if viewer is None:
-        return
-
-    pos = np.array(pos[0]).transpose(1, 0, 2)
-    n_trace, n_drones = len(pos) - 1, len(pos[0])
-
-    for i in range(n_trace):
-        for j in range(n_drones):
-            viewer.viewer.add_marker(
-                type=mujoco.mjtGeom.mjGEOM_SPHERE,
-                size=np.array([0.02, 0.02, 0.02]),
-                pos=pos[i][j],
-                rgba=np.array([1, 0, 0, 0.8]),
-            )

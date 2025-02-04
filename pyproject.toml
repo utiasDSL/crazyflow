@@ -1,7 +1,7 @@
 [build-system]
 requires = ["setuptools>=61.0.0", "wheel", "numpy"]
 build-backend = "setuptools.build_meta"
-requires-python = "3.11" # tested in python 3.11
+requires-python = "3.11"                            # tested in python 3.11
 
 [project]
 name = "crazyflow"
@@ -81,6 +81,7 @@ unfixable = []
 "benchmark/*" = ["D100", "D103"]
 "tests/*" = ["D100", "D103", "D104"]
 "examples/*" = ["D100", "D103"]
+"tutorials/*" = ["D", "ANN"]
 # TODO: Remove once everything is stable and document
 "crazyflow/*" = ["D100", "D101", "D102", "D104", "D107"]
 
