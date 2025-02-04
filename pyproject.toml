@@ -1,6 +1,7 @@
 [build-system]
 requires = ["setuptools>=61.0.0", "wheel", "numpy"]
 build-backend = "setuptools.build_meta"
+requires-python = "3.11" # tested in python 3.11
 
 [project]
 name = "crazyflow"

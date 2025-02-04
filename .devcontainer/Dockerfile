@@ -25,11 +25,7 @@ ARG USER_UID=1000
 ARG USER_GID=$USER_UID
 
 RUN groupadd --gid $USER_GID $USERNAME \
-    && useradd --uid $USER_UID --gid $USER_GID -m $USERNAME \
-    && apt-get update \
-    && apt-get install -y sudo \
-    && echo $USERNAME ALL=\(root\) NOPASSWD:ALL > /etc/sudoers.d/$USERNAME \
-    && chmod 0440 /etc/sudoers.d/$USERNAME
+    && useradd --uid $USER_UID --gid $USER_GID -m $USERNAME
 
 # Set environment variables for CUDA
 ENV PATH="/usr/local/cuda-12.0/bin:${PATH}"
@@ -39,7 +35,18 @@ ENV NVIDIA_VISIBLE_DEVICES ${NVIDIA_VISIBLE_DEVICES:-all}
 ENV NVIDIA_DRIVER_CAPABILITIES ${NVIDIA_DRIVER_CAPABILITIES:+$NVIDIA_DRIVER_CAPABILITIES,}graphics
 
 # Create and set proper permissions for workspace directory
-RUN mkdir -p /workspace && chown -R $USERNAME:$USERNAME /workspace && sudo chmod -R 777 /workspace
+RUN mkdir -p /workspace && chown -R $USERNAME:$USERNAME /workspace && chmod -R 755 /workspace
+
+# Create and set permissions for Artemis testing directory
+# RUN mkdir -p /var/tmp/testing-dir && \
+#     chmod -R 755 /var/tmp/testing-dir && \
+#     chown -R $USERNAME:$USERNAME /var/tmp/testing-dir
+
+# # Ensure /var/tmp exists with correct permissions
+# RUN chmod 1777 /var/tmp && \
+#     touch /var/tmp/script.sh && \
+#     chmod 755 /var/tmp/script.sh && \
+#     chown $USERNAME:$USERNAME /var/tmp/script.sh
 
 # Create virtual environment with proper permissions
 ENV VIRTUAL_ENV=/home/vscode/venv
@@ -62,5 +69,5 @@ COPY --chown=$USERNAME:$USERNAME pyproject.toml .
 # Install dependencies as non-root user
 RUN pip install --no-cache-dir -e ".[test,gpu]"
 
-# Set final working directory and ensure proper permissions
+# Set final working directory
 WORKDIR /workspace

@@ -243,8 +243,9 @@ class CrazyflowBaseEnv(VectorEnv):
 class CrazyflowEnvReachGoal(CrazyflowBaseEnv):
     """JAX Gymnasium environment for Crazyflie simulation."""
 
-    def __init__(self, **kwargs: dict):
+    def __init__(self, render_goal_marker: bool = False, **kwargs: dict):
         super().__init__(**kwargs)
+        self.render_goal_marker = render_goal_marker
         spec = {k: v for k, v in self.single_observation_space.items()}
         spec["difference_to_goal"] = spaces.Box(-np.inf, np.inf, shape=(3,))
         self.single_observation_space = spaces.Dict(spec)
@@ -276,6 +277,18 @@ class CrazyflowEnvReachGoal(CrazyflowBaseEnv):
             maxval=jnp.array([1.0, 1.0, 1.5]),  # x,y,z
         )
         self.goal = self.goal.at[mask].set(new_goals[mask])
+
+    def step(self, action: Array) -> tuple[Array, Array, Array, Array, dict]:
+        if self.render_goal_marker:
+            for i in range(self.sim.n_worlds):
+                if hasattr(self.sim, "viewer") and self.sim.viewer is not None:
+                    self.sim.viewer.viewer.add_marker(
+                        type=mujoco.mjtGeom.mjGEOM_SPHERE,
+                        size=np.array([0.02, 0.02, 0.02]),
+                        pos=np.array(self.goal[i]),
+                        rgba=np.array([1, 0, 0, 0.5]),
+                    )
+        return super().step(action)
 
     def _obs(self) -> dict[str, Array]:
         obs = super()._obs()
@@ -330,8 +343,9 @@ class CrazyflowEnvTargetVelocity(CrazyflowBaseEnv):
 class CrazyflowEnvLanding(CrazyflowBaseEnv):
     """JAX Gymnasium environment for Crazyflie simulation."""
 
-    def __init__(self, **kwargs: dict):
+    def __init__(self, render_landing_marker: bool = False, **kwargs: dict):
         super().__init__(**kwargs)
+        self.render_landing_target = render_landing_marker
         spec = {k: v for k, v in self.single_observation_space.items()}
         spec["difference_to_goal"] = spaces.Box(-np.inf, np.inf, shape=(3,))
         self.single_observation_space = spaces.Dict(spec)
@@ -356,6 +370,18 @@ class CrazyflowEnvLanding(CrazyflowBaseEnv):
     def reset_masked(self, mask: Array) -> None:
         super().reset_masked(mask)
 
+    def step(self, action: Array) -> tuple[Array, Array, Array, Array, dict]:
+        if self.render_landing_target:
+            for i in range(self.sim.n_worlds):
+                if hasattr(self.sim, "viewer") and self.sim.viewer is not None:
+                    self.sim.viewer.viewer.add_marker(
+                        type=mujoco.mjtGeom.mjGEOM_SPHERE,
+                        size=np.array([0.02, 0.02, 0.02]),
+                        pos=np.array(self.goal[i]),
+                        rgba=np.array([1, 0, 0, 0.5]),
+                    )
+        return super().step(action)
+
     def _obs(self) -> dict[str, Array]:
         obs = super()._obs()
         obs["difference_to_goal"] = [self.goal - self.sim.data.states.pos]
@@ -379,11 +405,9 @@ def render_trajectory(viewer: MujocoRenderer | None, pos: Array) -> None:
 class CrazyflowEnvFigureEightTrajectory(CrazyflowBaseEnv):
     """JAX Gymnasium environment for Crazyfly simulation.
 
-    This environment is used to follow a figure-eight trajectory. The trajectory is defined as a
-    parametrized scipy spline using `splprep` in 3D space. Sampling of the trajectory for the
-    observations can be configured in the `__init__` method. The observations contain the relative
-    position errors to the next `n_trajectory_sample_points` points that are distanced by
-    `dt_trajectory_sample_points`. The reward is based on the distance to the next trajectory point.
+    This environment is used to follow a figure-eight trajectory. The observations contain the
+    relative position errors to the next `n_samples` points that are distanced by `samples_dt`. The
+    reward is based on the distance to the next trajectory point.
     """
 
     def __init__(
@@ -398,7 +422,7 @@ class CrazyflowEnvFigureEightTrajectory(CrazyflowBaseEnv):
 
         Args:
             n_samples: Number of next trajectory points to sample for observations.
-            dt_trajectory_sample_points: Time between trajectory sample points in seconds.
+            samples_dt: Time between trajectory sample points in seconds.
             trajectory_time: Total time for completing the figure-eight trajectory in seconds.
             render_samples: Flag to enable/disable rendering of the trajectory sample.
             **kwargs: Arguments passed to the Crazyfly simulation.
@@ -506,3 +530,21 @@ class CrazyflowRL(VectorWrapper):
         # Ensure actions are within the valid range of the simulation action space
         rescaled_actions = np.clip(rescaled_actions, self.action_sim_low, self.action_sim_high)
         return rescaled_actions
+
+
+def render_trajectory(viewer: MujocoRenderer | None, pos: Array) -> None:
+    """Render trajectory."""
+    if viewer is None:
+        return
+
+    pos = np.array(pos[0]).transpose(1, 0, 2)
+    n_trace, n_drones = len(pos) - 1, len(pos[0])
+
+    for i in range(n_trace):
+        for j in range(n_drones):
+            viewer.viewer.add_marker(
+                type=mujoco.mjtGeom.mjGEOM_SPHERE,
+                size=np.array([0.02, 0.02, 0.02]),
+                pos=pos[i][j],
+                rgba=np.array([1, 0, 0, 0.8]),
+            )

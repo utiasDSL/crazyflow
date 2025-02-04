@@ -20,6 +20,12 @@
             ],
             "settings": {
                 "python.defaultInterpreterPath": "/home/vscode/venv/bin/python",
+                "jupyter.kernels.excludePythonEnvironments": [
+                    "/usr/bin/python",
+                    "/usr/bin/python3.10",
+                    "/usr/python3.10",
+                    "/usr/python3.10"
+                ], // hide unrequired python interpreters, so that the right one gets selected for jupyter https://github.com/microsoft/vscode/issues/130946#issuecomment-1899389049
                 "python.testing.pytestEnabled": true, // test framework
                 "python.testing.pytestArgs": [
                     "-m",
@@ -47,7 +53,8 @@
         "source=/tmp/.X11-unix,target=/tmp/.X11-unix,type=bind",
         "source=/mnt/wslg,target=/mnt/wslg,type=bind",
         "source=/usr/lib/wsl,target=/usr/lib/wsl,type=bind"
-    ],"containerEnv": {
+    ],
+    "containerEnv": {
         "DISPLAY": "${localEnv:DISPLAY}",
         "XAUTHORITY": "${localEnv:XAUTHORITY}",
         "WAYLAND_DISPLAY": "${localEnv:WAYLAND_DISPLAY}", // WSL2
