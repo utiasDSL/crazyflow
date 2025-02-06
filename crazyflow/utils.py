@@ -78,6 +78,9 @@ def patch_viewer():
     the rendering pipeline between `mjv_updateScene`, which deletes all previous markers, and
     `mjr_render`, so if we want to add markers to the scene, we need to do it here. The patch
     ensures that markers are added correctly to the scene.
+
+    If you want to add more markers than the default limit, you can increase the `max_visual_geom`
+    parameter in the `Sim` class.
     """
 
     def _add_marker_to_scene(self: BaseRender, marker: dict):

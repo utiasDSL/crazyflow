@@ -61,6 +61,7 @@ class Sim:
         self.n_worlds = n_worlds
         self.n_drones = n_drones
         self.freq = freq
+        self.max_visual_geom = 1000
 
         # Initialize MuJoCo world and data
         self._xml_path = xml_path or self.default_path
@@ -302,7 +303,7 @@ class Sim:
     def render(self):
         if self.viewer is None:
             patch_viewer()
-            self.viewer = MujocoRenderer(self.mj_model, self.mj_data, max_geom=1000)
+            self.viewer = MujocoRenderer(self.mj_model, self.mj_data, max_geom=self.max_visual_geom)
         self.mj_data.qpos[:] = self.data.mjx_data.qpos[0, :]
         self.mj_data.mocap_pos[:] = self.data.mjx_data.mocap_pos[0, :]
         self.mj_data.mocap_quat[:] = self.data.mjx_data.mocap_quat[0, :]
