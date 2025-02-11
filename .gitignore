@@ -7,11 +7,11 @@ saves
 .pytest_cache
 *.json
 **/*.csv
+.vscode
 build
 .venv
 !/.devcontainer/devcontainer.json
 !/.devcontainer/devcontainer.linux.json
 !/.devcontainer/devcontainer.wsl2.json
-!/.vscode/launch.json
 **/*.pt
 tutorials/ppo/wandb
