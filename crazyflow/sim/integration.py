@@ -82,7 +82,7 @@ def _integrate(
     dvel: Array,
     dang_vel: Array,
     dt: float,
-) -> SimData:
+) -> tuple[Array, Array, Array, Array]:
     """Integrate the dynamics forward in time.
 
     Args:
