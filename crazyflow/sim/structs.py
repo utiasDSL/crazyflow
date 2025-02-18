@@ -21,14 +21,12 @@ class SimState:
     """Velocity of the drone's center of mass in the world frame."""
     ang_vel: Array  # (N, M, 3)
     """Angular velocity of the drone's center of mass in the world frame."""
+    motor_forces: Array  # (N, M, 4)  # Motor forces along body frame z axis
+    """Motor forces along body frame z axis."""
     force: Array  # (N, M, 3)  # CoM force
     """Force applied to the drone's center of mass in the world frame."""
     torque: Array  # (N, M, 3)  # CoM torque
     """Torque applied to the drone's center of mass in the world frame."""
-    motor_forces: Array  # (N, M, 4)  # Motor forces along body frame z axis
-    """Motor forces along body frame z axis."""
-    motor_torques: Array  # (N, M, 4)  # Motor torques around the body frame z axis
-    """Motor torques around the body frame z axis."""
 
     @staticmethod
     def create(n_worlds: int, n_drones: int, device: Device) -> SimState:
@@ -41,16 +39,14 @@ class SimState:
         force = jnp.zeros((n_worlds, n_drones, 3), device=device)
         torque = jnp.zeros((n_worlds, n_drones, 3), device=device)
         motor_forces = jnp.zeros((n_worlds, n_drones, 4), device=device)
-        motor_torques = jnp.zeros((n_worlds, n_drones, 4), device=device)
         return SimState(
             pos=pos,
             quat=quat,
+            vel=vel,
+            ang_vel=ang_vel,
             force=force,
             torque=torque,
             motor_forces=motor_forces,
-            motor_torques=motor_torques,
-            vel=vel,
-            ang_vel=ang_vel,
         )
 
 
@@ -64,6 +60,8 @@ class SimStateDeriv:
     """Derivative of the velocity of the drone's center of mass."""
     dang_vel: Array  # (N, M, 3)
     """Derivative of the angular velocity of the drone's center of mass."""
+    dmotor_forces: Array  # (N, M, 4)
+    """Derivative of the motor forces along body frame z axis."""
 
     @staticmethod
     def create(n_worlds: int, n_drones: int, device: Device) -> SimStateDeriv:
@@ -72,7 +70,10 @@ class SimStateDeriv:
         drot = jnp.zeros((n_worlds, n_drones, 3), device=device)
         dvel = jnp.zeros((n_worlds, n_drones, 3), device=device)
         dang_vel = jnp.zeros((n_worlds, n_drones, 3), device=device)
-        return SimStateDeriv(dpos=dpos, drot=drot, dvel=dvel, dang_vel=dang_vel)
+        dmotor_forces = jnp.zeros((n_worlds, n_drones, 4), device=device)
+        return SimStateDeriv(
+            dpos=dpos, drot=drot, dvel=dvel, dang_vel=dang_vel, dmotor_forces=dmotor_forces
+        )
 
 
 @dataclass

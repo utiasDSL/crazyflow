@@ -14,7 +14,7 @@ from crazyflow.sim import Physics, Sim
 def main():
     """Spawn 25 drones in one world and render each with a trace behind it."""
     n_worlds, n_drones = 1, 25
-    sim = Sim(n_worlds=n_worlds, n_drones=n_drones, physics=Physics.sys_id, device="cpu")
+    sim = Sim(n_worlds=n_worlds, n_drones=n_drones, physics=Physics.analytical, device="cpu")
     fps = 60
     cmd = np.zeros((sim.n_worlds, sim.n_drones, 4))
     cmd[..., 0] = MASS * GRAVITY * 1.2

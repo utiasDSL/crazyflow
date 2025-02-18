@@ -10,6 +10,7 @@ from einops import rearrange
 from gymnasium.envs.mujoco.mujoco_rendering import MujocoRenderer
 from jax import Array, Device
 from jax.scipy.spatial.transform import Rotation as R
+from lsy_models.models_numeric import f_first_principles
 from mujoco.mjx import Data, Model
 
 from crazyflow.constants import J_INV, MASS, SIGN_MIX_MATRIX, J
@@ -128,8 +129,8 @@ class Sim:
         # None is required by jax.lax.scan to unpack the tuple returned by single_step.
         def single_step(data: SimData, _: None) -> tuple[SimData, None]:
             data = ctrl_fn(data)
-            data = wrench_fn(data)
             data = disturbance_fn(data)
+            data = wrench_fn(data)
             data = physics_fn(data)
             data = data.replace(core=data.core.replace(steps=data.core.steps + 1))
             # MuJoCo needs to sync after every physics step, so that the next step control, wrench
@@ -570,13 +571,21 @@ def analytical_wrench(data: SimData) -> SimData:
 
 def analytical_derivative(data: SimData) -> SimData:
     """Compute the derivative of the states."""
-    quat, mass, J_inv = data.states.quat, data.params.mass, data.params.J_INV
-    acc = collective_force2acceleration(data.states.force, mass)
-    ang_vel_deriv = collective_torque2ang_vel_deriv(data.states.torque, quat, J_inv)
-    vel, ang_vel = (data.states.vel, data.states.ang_vel)  # Already given in the states
-    deriv = data.states_deriv
-    deriv = deriv.replace(dpos=vel, drot=ang_vel, dvel=acc, dang_vel=ang_vel_deriv)
-    return data.replace(states_deriv=deriv)
+    dpos, _, dvel, dang_vel, df_motor = f_first_principles(
+        data.states.pos,
+        data.states.quat,
+        data.states.vel,
+        data.states.ang_vel,
+        data.controls.thrust,
+        data.params,
+        data.states.motor_forces,
+        data.states.force,
+        data.states.torque,
+    )
+    states_deriv = data.states_deriv.replace(
+        dpos=dpos, drot=data.states.ang_vel, dvel=dvel, dang_vel=dang_vel, dmotor_forces=df_motor
+    )
+    return data.replace(states_deriv=states_deriv)
 
 
 def identified_wrench(data: SimData) -> SimData:

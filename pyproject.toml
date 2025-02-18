@@ -29,6 +29,7 @@ dependencies = [
     "ml_collections",
     "casadi",
     "numpy",
+    "lsy_models @ git+https://github.com/utiasDSL/models.git",
 ]
 
 [project.optional-dependencies]
