@@ -43,7 +43,12 @@ def profile_gym_env_step(sim_config: config_dict.ConfigDict, n_steps: int, devic
     device = jax.devices(device)[0]
 
     envs = gymnasium.make_vec(
-        "DroneReachPos-v0", time_horizon_in_seconds=3, num_envs=sim_config.n_worlds, **sim_config
+        "DroneReachPos-v0",
+        time_horizon_in_seconds=3,
+        num_envs=sim_config.n_worlds,
+        device=sim_config.device,
+        freq=sim_config.attitude_freq,
+        physics=sim_config.physics,
     )
 
     # Action for going up (in attitude control)
