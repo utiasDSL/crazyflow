@@ -6,9 +6,11 @@ import jax
 import jax.numpy as jnp
 from flax.struct import dataclass, field
 from jax import Array, Device
+from lsy_models.utils.constants import Constants
 
 if TYPE_CHECKING:
     from mujoco.mjx import Data, Model
+    from numpy.typing import NDArray
 
 
 @dataclass
@@ -161,6 +163,16 @@ class SimParams:
     J_INV: Array  # (N, M, 3, 3)
     """Inverse of the inertia matrix of the drone."""
 
+    # TODO: Remove duplicate definition of constants. Move into constants from lsy_models
+    THRUST_TAU: float = field(pytree_node=False)
+    SIGN_MATRIX: NDArray = field(pytree_node=False)
+    L: float = field(pytree_node=False)
+    KF: float = field(pytree_node=False)
+    KM: float = field(pytree_node=False)
+    GRAVITY_VEC: NDArray = field(pytree_node=False)
+    MASS: float = field(pytree_node=False)
+    J_inv: NDArray = field(pytree_node=False)
+
     @staticmethod
     def create(
         n_worlds: int, n_drones: int, mass: float, J: Array, J_INV: Array, device: Device
@@ -170,7 +182,21 @@ class SimParams:
         j, j_inv = jnp.array(J, device=device), jnp.array(J_INV, device=device)
         J = jnp.tile(j[None, None, :, :], (n_worlds, n_drones, 1, 1))
         J_INV = jnp.tile(j_inv[None, None, :, :], (n_worlds, n_drones, 1, 1))
-        return SimParams(mass=mass, J=J, J_INV=J_INV)
+        constants = Constants.from_config("cf2x_L250")
+
+        return SimParams(
+            mass=mass,
+            J=constants.J,
+            J_INV=J_INV,
+            THRUST_TAU=constants.THRUST_TAU,
+            SIGN_MATRIX=constants.SIGN_MATRIX,
+            L=constants.L,
+            KF=constants.KF,
+            KM=constants.KM,
+            GRAVITY_VEC=constants.GRAVITY_VEC,
+            MASS=constants.MASS,
+            J_inv=constants.J_inv,
+        )
 
 
 @dataclass
