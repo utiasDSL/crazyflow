@@ -85,11 +85,15 @@ class Sim:
         assert self._xml_path.exists(), f"Model file {self._xml_path} does not exist"
         spec = mujoco.MjSpec.from_file(str(self._xml_path))
         spec.option.timestep = 1 / self.freq
+        spec.copy_during_attach = True
         drone_spec = mujoco.MjSpec.from_file(str(self.drone_path))
         frame = spec.worldbody.add_frame(name="world")
         # Add drones and their actuators
         for i in range(self.n_drones):
-            drone = frame.attach_body(drone_spec.find_body("drone"), "", f":{i}")
+            drone_body = drone_spec.body("drone")
+            if drone_body is None:
+                raise ValueError("Drone body not found in drone spec")
+            drone = frame.attach_body(drone_body, "", f":{i}")
             drone.add_freejoint()
         return spec
 
@@ -100,10 +104,6 @@ class Sim:
         mjx_model = mjx.put_model(mj_model, device=self.device)
         mjx_data = mjx.put_data(mj_model, mj_data, device=self.device)
         mjx_data = jax.vmap(lambda _: mjx_data)(range(self.n_worlds))
-        # Avoid recompilation on the second call due to time being a weak type. See e.g.
-        # https://github.com/jax-ml/jax/issues/4274#issuecomment-692406759
-        # Tracking issue: https://github.com/google-deepmind/mujoco/issues/2306
-        mjx_data = mjx_data.replace(time=jnp.float32(mjx_data.time))
         return mj_model, mj_data, mjx_model, mjx_data
 
     def build_step_fn(self):
