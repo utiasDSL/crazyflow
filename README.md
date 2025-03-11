@@ -6,7 +6,7 @@
 
 
 **Linux**
-
+0. Make sure to be in a X11 session ([link](https://askubuntu.com/questions/1410256/how-do-i-use-the-x-window-manager-instead-of-wayland-on-ubuntu-22-04)), otherwise rendering of the drone will fail.
 1. Install [Docker](https://docs.docker.com/engine/install/) (, and make sure Docker Daemon is running)
 2. Install [VSCode](https://code.visualstudio.com/), with [devcontainer extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers), and [remote dev pack](https://marketplace.visualstudio.com/items?itemName=ms-azuretools.vscode-docker).
 3. Clone this project's code. Rename `/.devcontainer/devcontainer.linux.json` to `/.devcontainer/devcontainer.json`.
