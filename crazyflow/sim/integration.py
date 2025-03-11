@@ -60,29 +60,48 @@ def rk4_average(k1: SimData, k2: SimData, k3: SimData, k4: SimData) -> SimData:
 def integrate(data: SimData, deriv: SimData, dt: float) -> SimData:
     """Integrate the dynamics forward in time."""
     states, states_deriv = data.states, deriv.states_deriv
-    pos, quat, vel, ang_vel = states.pos, states.quat, states.vel, states.ang_vel
-    dpos, drot = states_deriv.dpos, states_deriv.drot
-    dvel, dang_vel = states_deriv.dvel, states_deriv.dang_vel
-    next_pos, next_quat, next_vel, next_ang_vel = _integrate(
-        pos, quat, vel, ang_vel, dpos, drot, dvel, dang_vel, dt
+    next_pos, next_quat, next_vel, next_ang_vel, next_motor_forces = _integrate(
+        states.pos,
+        states.quat,
+        states.vel,
+        states.ang_vel,
+        states.motor_forces,
+        states_deriv.dpos,
+        states_deriv.drot,
+        states_deriv.dvel,
+        states_deriv.dang_vel,
+        states_deriv.dmotor_forces,
+        dt,
     )
     return data.replace(
-        states=states.replace(pos=next_pos, quat=next_quat, vel=next_vel, ang_vel=next_ang_vel)
+        states=states.replace(
+            pos=next_pos,
+            quat=next_quat,
+            vel=next_vel,
+            ang_vel=next_ang_vel,
+            motor_forces=next_motor_forces,
+        )
     )
 
 
-@partial(vectorize, signature="(3),(4),(3),(3),(3),(3),(3),(3)->(3),(4),(3),(3)", excluded=[8])
+@partial(
+    vectorize,
+    signature="(3),(4),(3),(3),(4),(3),(3),(3),(3),(4)->(3),(4),(3),(3),(4)",
+    excluded=[10],
+)
 def _integrate(
     pos: Array,
     quat: Array,
     vel: Array,
     ang_vel: Array,
+    motor_forces: Array,
     dpos: Array,
     drot: Array,
     dvel: Array,
     dang_vel: Array,
+    dmotor_forces: Array,
     dt: float,
-) -> tuple[Array, Array, Array, Array]:
+) -> tuple[Array, Array, Array, Array, Array]:
     """Integrate the dynamics forward in time.
 
     Args:
@@ -90,10 +109,12 @@ def _integrate(
         quat: The orientation of the drone as a quaternion.
         vel: The velocity of the drone.
         ang_vel: The angular velocity of the drone.
+        motor_forces: The forces of the motors.
         dpos: The derivative of the position of the drone.
         drot: The derivative of the quaternion of the drone (3D angular velocity).
         dvel: The derivative of the velocity of the drone.
         dang_vel: The derivative of the angular velocity of the drone.
+        dmotor_forces: The derivative of the motor forces of the drone.
         dt: The time step to integrate over.
 
     Returns:
@@ -103,4 +124,5 @@ def _integrate(
     next_quat = (R.from_quat(quat) * R.from_rotvec(drot * dt)).as_quat()
     next_vel = vel + dvel * dt
     next_ang_vel = ang_vel + dang_vel * dt
-    return next_pos, next_quat, next_vel, next_ang_vel
+    next_motor_forces = motor_forces + dmotor_forces * dt
+    return next_pos, next_quat, next_vel, next_ang_vel, next_motor_forces

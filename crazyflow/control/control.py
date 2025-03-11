@@ -106,7 +106,7 @@ def state2attitude(
 
 
 @partial(jnp.vectorize, signature="(4),(4),(3),(3)->(4),(3)", excluded=[4])
-def attitude2rpm(
+def attitude2thrust(
     controls: Array, quat: Array, last_rpy: Array, rpy_err_i: Array, dt: float
 ) -> tuple[Array, Array]:
     """Convert the desired collective thrust and attitude into motor RPMs."""
@@ -125,7 +125,7 @@ def attitude2rpm(
     target_torques = jnp.clip(target_torques, -3200, 3200)
     thrust_per_motor = jnp.atleast_1d(controls[0]) / 4
     pwm = jnp.clip(thrust2pwm(thrust_per_motor) + MIX_MATRIX @ target_torques, MIN_PWM, MAX_PWM)
-    return pwm2rpm(pwm), rpy_err_i
+    return pwm2thrust(pwm), rpy_err_i
 
 
 @partial(jnp.vectorize, signature="(4)->(4)")
@@ -146,6 +146,12 @@ def thrust2pwm(thrust: Array) -> Array:
 def pwm2rpm(pwm: Array) -> Array:
     """Convert the motors' PWMs into RPMs."""
     return PWM2RPM_CONST + PWM2RPM_SCALE * pwm
+
+
+@partial(jnp.vectorize, signature="(4)->(4)")
+def pwm2thrust(pwm: Array) -> Array:
+    """Convert the motors' RPMs into thrust."""
+    return jnp.clip(((pwm * PWM2RPM_SCALE) + PWM2RPM_CONST) ** 2 * KF, MIN_THRUST, MAX_THRUST)
 
 
 @jax.jit

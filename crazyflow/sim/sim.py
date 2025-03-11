@@ -10,22 +10,14 @@ from einops import rearrange
 from gymnasium.envs.mujoco.mujoco_rendering import MujocoRenderer
 from jax import Array, Device
 from jax.scipy.spatial.transform import Rotation as R
-from lsy_models.models_numeric import f_first_principles
+from lsy_models.models_numeric import f_first_principles, f_fitted_DI_rpy
 from mujoco.mjx import Data, Model
 
 from crazyflow.constants import J_INV, MASS, SIGN_MIX_MATRIX, J
-from crazyflow.control.control import Control, attitude2rpm, pwm2rpm, state2attitude, thrust2pwm
+from crazyflow.control.control import Control, attitude2thrust, pwm2rpm, state2attitude, thrust2pwm
 from crazyflow.exception import ConfigError, NotInitializedError
 from crazyflow.sim.integration import Integrator, euler, rk4
-from crazyflow.sim.physics import (
-    Physics,
-    collective_force2acceleration,
-    collective_torque2ang_vel_deriv,
-    rpms2collective_wrench,
-    rpms2motor_forces,
-    rpms2motor_torques,
-    surrogate_identified_collective_wrench,
-)
+from crazyflow.sim.physics import Physics, rpms2motor_forces, rpms2motor_torques
 from crazyflow.sim.structs import SimControls, SimCore, SimData, SimParams, SimState, SimStateDeriv
 from crazyflow.utils import grid_2d, leaf_replace, patch_viewer, pytree_replace, to_device
 
@@ -121,7 +113,6 @@ class Sim:
         # functions. They act as factories that produce building blocks for the construction of our
         # simulation pipeline.
         ctrl_fn = generate_control_fn(self.control)
-        wrench_fn = generate_wrench_fn(self.physics)
         disturbance_fn = self.disturbance_fn
         physics_fn = generate_physics_fn(self.physics, self.integrator)
         sync_fn = generate_sync_fn(self.physics)
@@ -130,7 +121,6 @@ class Sim:
         def single_step(data: SimData, _: None) -> tuple[SimData, None]:
             data = ctrl_fn(data)
             data = disturbance_fn(data)
-            data = wrench_fn(data)
             data = physics_fn(data)
             data = data.replace(core=data.core.replace(steps=data.core.steps + 1))
             # MuJoCo needs to sync after every physics step, so that the next step control, wrench
@@ -431,19 +421,6 @@ def generate_control_fn(control: Control) -> Callable[[SimData], SimData]:
             raise NotImplementedError(f"Control mode {control} not implemented")
 
 
-def generate_wrench_fn(physics: Physics) -> Callable[[SimData], SimData]:
-    """Generate the wrench function for the given physics mode."""
-    match physics:
-        case Physics.analytical:
-            return analytical_wrench
-        case Physics.sys_id:
-            return identified_wrench
-        case Physics.mujoco:
-            return mujoco_wrench
-        case _:
-            raise NotImplementedError(f"Physics mode {physics} not implemented")
-
-
 def generate_derivative_fn(physics: Physics) -> Callable[[SimData], SimData]:
     """Generate the derivative function for the given physics mode."""
     match physics:
@@ -543,12 +520,12 @@ def step_attitude_controller(data: SimData) -> SimData:
     # Commit the staged attitude controls
     staged_attitude = controls.staged_attitude
     controls = leaf_replace(controls, mask, attitude_steps=steps, attitude=staged_attitude)
-    # Compute the new rpm values from the committed attitude controls
+    # Compute the new thrust values from the committed attitude controls
     quat, attitude = data.states.quat, controls.attitude
     dt = 1 / controls.attitude_freq
-    rpms, rpy_err_i = attitude2rpm(attitude, quat, controls.last_rpy, controls.rpy_err_i, dt)
+    thrust, rpy_err_i = attitude2thrust(attitude, quat, controls.last_rpy, controls.rpy_err_i, dt)
     rpy = R.from_quat(quat).as_euler("xyz")
-    controls = leaf_replace(controls, mask, rpms=rpms, rpy_err_i=rpy_err_i, last_rpy=rpy)
+    controls = leaf_replace(controls, mask, thrust=thrust, rpy_err_i=rpy_err_i, last_rpy=rpy)
     return data.replace(controls=controls)
 
 
@@ -557,20 +534,14 @@ def step_thrust_controller(data: SimData) -> SimData:
     controls = data.controls
     steps = data.core.steps
     mask = controllable(steps, data.core.freq, controls.thrust_steps, controls.thrust_freq)
-    rpms = pwm2rpm(thrust2pwm(controls.thrust))
-    controls = leaf_replace(controls, mask, thrust_steps=steps, rpms=rpms)
+    raise NotImplementedError("Thrust controller currently not implemented. Missing staging.")
+    # TODO: Introduce thrust staging
+    controls = leaf_replace(controls, mask, thrust_steps=steps, thrust=controls.thrust)
     return data.replace(controls=controls)
 
 
-def analytical_wrench(data: SimData) -> SimData:
-    """Compute the wrench from the analytical dynamics model."""
-    states, controls, params = data.states, data.controls, data.params
-    force, torque = rpms2collective_wrench(controls.rpms, states.quat, states.ang_vel, params.J)
-    return data.replace(states=data.states.replace(force=force, torque=torque))
-
-
 def analytical_derivative(data: SimData) -> SimData:
-    """Compute the derivative of the states."""
+    """Compute the state derivative from first principles."""
     dpos, _, dvel, dang_vel, df_motor = f_first_principles(
         data.states.pos,
         data.states.quat,
@@ -588,17 +559,23 @@ def analytical_derivative(data: SimData) -> SimData:
     return data.replace(states_deriv=states_deriv)
 
 
-def identified_wrench(data: SimData) -> SimData:
-    """Compute the wrench from the identified dynamics model."""
-    states, controls = data.states, data.controls
-    mass, J = data.params.mass, data.params.J
-    force, torque = surrogate_identified_collective_wrench(
-        controls.attitude, states.quat, states.ang_vel, mass, J, 1 / data.core.freq
+def identified_derivative(data: SimData) -> SimData:
+    """Compute the state derivative from the identified dynamics model."""
+    dpos, _, dvel, dang_vel, df_motor = f_fitted_DI_rpy(
+        data.states.pos,
+        data.states.quat,
+        data.states.vel,
+        data.states.ang_vel,
+        data.controls.thrust,
+        data.params,
+        None,  # Fitted model does not have motor dynamics, we assume control can be matched
+        data.states.force,
+        data.states.torque,
     )
-    return data.replace(states=data.states.replace(force=force, torque=torque))
-
-
-identified_derivative = analytical_derivative  # We can use the same derivative function for both
+    states_deriv = data.states_deriv.replace(
+        dpos=dpos, drot=dang_vel, dvel=dvel, dang_vel=dang_vel, dmotor_forces=df_motor
+    )
+    return data.replace(states_deriv=states_deriv)
 
 
 def mujoco_wrench(data: SimData) -> SimData:
