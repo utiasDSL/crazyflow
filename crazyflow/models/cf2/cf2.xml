@@ -19,11 +19,11 @@
       <inertial pos="0.0 0.0 0.0" mass="0.027" diaginertia="2.3951e-5 2.3951e-5 3.2347e-5"/>
       <camera name="track" pos="-1 0 .5" xyaxes="0 -1 0 1 0 2" mode="trackcom"/>
       <geom mesh="cf2_0" material="propeller_plastic" class="visual"/>
-      <geom mesh="cf2_1" material="medium_gloss_plastic" class="visual"/>
-      <geom mesh="cf2_2" material="polished_gold" class="visual"/>
-      <geom mesh="cf2_3" material="polished_plastic" class="visual"/>
+      <geom mesh="cf2_1" material="medium_gloss_plastic" class="visual" euler="0 0 90"/>
+      <geom mesh="cf2_2" material="polished_gold" class="visual" euler="0 0 90"/>
+      <geom mesh="cf2_3" material="polished_plastic" class="visual" euler="0 0 90"/>
       <geom mesh="cf2_4" material="burnished_chrome" class="visual"/>
-      <geom mesh="cf2_5" material="body_frame_plastic" class="visual"/>
+      <geom mesh="cf2_5" material="body_frame_plastic" class="visual" pos="-0.0015 0 0" euler="0 0 90"/>
       <geom mesh="cf2_6" material="white" class="visual"/>
       <!-- Collision geometry is estimated based on the visual mesh. We use a sphere for maximum
        computational efficiency with larger swarms. -->
