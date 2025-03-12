@@ -40,7 +40,8 @@ class SimState:
         ang_vel = jnp.zeros((n_worlds, n_drones, 3), device=device)
         force = jnp.zeros((n_worlds, n_drones, 3), device=device)
         torque = jnp.zeros((n_worlds, n_drones, 3), device=device)
-        motor_forces = jnp.zeros((n_worlds, n_drones, 4), device=device)
+        # TODO remove 0.08 factor and rather make floor solid!
+        motor_forces = jnp.ones((n_worlds, n_drones, 4), device=device) * 0.08
         return SimState(
             pos=pos,
             quat=quat,
@@ -144,8 +145,7 @@ class SimControls:
             staged_attitude=jnp.zeros((n_worlds, n_drones, 4), device=device),
             attitude_steps=-jnp.ones((n_worlds, 1), dtype=jnp.int32, device=device),
             attitude_freq=attitude_freq,
-            thrust=jnp.ones((n_worlds, n_drones, 4), device=device)
-            * 0.08,  # TODO remove and rather make floor solid!
+            thrust=jnp.ones((n_worlds, n_drones, 4), device=device),
             thrust_steps=-jnp.ones((n_worlds, 1), dtype=jnp.int32, device=device),
             thrust_freq=thrust_freq,
             rpms=jnp.zeros((n_worlds, n_drones, 4), device=device),
@@ -246,7 +246,7 @@ class SimParams:
             KM=KM,
             THRUST_MIN=THRUST_MIN,
             THRUST_MAX=THRUST_MAX,
-            THRUST_TAU=THRUST_TAU * 1,  # TODO remove
+            THRUST_TAU=THRUST_TAU * 2,  # TODO remove
             GRAVITY_VEC=constants.GRAVITY_VEC,
             SIGN_MATRIX=constants.SIGN_MATRIX,
             PWM_MIN=constants.PWM_MIN,
