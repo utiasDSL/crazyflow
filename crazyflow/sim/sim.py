@@ -506,26 +506,16 @@ def step_state_controller(data: SimData) -> SimData:
     des_yaw = controls.state[..., [9]]  # Keep (N, M, 1) shape for broadcasting
     dt = 1 / data.controls.state_freq
 
-    attitude, pos_err_i = state2attitude(
-        states.pos, states.vel, states.quat, des_pos, des_vel, des_yaw, controls.pos_err_i, dt
+    command_RPYT, pos_err_i = cntrl_mellinger_position(
+        states.pos,
+        states.quat,
+        states.vel,
+        states.ang_vel,
+        controls.state,
+        data.params,
+        dt=1 / data.controls.state_freq,
+        i_error=controls.pos_err_i,
     )
-    # Bringing the command into the correct format
-    command_RPYT = jnp.roll(attitude, -1, axis=-1)  # bring into RPYT format
-    command_RPYT = command_RPYT.at[..., -1].set(
-        force2pwm(command_RPYT[..., -1], data.params)
-    )  # thrust (N) -> thrust (PWM)
-    command_RPYT = command_RPYT.at[..., :-1].set(command_RPYT[..., :-1] * 180 / jnp.pi)  # rad2deg
-
-    # command_RPYT, pos_err_i = cntrl_mellinger_position(
-    #     states.pos,
-    #     states.quat,
-    #     states.vel,
-    #     states.ang_vel,
-    #     controls.state,
-    #     data.params,
-    #     dt=1 / data.controls.state_freq,
-    #     i_error=controls.pos_err_i,
-    # )
 
     controls = leaf_replace(
         controls,
