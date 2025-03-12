@@ -119,8 +119,8 @@ class SimControls:
     """Integral of the rpy error."""
     pos_err_i: Array  # (N, M, 3)
     """Integral of the position error."""
-    last_rpy: Array  # (N, M, 3)
-    """Last rpy for 'xyz' euler angles.
+    prev_ang_vel: Array  # (N, M, 3)
+    """Aangular velocity from the last controller step.
 
     Required to compute the integral term in the attitude controller.
     """
@@ -144,58 +144,123 @@ class SimControls:
             staged_attitude=jnp.zeros((n_worlds, n_drones, 4), device=device),
             attitude_steps=-jnp.ones((n_worlds, 1), dtype=jnp.int32, device=device),
             attitude_freq=attitude_freq,
-            thrust=jnp.zeros((n_worlds, n_drones, 4), device=device),
+            thrust=jnp.ones((n_worlds, n_drones, 4), device=device)
+            * 0.08,  # TODO remove and rather make floor solid!
             thrust_steps=-jnp.ones((n_worlds, 1), dtype=jnp.int32, device=device),
             thrust_freq=thrust_freq,
             rpms=jnp.zeros((n_worlds, n_drones, 4), device=device),
             rpy_err_i=jnp.zeros((n_worlds, n_drones, 3), device=device),
             pos_err_i=jnp.zeros((n_worlds, n_drones, 3), device=device),
-            last_rpy=jnp.zeros((n_worlds, n_drones, 3), device=device),
+            prev_ang_vel=jnp.zeros((n_worlds, n_drones, 3), device=device),
         )
 
 
 @dataclass
 class SimParams:
-    mass: Array  # (N, M, 1)
+    # Variable params (for domain randomization) => (N, M, shape)
+    MASS: Array  # (N, M, 1)
     """Mass of the drone."""
     J: Array  # (N, M, 3, 3)
     """Inertia matrix of the drone."""
     J_INV: Array  # (N, M, 3, 3)
     """Inverse of the inertia matrix of the drone."""
+    L: Array  # (N, M, 1)
+    """Arm length of the drone, aka distance of the motors from the center of mass."""
 
-    # TODO: Remove duplicate definition of constants. Move into constants from lsy_models
-    THRUST_TAU: float = field(pytree_node=False)
-    SIGN_MATRIX: NDArray = field(pytree_node=False)
-    L: float = field(pytree_node=False)
-    KF: float = field(pytree_node=False)
-    KM: float = field(pytree_node=False)
-    GRAVITY_VEC: NDArray = field(pytree_node=False)
-    MASS: float = field(pytree_node=False)
-    J_inv: NDArray = field(pytree_node=False)
+    # TODO maybe params, maybe constants?
+    KF: float = field(pytree_node=False)  # (N, M, 1)
+    """RPM squared to Force factor."""
+    KM: float = field(pytree_node=False)  # (N, M, 1)
+    """RPM squared to Torque factor."""
+    THRUST_MIN: float = field(pytree_node=False)  # (N, M, 1)
+    """Min thrust per motor."""
+    THRUST_MAX: float = field(pytree_node=False)  # (N, M, 1)
+    """Max thrust per motor."""
+    THRUST_TAU: float = field(pytree_node=False)  # (N, M, 1)
+    # TODO maybe N, M, 4, for each of the motors individually
+    """Time constant for the thrust dynamics."""
+
+    # Constants
+    GRAVITY_VEC: Array = field(pytree_node=False)
+    # MIX_MATRIX: Array = field(pytree_node=False) # TODO not needed? => remove
+    SIGN_MATRIX: Array = field(pytree_node=False)
+    PWM_MIN: float = field(pytree_node=False)
+    PWM_MAX: float = field(pytree_node=False)
+
+    # System Identification (SI) parameters
+    SI_ROLL: Array = field(pytree_node=False)
+    SI_PITCH: Array = field(pytree_node=False)
+    SI_YAW: Array = field(pytree_node=False)
+    SI_PARAMS: Array = field(pytree_node=False)
+    SI_ACC: Array = field(pytree_node=False)
+
+    # System Identification parameters for the double integrator (DI) model
+    DI_ROLL: Array = field(pytree_node=False)
+    DI_PITCH: Array = field(pytree_node=False)
+    DI_YAW: Array = field(pytree_node=False)
+    DI_PARAMS: Array = field(pytree_node=False)
+    DI_ACC: Array = field(pytree_node=False)
 
     @staticmethod
     def create(
-        n_worlds: int, n_drones: int, mass: float, J: Array, J_INV: Array, device: Device
+        n_worlds: int,
+        n_drones: int,
+        mass: float,
+        J: Array,
+        device: Device,
+        L: float | None = None,
+        KF: float | None = None,
+        KM: float | None = None,
+        THRUST_MIN: float | None = None,
+        THRUST_MAX: float | None = None,
+        THRUST_TAU: float | None = None,
     ) -> SimParams:
         """Create a default set of parameters for the simulation."""
-        mass = jnp.ones((n_worlds, n_drones, 1), device=device) * mass
-        j, j_inv = jnp.array(J, device=device), jnp.array(J_INV, device=device)
+        MASS = jnp.ones((n_worlds, n_drones, 1), device=device) * mass
+        j = jnp.array(J, device=device)
+        j_inv = jnp.linalg.inv(j)
         J = jnp.tile(j[None, None, :, :], (n_worlds, n_drones, 1, 1))
         J_INV = jnp.tile(j_inv[None, None, :, :], (n_worlds, n_drones, 1, 1))
+
         constants = Constants.from_config("cf2x_L250")
 
+        if L is None:
+            L = constants.L
+        if KF is None:
+            KF = constants.KF
+        if KM is None:
+            KM = constants.KM
+        if THRUST_MIN is None:
+            THRUST_MIN = constants.THRUST_MIN
+        if THRUST_MAX is None:
+            THRUST_MAX = constants.THRUST_MAX
+        if THRUST_TAU is None:
+            THRUST_TAU = constants.THRUST_TAU
+
         return SimParams(
-            mass=mass,
-            J=constants.J,
+            MASS=MASS,
+            J=J,
             J_INV=J_INV,
-            THRUST_TAU=constants.THRUST_TAU,
-            SIGN_MATRIX=constants.SIGN_MATRIX,
-            L=constants.L,
-            KF=constants.KF,
-            KM=constants.KM,
+            L=L,
+            KF=KF,
+            KM=KM,
+            THRUST_MIN=THRUST_MIN,
+            THRUST_MAX=THRUST_MAX,
+            THRUST_TAU=THRUST_TAU * 1,  # TODO remove
             GRAVITY_VEC=constants.GRAVITY_VEC,
-            MASS=constants.MASS,
-            J_inv=constants.J_inv,
+            SIGN_MATRIX=constants.SIGN_MATRIX,
+            PWM_MIN=constants.PWM_MIN,
+            PWM_MAX=constants.PWM_MAX,
+            SI_ROLL=constants.SI_ROLL,
+            SI_PITCH=constants.SI_PITCH,
+            SI_YAW=constants.SI_YAW,
+            SI_PARAMS=constants.SI_PARAMS,
+            SI_ACC=constants.SI_ACC,
+            DI_ROLL=constants.DI_ROLL,
+            DI_PITCH=constants.DI_PITCH,
+            DI_YAW=constants.DI_YAW,
+            DI_PARAMS=constants.DI_PARAMS,
+            DI_ACC=constants.DI_ACC,
         )
 
 

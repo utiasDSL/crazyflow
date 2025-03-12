@@ -10,7 +10,9 @@ from einops import rearrange
 from gymnasium.envs.mujoco.mujoco_rendering import MujocoRenderer
 from jax import Array, Device
 from jax.scipy.spatial.transform import Rotation as R
+from lsy_models.controllers_numeric import cntrl_mellinger_attitude, cntrl_mellinger_position
 from lsy_models.models_numeric import f_first_principles, f_fitted_DI_rpy
+from lsy_models.utils.cf2 import force2pwm, pwm2force
 from mujoco.mjx import Data, Model
 
 from crazyflow.constants import J_INV, MASS, SIGN_MIX_MATRIX, J
@@ -164,7 +166,7 @@ class Sim:
             states=SimState.create(N, D, self.device),
             states_deriv=SimStateDeriv.create(N, D, self.device),
             controls=SimControls.create(N, D, state_freq, attitude_freq, thrust_freq, self.device),
-            params=SimParams.create(N, D, MASS, J, J_INV, self.device),
+            params=SimParams.create(N, D, mass=MASS, J=J, device=self.device),
             core=SimCore.create(self.freq, N, D, drone_ids, rng_key, self.device),
             mjx_data=mjx_data,
             mjx_model=None,
@@ -503,11 +505,34 @@ def step_state_controller(data: SimData) -> SimData:
     des_pos, des_vel = controls.state[..., :3], controls.state[..., 3:6]
     des_yaw = controls.state[..., [9]]  # Keep (N, M, 1) shape for broadcasting
     dt = 1 / data.controls.state_freq
+
     attitude, pos_err_i = state2attitude(
         states.pos, states.vel, states.quat, des_pos, des_vel, des_yaw, controls.pos_err_i, dt
     )
+    # Bringing the command into the correct format
+    command_RPYT = jnp.roll(attitude, -1, axis=-1)  # bring into RPYT format
+    command_RPYT = command_RPYT.at[..., -1].set(
+        force2pwm(command_RPYT[..., -1], data.params)
+    )  # thrust (N) -> thrust (PWM)
+    command_RPYT = command_RPYT.at[..., :-1].set(command_RPYT[..., :-1] * 180 / jnp.pi)  # rad2deg
+
+    # command_RPYT, pos_err_i = cntrl_mellinger_position(
+    #     states.pos,
+    #     states.quat,
+    #     states.vel,
+    #     states.ang_vel,
+    #     controls.state,
+    #     data.params,
+    #     dt=1 / data.controls.state_freq,
+    #     i_error=controls.pos_err_i,
+    # )
+
     controls = leaf_replace(
-        controls, mask, state_steps=data.core.steps, staged_attitude=attitude, pos_err_i=pos_err_i
+        controls,
+        mask,
+        state_steps=data.core.steps,
+        staged_attitude=command_RPYT,
+        pos_err_i=pos_err_i,
     )
     return data.replace(controls=controls)
 
@@ -520,12 +545,24 @@ def step_attitude_controller(data: SimData) -> SimData:
     # Commit the staged attitude controls
     staged_attitude = controls.staged_attitude
     controls = leaf_replace(controls, mask, attitude_steps=steps, attitude=staged_attitude)
-    # Compute the new thrust values from the committed attitude controls
-    quat, attitude = data.states.quat, controls.attitude
-    dt = 1 / controls.attitude_freq
-    thrust, rpy_err_i = attitude2thrust(attitude, quat, controls.last_rpy, controls.rpy_err_i, dt)
-    rpy = R.from_quat(quat).as_euler("xyz")
-    controls = leaf_replace(controls, mask, thrust=thrust, rpy_err_i=rpy_err_i, last_rpy=rpy)
+
+    # Calculating the control by stepping the controller
+    forces, rpy_err_i = cntrl_mellinger_attitude(
+        data.states.pos,
+        data.states.quat,
+        data.states.vel,
+        data.states.ang_vel,
+        data.controls.attitude,  # command_RPYT
+        data.params,
+        dt=1 / controls.attitude_freq,
+        i_error_m=controls.rpy_err_i,
+        prev_angular_vel=controls.prev_ang_vel,
+    )
+
+    controls = leaf_replace(
+        controls, mask, thrust=forces, rpy_err_i=rpy_err_i, prev_ang_vel=data.states.ang_vel
+    )
+
     return data.replace(controls=controls)
 
 
