@@ -19,9 +19,11 @@ import casadi as cs
 from casadi import MX
 from numpy.typing import NDArray
 
-from crazyflow.constants import ARM_LEN, GRAVITY, SIGN_MIX_MATRIX
-from crazyflow.control.control import KF, KM, Control
+from crazyflow.constants import constants
+from crazyflow.control.control import Control
 from crazyflow.sim import Sim
+
+# TODO remove and use symbolic model from lsy_models repo
 
 
 class SymbolicModel:
@@ -154,7 +156,7 @@ def symbolic_attitude(dt: float) -> SymbolicModel:
     # # Define states.
     z = MX.sym("z")
     z_dot = MX.sym("z_dot")
-    g = GRAVITY
+    g = constants.GRAVITY
     # # Set up the dynamics model for a 3D quadrotor.
     nx, nu = 12, 4
     # Define states.
@@ -236,7 +238,7 @@ def symbolic_thrust(mass: float, J: NDArray, dt: float) -> SymbolicModel:
     Ixx, Iyy, Izz = J.diagonal()
     J = cs.blockcat([[Ixx, 0.0, 0.0], [0.0, Iyy, 0.0], [0.0, 0.0, Izz]])
     Jinv = cs.blockcat([[1.0 / Ixx, 0.0, 0.0], [0.0, 1.0 / Iyy, 0.0], [0.0, 0.0, 1.0 / Izz]])
-    gamma = KM / KF
+    gamma = constants.KM / constants.KF
     # System state variables
     x, y = MX.sym("x"), MX.sym("y")
     x_dot, y_dot = MX.sym("x_dot"), MX.sym("y_dot")
@@ -254,14 +256,20 @@ def symbolic_thrust(mass: float, J: NDArray, dt: float) -> SymbolicModel:
     # Defining the dynamics function.
     # We are using the velocity of the base wrt to the world frame expressed in the world frame.
     # Note that the reference expresses this in the body frame.
-    oVdot_cg_o = Rob @ cs.vertcat(0, 0, f1 + f2 + f3 + f4) / mass - cs.vertcat(0, 0, GRAVITY)
+    oVdot_cg_o = Rob @ cs.vertcat(0, 0, f1 + f2 + f3 + f4) / mass - cs.vertcat(
+        0, 0, constants.GRAVITY
+    )
     pos_ddot = oVdot_cg_o
     pos_dot = cs.vertcat(x_dot, y_dot, z_dot)
     # We use the spin directions (signs) from the mix matrix used in the simulation.
-    sx, sy, sz = SIGN_MIX_MATRIX[..., 0], SIGN_MIX_MATRIX[..., 1], SIGN_MIX_MATRIX[..., 2]
+    sx, sy, sz = (
+        constants.SIGN_MIX_MATRIX[..., 0],
+        constants.SIGN_MIX_MATRIX[..., 1],
+        constants.SIGN_MIX_MATRIX[..., 2],
+    )
     Mb = cs.vertcat(
-        ARM_LEN / cs.sqrt(2.0) * (sx[0] * f1 + sx[1] * f2 + sx[2] * f3 + sx[3] * f4),
-        ARM_LEN / cs.sqrt(2.0) * (sy[0] * f1 + sy[1] * f2 + sy[2] * f3 + sy[3] * f4),
+        constants.L * (sx[0] * f1 + sx[1] * f2 + sx[2] * f3 + sx[3] * f4),
+        constants.L * (sy[0] * f1 + sy[1] * f2 + sy[2] * f3 + sy[3] * f4),
         gamma * (sz[0] * f1 + sz[1] * f2 + sz[2] * f3 + sz[3] * f4),
     )
     rate_dot = Jinv @ (Mb - (cs.skew(cs.vertcat(p, q, r)) @ J @ cs.vertcat(p, q, r)))

@@ -8,8 +8,7 @@ from jax import Array
 from jax.numpy import vectorize
 from jax.scipy.spatial.transform import Rotation as R
 
-from crazyflow.constants import ARM_LEN, GRAVITY, SIGN_MIX_MATRIX
-from crazyflow.control.control import KF, KM
+from crazyflow.constants import constants
 
 SYS_ID_PARAMS = {
     "acc": np.array([20.907574256269616, 3.653687545690674]),
@@ -80,7 +79,7 @@ def surrogate_identified_collective_wrench(
 @partial(vectorize, signature="(3),(1)->(3)")
 def collective_force2acceleration(force: Array, mass: Array) -> Array:
     """Convert forces to acceleration."""
-    return force / mass - jnp.array([0, 0, GRAVITY])
+    return force / mass - jnp.array([0, 0, constants.GRAVITY])
 
 
 @partial(vectorize, signature="(3),(4),(3,3)->(3)")
@@ -104,22 +103,22 @@ def rpms2collective_wrench(
 @partial(vectorize, signature="(4)->(4)")
 def rpms2motor_forces(rpms: Array) -> Array:
     """Convert RPMs to motor forces (body frame, along the z-axis)."""
-    return rpms**2 * KF
+    return rpms**2 * constants.KF
 
 
 @partial(vectorize, signature="(4)->(4)")
 def rpms2motor_torques(rpms: Array) -> Array:
     """Convert RPMs to motor torques (body frame, around the z-axis)."""
-    return rpms**2 * KM
+    return rpms**2 * constants.KM
 
 
 @partial(vectorize, signature="(4),(3),(4),(3,3)->(3)")
 def rpms2body_torque(rpms: Array, ang_vel: Array, motor_forces: Array, J: Array) -> Array:
     """Convert RPMs to torques in the body frame."""
     motor_torques = rpms2motor_torques(rpms)
-    z_torque = SIGN_MIX_MATRIX[..., 2] @ motor_torques
-    x_torque = SIGN_MIX_MATRIX[..., 0] @ motor_forces * (ARM_LEN / jnp.sqrt(2))
-    y_torque = SIGN_MIX_MATRIX[..., 1] @ motor_forces * (ARM_LEN / jnp.sqrt(2))
+    z_torque = constants.SIGN_MIX_MATRIX[..., 2] @ motor_torques
+    x_torque = constants.SIGN_MIX_MATRIX[..., 0] @ motor_forces * (constants.L)
+    y_torque = constants.SIGN_MIX_MATRIX[..., 1] @ motor_forces * (constants.L)
     return jnp.array([x_torque, y_torque, z_torque]) - jnp.cross(ang_vel, J @ ang_vel)
 
 

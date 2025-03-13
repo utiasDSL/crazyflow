@@ -12,7 +12,8 @@ from gymnasium.vector import VectorEnv, VectorWrapper
 from gymnasium.vector.utils import batch_space
 from jax import Array
 
-from crazyflow.control.control import MAX_THRUST, MIN_THRUST, Control
+from crazyflow.constants import constants
+from crazyflow.control.control import Control
 from crazyflow.sim import Sim
 from crazyflow.sim.structs import SimState
 
@@ -29,11 +30,11 @@ def action_space(control_type: Control) -> spaces.Box:
     match control_type:
         case Control.attitude:
             return spaces.Box(
-                np.array([4 * MIN_THRUST, -np.pi, -np.pi, -np.pi], dtype=np.float32),
-                np.array([4 * MAX_THRUST, np.pi, np.pi, np.pi], dtype=np.float32),
+                np.array([4 * constants.THRUST_MIN, -np.pi, -np.pi, -np.pi], dtype=np.float32),
+                np.array([4 * constants.THRUST_MAX, np.pi, np.pi, np.pi], dtype=np.float32),
             )
         case Control.thrust:
-            return spaces.Box(MIN_THRUST, MAX_THRUST, shape=(4,))
+            return spaces.Box(constants.THRUST_MIN, constants.THRUST_MAX, shape=(4,))
         case _:
             raise ValueError(f"Invalid control type {control_type}")
 

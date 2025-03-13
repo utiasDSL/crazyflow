@@ -10,7 +10,6 @@ from lsy_models.utils.constants import Constants
 
 if TYPE_CHECKING:
     from mujoco.mjx import Data, Model
-    from numpy.typing import NDArray
 
 
 @dataclass
@@ -33,7 +32,7 @@ class SimState:
     @staticmethod
     def create(n_worlds: int, n_drones: int, device: Device) -> SimState:
         """Create a default set of states for the simulation."""
-        pos = jnp.zeros((n_worlds, n_drones, 3), device=device)
+        pos = jnp.zeros((n_worlds, n_drones, 3), device=device) + jnp.array([0, 0, 0.05])
         quat = jnp.zeros((n_worlds, n_drones, 4), device=device)
         quat = quat.at[..., -1].set(1.0)
         vel = jnp.zeros((n_worlds, n_drones, 3), device=device)
@@ -222,7 +221,7 @@ class SimParams:
         J = jnp.tile(j[None, None, :, :], (n_worlds, n_drones, 1, 1))
         J_INV = jnp.tile(j_inv[None, None, :, :], (n_worlds, n_drones, 1, 1))
 
-        constants = Constants.from_config("cf2x_L250")
+        constants = Constants.from_config("cf2x_L250")  # TODO make dependent on actual drone config
 
         if L is None:
             L = constants.L

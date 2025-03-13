@@ -3,7 +3,7 @@ import pytest
 from numpy.typing import NDArray
 from scipy.spatial.transform import Rotation as R
 
-from crazyflow.control.control import MAX_THRUST, MIN_THRUST
+from crazyflow.control.control import THRUST_MAX, THRUST_MIN
 from crazyflow.sim import Sim
 from crazyflow.sim.physics import ang_vel2rpy_rates
 from crazyflow.sim.structs import SimState
@@ -42,8 +42,8 @@ def test_attitude_symbolic(freq: int):
     x_sym_log.append(x_sym)
     x_sim_log.append(x_sim)
 
-    u_low = np.array([4 * MIN_THRUST, -np.pi, -np.pi, -np.pi])
-    u_high = np.array([4 * MAX_THRUST, np.pi, np.pi, np.pi])
+    u_low = np.array([4 * THRUST_MIN, -np.pi, -np.pi, -np.pi])
+    u_high = np.array([4 * THRUST_MAX, np.pi, np.pi, np.pi])
     rng = np.random.default_rng(seed=42)
 
     # Run simulation
@@ -95,7 +95,7 @@ def test_thrust_symbolic(freq: int):
 
     # Run simulation
     for _ in range(steps):
-        u_rand = rng.uniform(MIN_THRUST, MIN_THRUST, 4)
+        u_rand = rng.uniform(THRUST_MIN, THRUST_MIN, 4)
         # Simulate with symbolic model
         res = sym.fd_func(x0=x_sym, p=u_rand)
         x_sym = res["xf"].full().flatten()

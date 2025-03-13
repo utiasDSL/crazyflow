@@ -12,11 +12,10 @@ from jax import Array, Device
 from jax.scipy.spatial.transform import Rotation as R
 from lsy_models.controllers_numeric import cntrl_mellinger_attitude, cntrl_mellinger_position
 from lsy_models.models_numeric import f_first_principles, f_fitted_DI_rpy
-from lsy_models.utils.cf2 import force2pwm, pwm2force
 from mujoco.mjx import Data, Model
 
-from crazyflow.constants import J_INV, MASS, SIGN_MIX_MATRIX, J
-from crazyflow.control.control import Control, attitude2thrust, pwm2rpm, state2attitude, thrust2pwm
+from crazyflow.constants import constants
+from crazyflow.control.control import Control
 from crazyflow.exception import ConfigError, NotInitializedError
 from crazyflow.sim.integration import Integrator, euler, rk4
 from crazyflow.sim.physics import Physics, rpms2motor_forces, rpms2motor_torques
@@ -166,7 +165,7 @@ class Sim:
             states=SimState.create(N, D, self.device),
             states_deriv=SimStateDeriv.create(N, D, self.device),
             controls=SimControls.create(N, D, state_freq, attitude_freq, thrust_freq, self.device),
-            params=SimParams.create(N, D, mass=MASS, J=J, device=self.device),
+            params=SimParams.create(N, D, mass=constants.MASS, J=constants.J, device=self.device),
             core=SimCore.create(self.freq, N, D, drone_ids, rng_key, self.device),
             mjx_data=mjx_data,
             mjx_model=None,
@@ -502,9 +501,6 @@ def step_state_controller(data: SimData) -> SimData:
     """Compute the updated controls for the state controller."""
     states, controls = data.states, data.controls
     mask = controllable(data.core.steps, data.core.freq, controls.state_steps, controls.state_freq)
-    des_pos, des_vel = controls.state[..., :3], controls.state[..., 3:6]
-    des_yaw = controls.state[..., [9]]  # Keep (N, M, 1) shape for broadcasting
-    dt = 1 / data.controls.state_freq
 
     command_RPYT, pos_err_i = cntrl_mellinger_position(
         states.pos,
@@ -608,7 +604,7 @@ def identified_derivative(data: SimData) -> SimData:
 def mujoco_wrench(data: SimData) -> SimData:
     """Compute the wrench from the MuJoCo dynamics model."""
     forces = rpms2motor_forces(data.controls.rpms)
-    torques = SIGN_MIX_MATRIX[..., 2] * rpms2motor_torques(data.controls.rpms)
+    torques = constants.SIGN_MIX_MATRIX[..., 2] * rpms2motor_torques(data.controls.rpms)
     # Zero out external forces and torques to avoid summation over multiple steps
     states = data.states
     force, torque = jnp.zeros_like(states.force), jnp.zeros_like(states.torque)
