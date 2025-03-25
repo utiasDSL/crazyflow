@@ -143,10 +143,16 @@ class SymbolicModel:
         self.loss = cs.Function("loss", l_inputs, l_outputs, l_inputs_str, l_outputs_str)
 
 
-def symbolic_attitude(dt: float) -> SymbolicModel:
+def symbolic_attitude(dt: float, params: dict | None = None) -> SymbolicModel:
     """Create symbolic (CasADi) models for dynamics, observation, and cost of a quadcopter.
 
     This model is based on the identified model derived from real-world data of the Crazyflie 2.1.
+
+    Args:
+        dt: The sampling time.
+        params: The parameters of the model. If None, the default parameters are used. If provided,
+            should be a dictionary with one or more of the following keys: "a", "b", "ra", "rb",
+            "rc", "pa", "pb", "pc", "ya", "yb", "yc".
 
     Returns:
         The CasADi symbolic model of the environment.
@@ -177,33 +183,33 @@ def symbolic_attitude(dt: float) -> SymbolicModel:
     U = cs.vertcat(T, R, P, Y)
     # The thrust in PWM is converted from the normalized thrust.
     # With the formulat F_desired = b_F * T + a_F
-    params_acc = [20.907574256269616, 3.653687545690674]
-    params_roll_rate = [-130.3, -16.33, 119.3]
-    params_pitch_rate = [-99.94, -13.3, 84.73]
+    params = {} if params is None else params
+    a = params.get("a", 20.907574256269616)
+    b = params.get("b", 3.653687545690674)
+    ra, rb, rc = params.get("ra", -130.3), params.get("rb", -16.33), params.get("rc", 119.3)
+    pa, pb, pc = params.get("pa", -99.94), params.get("pb", -13.3), params.get("pc", 84.73)
     # The identified model sets params_yaw_rate to [0, 0, 0], because the training data did not
     # contain any data with yaw != 0. Therefore, it cannot infer the impact of setting the yaw
     # attitude to a non-zero value on the dynamics. However, using a zero vector will make the
     # system matrix ill-conditioned for control methods like LQR. Therefore, we introduce a small
     # spring-like term to the yaw dynamics that leads to a non-singular system matrix.
     # TODO: identify proper parameters for yaw_rate from real data.
-    params_yaw_rate = [-0.01, 0, 0]
+    ya, yb, yc = params.get("ya", -0.01), params.get("yb", 0), params.get("yc", 0)
 
     # Define dynamics equations.
     X_dot = cs.vertcat(
         x_dot,
-        (params_acc[0] * T + params_acc[1])
-        * (cs.cos(phi) * cs.sin(theta) * cs.cos(psi) + cs.sin(phi) * cs.sin(psi)),
+        (a * T + b) * (cs.cos(phi) * cs.sin(theta) * cs.cos(psi) + cs.sin(phi) * cs.sin(psi)),
         y_dot,
-        (params_acc[0] * T + params_acc[1])
-        * (cs.cos(phi) * cs.sin(theta) * cs.sin(psi) - cs.sin(phi) * cs.cos(psi)),
+        (a * T + b) * (cs.cos(phi) * cs.sin(theta) * cs.sin(psi) - cs.sin(phi) * cs.cos(psi)),
         z_dot,
-        (params_acc[0] * T + params_acc[1]) * cs.cos(phi) * cs.cos(theta) - g,
+        (a * T + b) * cs.cos(phi) * cs.cos(theta) - g,
         phi_dot,
         theta_dot,
         psi_dot,
-        params_roll_rate[0] * phi + params_roll_rate[1] * phi_dot + params_roll_rate[2] * R,
-        params_pitch_rate[0] * theta + params_pitch_rate[1] * theta_dot + params_pitch_rate[2] * P,
-        params_yaw_rate[0] * psi + params_yaw_rate[1] * psi_dot + params_yaw_rate[2] * Y,
+        ra * phi + rb * phi_dot + rc * R,
+        pa * theta + pb * theta_dot + pc * P,
+        ya * psi + yb * psi_dot + yc * Y,
     )
     # Define observation.
     Y = cs.vertcat(x, x_dot, y, y_dot, z, z_dot, phi, theta, psi, phi_dot, theta_dot, psi_dot)

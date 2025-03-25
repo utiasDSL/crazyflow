@@ -51,6 +51,8 @@ class CrazyflowBaseEnv(VectorEnv):
     """
 
     obs_keys = ["pos", "quat", "vel", "ang_vel"]
+    # TODO: Once we switch to gymnasium >= 1.1.0, we should set the autoreset mode
+    # metadata = {"autoreset_mode": AutoresetMode.NEXT_STEP}
 
     def __init__(
         self,
@@ -495,6 +497,97 @@ class CrazyflowEnvFigureEightTrajectory(CrazyflowBaseEnv):
     def steps(self) -> Array:
         """The parameters tau for the next trajectory. Must be in [0,1]."""
         return self.sim.data.core.steps // (self.sim.freq // self.freq) - 1
+
+
+class FigureEightXY(CrazyflowBaseEnv):
+    """JAX Gymnasium environment for Crazyflie simulation with a figure eight in the x-y plane.
+
+    This environment has a single, predefined trajectory that the drone should follow. Each episode
+    lasts exactly 10 seconds at 50Hz. The reward is based on the distance to the current trajectory
+    point.
+    """
+
+    def __init__(self, num_envs: int = 1, device: str = "cpu"):
+        """Initialize the fixed trajectory environment."""
+        super().__init__(num_envs=num_envs, freq=50, device=device)
+        # Create a fixed trajectory (a simple circle in the x-z plane)
+        n_steps = int(self.time_horizon_in_seconds * self.freq)
+        t = np.linspace(0, self.time_horizon_in_seconds, n_steps)
+
+        traj_period = 5.0
+        traj_freq = 2.0 * np.pi / traj_period
+        x = np.sin(traj_freq * t)
+        y = np.sin(traj_freq * t) * np.cos(traj_freq * t)
+        z = np.ones_like(t)
+
+        dims = 12  # x dx y dy z dz r p yaw dr dp dyaw
+        self.trajectory = np.zeros((n_steps, dims))
+        self.trajectory[:, 0] = x
+        self.trajectory[:, 2] = y
+        self.trajectory[:, 4] = z
+
+        # Flag to enable/disable rendering of the trajectory
+        self.render_trajectory = True
+
+    @property
+    def reward(self) -> Array:
+        """Calculate reward based on distance to current trajectory point."""
+        step = self.steps % self.trajectory.shape[0]
+        return self._reward(
+            self.prev_done, self.terminated, self.sim.data.states, self.trajectory[step, [0, 2, 4]]
+        ).reshape(-1)
+
+    @staticmethod
+    @jax.jit
+    def _reward(prev_done: Array, terminated: Array, states: SimState, target: Array) -> Array:
+        """Calculate reward based on distance to current trajectory point and velocity alignment."""
+        norm_distance = jnp.linalg.norm(states.pos - target, axis=-1)
+        reward = jnp.exp(-2.0 * norm_distance)
+        # Apply penalties for termination and previous done states
+        reward = jnp.where(terminated.reshape(-1, 1), -1.0, reward)
+        reward = jnp.where(prev_done.reshape(-1, 1), 0.0, reward)
+        return reward
+
+    def reset_masked(self, mask: Array) -> None:
+        """Reset the environment with specific initial conditions.
+
+        The drone starts near the beginning of the trajectory with low velocity.
+
+        Args:
+            mask: Boolean array indicating which environments to reset
+        """
+        # Set initial position near the start of the trajectory
+
+        reset_params = {
+            "pos_min": jnp.array([self.trajectory[0, i] - 0.1 for i in (0, 2, 4)]),
+            "pos_max": jnp.array([self.trajectory[0, i] + 0.1 for i in (0, 2, 4)]),
+            "vel_min": -0.2,
+            "vel_max": 0.2,
+        }
+        super().reset_masked(mask, reset_params)
+
+    def step(self, action: Array) -> tuple[Array, Array, Array, Array, dict]:
+        """Step the environment and render trajectory if enabled."""
+        if self.render_trajectory and hasattr(self.sim, "viewer") and self.sim.viewer is not None:
+            # Render the full trajectory
+            render_trajectory(self.sim.viewer, self.trajectory[::5, [0, 2, 4]])
+
+            # Highlight current target point
+            step = self.steps % self.trajectory.shape[0]
+            current_target = self.trajectory[step, [0, 2, 4]]
+            self.sim.viewer.viewer.add_marker(
+                type=mujoco.mjtGeom.mjGEOM_SPHERE,
+                size=np.array([0.05, 0.05, 0.05]),  # Larger marker for current target
+                pos=np.array(current_target[0]),
+                rgba=np.array([0, 1, 0, 0.8]),  # Green color for current target
+            )
+
+        return super().step(action)
+
+    @property
+    def steps(self) -> Array:
+        """Get the current step index in the trajectory."""
+        return self.sim.data.core.steps // (self.sim.freq // self.freq)
 
 
 class CrazyflowRL(VectorWrapper):
