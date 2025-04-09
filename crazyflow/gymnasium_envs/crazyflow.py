@@ -29,8 +29,8 @@ def action_space(control_type: Control) -> spaces.Box:
     match control_type:
         case Control.attitude:
             return spaces.Box(
-                np.array([4 * MIN_THRUST, -np.pi, -np.pi, -np.pi], dtype=np.float32),
-                np.array([4 * MAX_THRUST, np.pi, np.pi, np.pi], dtype=np.float32),
+                np.array([4 * MIN_THRUST, -np.pi / 2, -np.pi / 2, -np.pi / 2], dtype=np.float32),
+                np.array([4 * MAX_THRUST, np.pi / 2, np.pi / 2, np.pi / 2], dtype=np.float32),
             )
         case Control.thrust:
             return spaces.Box(MIN_THRUST, MAX_THRUST, shape=(4,))
@@ -108,6 +108,7 @@ class CrazyflowBaseEnv(VectorEnv):
         self.observation_space = batch_space(self.single_observation_space, self.sim.n_worlds)
 
     def step(self, action: Array) -> tuple[Array, Array, Array, Array, dict]:
+        action = np.clip(action, self.action_space.low, self.action_space.high)
         assert self.action_space.contains(np.array(action)), f"{action!r} ({type(action)}) invalid"
         action = self._sanitize_action(action, self.sim.n_worlds, self.sim.n_drones, self.device)
         self._apply_action(action)
@@ -242,6 +243,9 @@ class CrazyflowBaseEnv(VectorEnv):
         fields = self.obs_keys
         states = [getattr(self.sim.data.states, field) for field in fields]
         return {k: v.squeeze() for k, v in zip(fields, states)}
+
+    def close(self):
+        self.sim.close()
 
 
 class CrazyflowEnvReachGoal(CrazyflowBaseEnv):
