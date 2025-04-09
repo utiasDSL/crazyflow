@@ -16,7 +16,7 @@ def sim_state2symbolic_state(state: SimState) -> NDArray[np.float32]:
     vel = state.vel.squeeze()  # shape: (3,)
     euler = R.from_quat(state.quat.squeeze()).as_euler("xyz")  # shape: (3,), Euler angles
     rpy_rates = ang_vel2rpy_rates(state.ang_vel.squeeze(), state.quat.squeeze())  # shape: (3,)
-    return np.array([pos[0], vel[0], pos[1], vel[1], pos[2], vel[2], *euler, *rpy_rates])
+    return np.concatenate([pos, euler, vel, rpy_rates])
 
 
 @pytest.mark.integration

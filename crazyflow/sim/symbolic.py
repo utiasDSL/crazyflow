@@ -174,7 +174,7 @@ def symbolic_attitude(dt: float, params: dict | None = None) -> SymbolicModel:
     theta_dot = cs.MX.sym("theta_dot")
     psi = cs.MX.sym("psi")  # yaw angle [rad]
     psi_dot = cs.MX.sym("psi_dot")
-    X = cs.vertcat(x, x_dot, y, y_dot, z, z_dot, phi, theta, psi, phi_dot, theta_dot, psi_dot)
+    X = cs.vertcat(x, y, z, phi, theta, psi, x_dot, y_dot, z_dot, phi_dot, theta_dot, psi_dot)
     # Define input collective thrust and theta.
     T = cs.MX.sym("T_c")  # normalized thrust [N]
     R = cs.MX.sym("R_c")  # desired roll angle [rad]
@@ -199,20 +199,20 @@ def symbolic_attitude(dt: float, params: dict | None = None) -> SymbolicModel:
     # Define dynamics equations.
     X_dot = cs.vertcat(
         x_dot,
-        (a * T + b) * (cs.cos(phi) * cs.sin(theta) * cs.cos(psi) + cs.sin(phi) * cs.sin(psi)),
         y_dot,
-        (a * T + b) * (cs.cos(phi) * cs.sin(theta) * cs.sin(psi) - cs.sin(phi) * cs.cos(psi)),
         z_dot,
-        (a * T + b) * cs.cos(phi) * cs.cos(theta) - g,
         phi_dot,
         theta_dot,
         psi_dot,
+        (a * T + b) * (cs.cos(phi) * cs.sin(theta) * cs.cos(psi) + cs.sin(phi) * cs.sin(psi)),
+        (a * T + b) * (cs.cos(phi) * cs.sin(theta) * cs.sin(psi) - cs.sin(phi) * cs.cos(psi)),
+        (a * T + b) * cs.cos(phi) * cs.cos(theta) - g,
         ra * phi + rb * phi_dot + rc * R,
         pa * theta + pb * theta_dot + pc * P,
         ya * psi + yb * psi_dot + yc * Y,
     )
     # Define observation.
-    Y = cs.vertcat(x, x_dot, y, y_dot, z, z_dot, phi, theta, psi, phi_dot, theta_dot, psi_dot)
+    Y = cs.vertcat(x, y, z, phi, theta, psi, x_dot, y_dot, z_dot, phi_dot, theta_dot, psi_dot)
 
     # Define cost (quadratic form).
     Q, R = MX.sym("Q", nx, nx), MX.sym("R", nu, nu)
@@ -252,7 +252,7 @@ def symbolic_thrust(mass: float, J: NDArray, dt: float) -> SymbolicModel:
     # angles use the SDFormat for rotation matrices.
     Rob = csRotXYZ(phi, theta, psi)
     # Define state variables.
-    X = cs.vertcat(x, x_dot, y, y_dot, z, z_dot, phi, theta, psi, p, q, r)
+    X = cs.vertcat(x, y, z, phi, theta, psi, x_dot, y_dot, z_dot, p, q, r)
     # Define inputs.
     f1, f2, f3, f4 = MX.sym("f1"), MX.sym("f2"), MX.sym("f3"), MX.sym("f4")
     U = cs.vertcat(f1, f2, f3, f4)
@@ -260,8 +260,7 @@ def symbolic_thrust(mass: float, J: NDArray, dt: float) -> SymbolicModel:
     # Defining the dynamics function.
     # We are using the velocity of the base wrt to the world frame expressed in the world frame.
     # Note that the reference expresses this in the body frame.
-    oVdot_cg_o = Rob @ cs.vertcat(0, 0, f1 + f2 + f3 + f4) / mass - cs.vertcat(0, 0, GRAVITY)
-    pos_ddot = oVdot_cg_o
+    pos_ddot = Rob @ cs.vertcat(0, 0, f1 + f2 + f3 + f4) / mass - cs.vertcat(0, 0, GRAVITY)
     pos_dot = cs.vertcat(x_dot, y_dot, z_dot)
     # We use the spin directions (signs) from the mix matrix used in the simulation.
     sx, sy, sz = SIGN_MIX_MATRIX[..., 0], SIGN_MIX_MATRIX[..., 1], SIGN_MIX_MATRIX[..., 2]
@@ -278,9 +277,7 @@ def symbolic_thrust(mass: float, J: NDArray, dt: float) -> SymbolicModel:
             [0, cs.sin(phi) / cs.cos(theta), cs.cos(phi) / cs.cos(theta)],
         ]
     ) @ cs.vertcat(p, q, r)
-    X_dot = cs.vertcat(
-        pos_dot[0], pos_ddot[0], pos_dot[1], pos_ddot[1], pos_dot[2], pos_ddot[2], ang_dot, rate_dot
-    )
+    X_dot = cs.vertcat(pos_dot, ang_dot, pos_ddot, rate_dot)
 
     Y = cs.vertcat(x, x_dot, y, y_dot, z, z_dot, phi, theta, psi, p, q, r)
 
