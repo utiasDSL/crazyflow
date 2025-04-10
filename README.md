@@ -1,3 +1,80 @@
+![Crazyflow Logo](https://github.com/utiasDSL/crazyflow/raw/main/docs/img/logo.png)
+
+--------------------------------------------------------------------------------
+
+Fast, parallelizable simulations of Crazyflies with JAX and MuJoCo.
+
+[![Python Version]][Python Version URL] [![Ruff Check]][Ruff Check URL] [![Documentation Status]][Documentation Status URL] [![Tests]][Tests URL]
+
+[Python Version]: https://img.shields.io/badge/python-3.10+-blue.svg
+[Python Version URL]: https://www.python.org
+
+[Ruff Check]: https://github.com/utiasDSL/crazyflow/actions/workflows/ruff.yml/badge.svg?style=flat-square
+[Ruff Check URL]: https://github.com/utiasDSL/crazyflow/actions/workflows/ruff.yml
+
+[Documentation Status]: https://readthedocs.org/projects/crazyflow/badge/?version=latest
+[Documentation Status URL]: https://crazyflow.readthedocs.io/en/latest/?badge=latest
+
+[Tests]: https://github.com/utiasDSL/crazyflow/actions/workflows/testing.yml/badge.svg
+[Tests URL]: https://github.com/utiasDSL/crazyflow/actions/workflows/testing.yml
+
+
+## Architecture
+
+Crazyflow is a high-performance simulation framework for Crazyflie drones that leverages JAX for efficient parallelization and automatic differentiation. The architecture is designed around a flexible pipeline that can be configured at initialization time, enabling users to swap out physics backends, control methods, and integration schemes.
+
+### Core Components
+
+#### Simulation Pipeline
+The simulation is built as a pipeline of functions that are composed at initialization time based on the configuration. This approach avoids runtime branching and allows JAX to optimize the entire pipeline as a single computation. Users can insert their own pure functions into the pipeline to modify the simulation behavior while maintaining compatibility with JAX's optimizations.
+
+#### Physics Backends
+Multiple physics models are supported:
+- analytical: A first-principles model based on physical equations
+- sys_id: A system-identified model trained on real drone data
+- mujoco: MuJoCo physics engine for more complex interactions
+
+#### Control Modes
+Different control interfaces are available:
+- state: High-level control of position, velocity, and yaw
+- attitude: Mid-level control of collective thrust and orientation
+- thrust: Low-level control of individual motor thrusts
+
+#### Integration Methods
+For analytical and system-identified physics:
+- euler: Simple first-order integration
+- rk4: Fourth-order Runge-Kutta integration for higher accuracy
+
+### Parallelization
+Crazyflow supports massive parallelization across:
+- Worlds: Independent simulation environments that can run in parallel
+- Drones: Multiple drones within each world
+- Devices: Computations can be executed on CPU or GPU
+This parallelization is achieved through JAX's vectorization capabilities, allowing thousands of simulations to run simultaneously with minimal overhead.
+
+### Domain Randomization
+The framework supports domain randomization through the crazyflow/randomize module, allowing parameters like mass to be varied across simulations to improve sim-to-real transfer.
+
+### Functional Design
+The simulation follows a functional programming paradigm: All state is contained in immutable data structures. Updates create new states rather than modifying existing ones. All functions are pure, enabling JAX's transformations (JIT, grad, vmap) and thus automatic differentiation through the entire simulation, making it suitable for gradient-based optimization and reinforcement learning.
+
+## Examples
+The repository includes several example scripts demonstrating different capabilities:
+| Example                                   | Description                                                 |
+| ----------------------------------------- | ----------------------------------------------------------- |
+| [`hover.py`](examples/hover.py)           | Basic hovering using state control                          |
+| [`thrust.py`](examples/thrust.py)         | Direct motor control using thrust commands                  |
+| [`render.py`](examples/render.py)         | Visualization of multiple drones with motion traces         |
+| [`contacts.py`](examples/contacts.py)     | Collision detection between drones                          |
+| [`gradient.py`](examples/gradient.py)     | Computing gradients through the simulation for optimization |
+| [`change_pos.py`](examples/change_pos.py) | Manipulating drone positions programmatically               |
+
+
+
+## Known Issues
+- `"RuntimeError: MUJOCO_PATH environment variable is not set"` upon installing this package. This error can be resolved by using `venv` instead of `conda`. Somtimes the `mujoco` install can [fail with `conda`](https://github.com/google-deepmind/mujoco/issues/1004).
+- If using `zsh` don't forget to escape brackets when installing additional dependencies: `pip install .\[gpu\]`.
+
 ### Using the project with VSCode devcontainers
 
 **Running on CPU**: by default the containers run on CPU. You don't need to take any action.
@@ -6,11 +83,11 @@
 
 
 **Linux**
-0. Make sure to be in a X11 session ([link](https://askubuntu.com/questions/1410256/how-do-i-use-the-x-window-manager-instead-of-wayland-on-ubuntu-22-04)), otherwise rendering of the drone will fail.
-1. Install [Docker](https://docs.docker.com/engine/install/) (, and make sure Docker Daemon is running)
-2. Install [VSCode](https://code.visualstudio.com/), with [devcontainer extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers), and [remote dev pack](https://marketplace.visualstudio.com/items?itemName=ms-azuretools.vscode-docker).
-3. Clone this project's code. Rename `/.devcontainer/devcontainer.linux.json` to `/.devcontainer/devcontainer.json`.
-4. Open this project in VSCode. VSCode should automatically detect the devcontainer and prompt you to `Reopen in container`. If not, see [here](https://code.visualstudio.com/docs/devcontainers/containers#_quick-start-open-an-existing-folder-in-a-container) to open manually. Note: Opening the container for the first time might take a while (up to 15 min), as the container is pulled from the web and build.
+1. Make sure to be in a X11 session ([link](https://askubuntu.com/questions/1410256/how-do-i-use-the-x-window-manager-instead-of-wayland-on-ubuntu-22-04)), otherwise rendering of the drone will fail.
+2. Install [Docker](https://docs.docker.com/engine/install/) (, and make sure Docker Daemon is running)
+3. Install [VSCode](https://code.visualstudio.com/), with [devcontainer extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers), and [remote dev pack](https://marketplace.visualstudio.com/items?itemName=ms-azuretools.vscode-docker).
+4. Clone this project's code. Rename `/.devcontainer/devcontainer.linux.json` to `/.devcontainer/devcontainer.json`.
+5. Open this project in VSCode. VSCode should automatically detect the devcontainer and prompt you to `Reopen in container`. If not, see [here](https://code.visualstudio.com/docs/devcontainers/containers#_quick-start-open-an-existing-folder-in-a-container) to open manually. Note: Opening the container for the first time might take a while (up to 15 min), as the container is pulled from the web and build.
 
 **Windows** (requires Windows 10 or later)
 
@@ -34,29 +111,3 @@ ____________
 Known Issues:
    - if building docker container fails at `RUN apt-get update`, make sure your host systems time is set correct: https://askubuntu.com/questions/1511514/docker-build-fails-at-run-apt-update-error-failed-to-solve-process-bin-sh
 
-# crazyflow
-Fast, parallelizable simulations of Crazyflies with JAX and MuJoCo.
-
-[![Python Version]][Python Version URL] [![Ruff Check]][Ruff Check URL] [![Documentation Status]][Documentation Status URL] [![Tests]][Tests URL]
-
-[Python Version]: https://img.shields.io/badge/python-3.10+-blue.svg
-[Python Version URL]: https://www.python.org
-
-[Ruff Check]: https://github.com/utiasDSL/crazyflow/actions/workflows/ruff.yml/badge.svg?style=flat-square
-[Ruff Check URL]: https://github.com/utiasDSL/crazyflow/actions/workflows/ruff.yml
-
-[Documentation Status]: https://readthedocs.org/projects/crazyflow/badge/?version=latest
-[Documentation Status URL]: https://crazyflow.readthedocs.io/en/latest/?badge=latest
-
-[Tests]: https://github.com/utiasDSL/crazyflow/actions/workflows/testing.yml/badge.svg
-[Tests URL]: https://github.com/utiasDSL/crazyflow/actions/workflows/testing.yml
-
-
-## Architecture
-
-<img src="/docs/img/architecture.png" width="75%" alt="Architecture">
-
-
-## Known Issues
-- `"RuntimeError: MUJOCO_PATH environment variable is not set"` upon installing this package. This error can be resolved by using `venv` instead of `conda`. Somtimes the `mujoco` install can [fail with `conda`](https://github.com/google-deepmind/mujoco/issues/1004).
-- If using `zsh` don't forget to escape brackets when installing additional dependencies: `pip install .\[gpu\]`.
