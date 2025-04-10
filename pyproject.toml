@@ -36,6 +36,10 @@ test = ["pytest>=8.0.0", "pytest-cov", "pytest-timeout"]
 gpu = ["jax[cuda12]"]
 benchmark = ["fire"]
 
+[project.urls]
+Homepage = "https://github.com/utiasDSL/crazyflow"
+Repository = "https://github.com/utiasDSL/crazyflow"
+
 [tool.setuptools.packages]
 find = {}
 
