@@ -1,11 +1,10 @@
 [build-system]
-requires = ["setuptools>=61.0.0", "wheel", "numpy"]
+requires = ["setuptools>=61.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
-requires-python = "3.11"                            # tested in python 3.11
 
 [project]
 name = "crazyflow"
-version = "0.0.1"
+dynamic = ["version"]
 description = "Fast, parallelizable simulations of Crazyflies with JAX and MuJoCo."
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -19,7 +18,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "jax>=0.4.38",
+    "jax>=0.5.0,!=0.5.3", # 0.5.3 has a bug that causes resets to not work properly
     "mujoco>=3.3.0",
     "mujoco-mjx>=3.3.0",
     "gymnasium",
@@ -30,6 +29,7 @@ dependencies = [
     "casadi",
     "numpy",
 ]
+requires-python = ">=3.10"
 
 [project.optional-dependencies]
 test = ["pytest>=8.0.0", "pytest-cov", "pytest-timeout"]
@@ -38,6 +38,9 @@ benchmark = ["fire"]
 
 [tool.setuptools.packages]
 find = {}
+
+[tool.setuptools.dynamic]
+version = { attr = "crazyflow.__version__" }
 
 [tool.setuptools.package-data]
 crazyflow = ["models/cf2/*.xml", "models/cf2/assets/*.obj"]

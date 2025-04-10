@@ -15,3 +15,4 @@ build
 !/.devcontainer/devcontainer.wsl2.json
 **/*.pt
 tutorials/ppo/wandb
+dist
