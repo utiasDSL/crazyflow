@@ -137,10 +137,11 @@ class Sim:
             data = sync_fn(data)
             return data, None
 
-        # ``scan`` can be lowered to a single WhileOp, reducing compilation times while still fusing
-        # the loops and giving XLA maximum freedom to reorder operations and jointly optimize the
-        # pipeline. This is especially relevant for the common use case of running multiple sim
-        # steps in an outer loop, e.g. in gym environments.
+        # ``scan`` allows us control over loop unrolling for single steps from a single WhileOp to
+        # complete unrolling, reducing either compilation times or fusing the loops to give XLA
+        # maximum freedom to reorder operations and jointly optimize the pipeline. This is especially
+        # relevant for the common use case of running multiple sim steps in an outer loop, e.g. in
+        # gym environments.
         # Having n_steps as a static argument is fine, since patterns with n_steps > 1 will almost
         # always use the same n_steps value for successive calls.
         @partial(jax.jit, static_argnames="n_steps")
@@ -156,7 +157,7 @@ class Sim:
             if optimize_mjx_model := (data.mjx_model is None):
                 data = data.replace(mjx_model=self.mjx_model)
             data = self.sync_sim2mjx(data)
-            data, _ = jax.lax.scan(single_step, data, length=n_steps)
+            data, _ = jax.lax.scan(single_step, data, length=n_steps, unroll=10)
             if optimize_mjx_model:
                 data = data.replace(mjx_model=None)
             return data
