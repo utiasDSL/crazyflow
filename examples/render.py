@@ -45,6 +45,7 @@ def render_traces(viewer: MujocoRenderer, pos: deque[NDArray], rot: deque[R]):
     sizes = np.zeros((n_trace, n_drones, 3))
     rgbas = np.zeros((n_trace, n_drones, 4))
     sizes[..., 2] = np.linalg.norm(pos[1:] - pos[:-1], axis=-1)
+    sizes[..., :2] = np.linspace(1.0, 5.0, n_trace)[:, None, None]
     mats = np.zeros((n_trace, n_drones, 9))
     for i in range(n_trace):
         mats[i, :] = einops.rearrange(rot[i].as_matrix(), "d n m -> d (n m)")
