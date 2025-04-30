@@ -72,7 +72,8 @@ def surrogate_identified_collective_wrench(
     # out, resulting in the correct linear and angular acceleration regardless of the model's mass
     # and inertia.
     # Rotate surrogate torques into global frame
-    surrogate_torques = rot.apply(J @ rpy_rates_deriv)
+    ang_vel_deriv = rpy_rates_deriv2ang_vel_deriv(rpy_rates_deriv, rpy_rates, quat)
+    surrogate_torques = rot.apply(J @ ang_vel_deriv)
     surrogate_forces = acc * mass
     return surrogate_forces, surrogate_torques
 
@@ -152,14 +153,58 @@ def ang_vel2rpy_rates(ang_vel: Array, quat: Array) -> Array:
 @partial(vectorize, signature="(3),(4)->(3)")
 def rpy_rates2ang_vel(rpy_rates: Array, quat: Array) -> Array:
     """Convert rpy rates to angular velocity."""
+    return rpy_rates2ang_vel_matrix(quat) @ rpy_rates
+
+
+@jax.jit
+@partial(vectorize, signature="(3),(3),(4)->(3)")
+def rpy_rates_deriv2ang_vel_deriv(rpy_rates_deriv: Array, rpy_rates: Array, quat: Array) -> Array:
+    r"""Convert rpy rates derivatives to angular velocity derivatives.
+
+    .. math::
+        \dot{\omega} = \mathbf{\dot{W}}\dot{\mathbf{\psi}} + \mathbf{W} \ddot{\mathbf{\psi}}
+    """
+    rpy = R.from_quat(quat).as_euler("xyz")
+    # W_dot
+    phi, theta = rpy[0], rpy[1]
+    phi_dot, theta_dot = rpy_rates[0], rpy_rates[1]
+    sin_phi, cos_phi = jnp.sin(phi), jnp.cos(phi)
+    sin_theta, cos_theta = jnp.sin(theta), jnp.cos(theta)
+    # fmt: off
+    conv_mat_dot = jnp.array(
+        [[0,                  0,                                           -cos_theta * theta_dot],
+         [0, -sin_phi * phi_dot,  cos_phi * phi_dot * cos_theta - sin_phi * sin_theta * theta_dot],
+         [0, -cos_phi * phi_dot, -sin_phi * phi_dot * cos_theta - cos_phi * sin_theta * theta_dot]]
+    )
+    # fmt: on
+    return conv_mat_dot @ rpy_rates + rpy_rates2ang_vel_matrix(quat) @ rpy_rates_deriv
+
+
+def ang_vel2rpy_rates_matrix(quat: Array) -> Array:
+    """Calculate the conversion matrix from angular velocities to rpy rates."""
     rpy = R.from_quat(quat).as_euler("xyz")
     sin_phi, cos_phi = jnp.sin(rpy[0]), jnp.cos(rpy[0])
     cos_theta, tan_theta = jnp.cos(rpy[1]), jnp.tan(rpy[1])
+    # fmt: off
     conv_mat = jnp.array(
-        [
-            [1, 0, -cos_theta * tan_theta],
-            [0, cos_phi, sin_phi * cos_theta],
-            [0, -sin_phi, cos_phi * cos_theta],
-        ]
+        [[1, sin_phi * tan_theta, cos_phi * tan_theta],
+         [0,             cos_phi,            -sin_phi],
+         [0, sin_phi / cos_theta, cos_phi / cos_theta]]
     )
-    return conv_mat @ rpy_rates
+    # fmt: on
+    return conv_mat
+
+
+def rpy_rates2ang_vel_matrix(quat: Array) -> Array:
+    """Calculate the conversion matrix from rpy rates to angular velocities."""
+    rpy = R.from_quat(quat).as_euler("xyz")
+    sin_phi, cos_phi = jnp.sin(rpy[0]), jnp.cos(rpy[0])
+    cos_theta, sin_theta = jnp.cos(rpy[1]), jnp.sin(rpy[1])
+    # fmt: off
+    conv_mat = jnp.array(
+        [[1,        0,          -sin_theta],
+         [0,  cos_phi, sin_phi * cos_theta],
+         [0, -sin_phi, cos_phi * cos_theta]]
+    )
+    # fmt: on
+    return conv_mat
