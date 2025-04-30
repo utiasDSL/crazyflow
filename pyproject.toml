@@ -18,7 +18,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "jax>=0.5.0,!=0.5.3", # 0.5.3 has a bug that causes resets to not work properly
+    "jax>=0.5.0,<0.5.3", # 0.5.3 onwards has a bug that causes resets to not work properly. TODO: Investigate why this is happening
     "mujoco>=3.3.0",
     "mujoco-mjx>=3.3.0",
     "gymnasium",
@@ -76,7 +76,7 @@ exclude = [
 
 line-length = 100
 indent-width = 4
-target-version = "py38"
+target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E4", "E7", "E9", "F", "I", "D", "TCH", "ANN"]
