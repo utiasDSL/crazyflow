@@ -1,9 +1,13 @@
+import csv
 import time
+from datetime import datetime
+from pathlib import Path
 
 import gymnasium
 import jax
 import jax.numpy as jnp
 import numpy as np
+from jaxlib.xla_extension import XlaRuntimeError
 from ml_collections import config_dict
 
 import crazyflow  # noqa: F401, ensure gymnasium envs are registered
@@ -37,7 +41,9 @@ def analyze_timings(times: list[float], n_steps: int, n_worlds: int, freq: float
     )
 
 
-def profile_gym_env_step(sim_config: config_dict.ConfigDict, n_steps: int, device: str):
+def profile_gym_env_step(
+    sim_config: config_dict.ConfigDict, n_steps: int, device: str
+) -> list[float]:
     """Profile the Crazyflow gym environment step performance."""
     times = []
     device = jax.devices(device)[0]
@@ -47,7 +53,7 @@ def profile_gym_env_step(sim_config: config_dict.ConfigDict, n_steps: int, devic
         time_horizon_in_seconds=3,
         num_envs=sim_config.n_worlds,
         device=sim_config.device,
-        freq=sim_config.attitude_freq,
+        freq=sim_config.freq,
         physics=sim_config.physics,
     )
 
@@ -70,9 +76,10 @@ def profile_gym_env_step(sim_config: config_dict.ConfigDict, n_steps: int, devic
     envs.close()
     print("Gym env step performance:")
     analyze_timings(times, n_steps, envs.unwrapped.sim.n_worlds, envs.unwrapped.sim.freq)
+    return times
 
 
-def profile_step(sim_config: config_dict.ConfigDict, n_steps: int, device: str):
+def profile_step(sim_config: config_dict.ConfigDict, n_steps: int, device: str) -> list[float]:
     """Profile the Crazyflow simulator step performance."""
     sim = Sim(**sim_config)
     times = []
@@ -95,6 +102,7 @@ def profile_step(sim_config: config_dict.ConfigDict, n_steps: int, device: str):
 
     print("Sim step performance:")
     analyze_timings(times, n_steps, sim.n_worlds, sim.freq)
+    return times
 
 
 def profile_reset(sim_config: config_dict.ConfigDict, n_steps: int, device: str):
@@ -143,13 +151,135 @@ def main():
     sim_config.control = "attitude"
     sim_config.attitude_freq = 500
     sim_config.device = device
+    sim_config.freq = 500
 
-    print("Simulator performance\n")
-    profile_step(sim_config, 1000, device)
-    profile_reset(sim_config, 1000, device)
+    max_seconds_per_run = 60.0
 
-    print("Gymnasium environment performance\n")
-    profile_gym_env_step(sim_config, 1000, device)
+    print("\nRunning benchmarks for increasing number of parallel environments...")
+
+    # Create a CSV file to store results
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    csv_file = Path(__file__).parent / "data" / f"benchmark_results_{timestamp}.csv"
+    csv_file.parent.mkdir(exist_ok=True)
+
+    # Create CSV writer and write header
+    with open(csv_file, "w", newline="") as f:
+        csv_writer = csv.writer(f)
+        csv_writer.writerow(
+            [
+                "test_type",
+                "n_drones",
+                "n_worlds",
+                "n_steps",
+                "total_time_s",
+                "avg_step_time_s",
+                "fps",
+                "real_time_factor",
+                "device",
+            ]
+        )
+
+    # Reopen the file in append mode for each result
+
+    n_steps = 1000
+    # Test with increasing number of parallel environments (worlds)
+    for n_worlds in [1, 10, 100, 1000, 10000, 100000, 1000000]:
+        print(f"\nTesting with {n_worlds} parallel environments:")
+        sim_config.n_worlds = n_worlds
+
+        # Test with a single step first to see if we should continue
+        sim_config.freq = 500  # Test sim at 500 hz
+        try:
+            test_times = profile_step(sim_config, 1, device)
+        except XlaRuntimeError as e:
+            if "RESOURCE_EXHAUSTED" in str(e):
+                print(f"  Skipping benchmark for {n_worlds} and higher - resource exhausted")
+                break
+            raise e
+
+        single_step_time = test_times[0]
+        # If single step takes too long, skip this and remaining tests
+        if single_step_time > max_seconds_per_run / n_steps:  # threshold for the tests
+            print(
+                f"  Skipping benchmark for {n_worlds} and higher - single step took "
+                f"{single_step_time * 1000:.2f}s (> 1m)"
+            )
+            break
+
+        # Configure simulator
+        print(f"  Running simulator benchmark ({n_worlds} worlds)...")
+        # Run simulator benchmark using existing function
+        try:
+            times_sim = profile_step(sim_config, n_steps, device)
+        except XlaRuntimeError as e:
+            if "RESOURCE_EXHAUSTED" in str(e):
+                print(f"  Skipping benchmark for {n_worlds} and higher - resource exhausted")
+                break
+            raise e
+
+        # Calculate metrics for CSV
+        total_time = sum(times_sim)
+        avg_step_time = np.mean(times_sim)
+        n_frames = n_steps * n_worlds
+        fps = n_frames / total_time
+        real_time_factor = (n_steps / sim_config.freq) * n_worlds / total_time
+
+        # Save simulator results
+        # Reopen CSV writer in append mode
+        with open(csv_file, "w", newline="") as f:
+            csv_writer = csv.writer(f)
+            csv_writer.writerow(
+                [
+                    "simulator",
+                    1,  # n_drones
+                    n_worlds,
+                    n_steps,
+                    total_time,
+                    avg_step_time,
+                    fps,
+                    real_time_factor,
+                    sim_config.device,
+                ]
+            )
+            f.flush()
+
+        print(f"  Running gym environment benchmark ({n_worlds} worlds)...")
+        # Run gym environment benchmark using existing function
+        sim_config.freq = 50  # Test gym at 50 hz
+        try:
+            times_gym = profile_gym_env_step(sim_config, n_steps, device)
+        except (XlaRuntimeError, ValueError) as e:
+            if "RESOURCE_EXHAUSTED" in str(e):
+                print(f"  Skipping benchmark for {n_worlds} - resource exhausted")
+                continue  # Only continue, we might still be able to benchmark sim
+            raise e
+
+        # Calculate metrics for CSV
+        total_time = sum(times_gym)
+        avg_step_time = np.mean(times_gym)
+        n_frames = n_steps * n_worlds
+        fps = n_frames / total_time
+        real_time_factor = (n_steps / sim_config.freq) * sim_config.n_worlds / total_time
+
+        # Save gym environment results
+        with open(csv_file, "a", newline="") as f:
+            csv_writer = csv.writer(f)
+            csv_writer.writerow(
+                [
+                    "gym_env",
+                    sim_config.n_drones,
+                    sim_config.n_worlds,
+                    n_steps,
+                    total_time,
+                    avg_step_time,
+                    fps,
+                    real_time_factor,
+                    sim_config.device,
+                ]
+            )
+            f.flush()
+
+    print(f"\nBenchmark results saved to {csv_file}")
 
 
 if __name__ == "__main__":

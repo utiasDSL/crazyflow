@@ -69,7 +69,18 @@ The repository includes several example scripts demonstrating different capabili
 | [`gradient.py`](examples/gradient.py)     | Computing gradients through the simulation for optimization |
 | [`change_pos.py`](examples/change_pos.py) | Manipulating drone positions programmatically               |
 
+## Performance
+These benchmarks give you a rough idea of the performance you should expect from the simulator. Gym benchmarks use gym environments with a step frequency of 50Hz while simulating at 500Hz. The simulation benchmarks use 500Hz.
 
+![Crazyflow Performance](docs/img/performance.png)
+
+The chart above shows the performance of Crazyflow on different hardware. The simulator can achieve close to 100 million steps per second on a GPU with 1 million parallel environments. The gym environment, which includes additional overhead for the Gymnasium interface and is not fully optimized, still achieves decent performance with over 98,000 steps per second on GPU with 10,000 parallel environments.
+
+Performance benchmarks were run on:
+- CPU: Intel Core i9-13900KF
+- GPU: NVIDIA RTX 4090
+
+To reproduce the benchmark results, rerun the `benchmark/main.py` script.
 
 ## Known Issues
 - `"RuntimeError: MUJOCO_PATH environment variable is not set"` upon installing this package. This error can be resolved by using `venv` instead of `conda`. Somtimes the `mujoco` install can [fail with `conda`](https://github.com/google-deepmind/mujoco/issues/1004).

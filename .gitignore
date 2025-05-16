@@ -16,3 +16,4 @@ build
 **/*.pt
 tutorials/ppo/wandb
 dist
+benchmark/data
