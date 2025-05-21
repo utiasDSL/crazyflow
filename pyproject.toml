@@ -18,7 +18,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "jax>=0.5.0,<0.5.3", # 0.5.3 onwards has a bug that causes resets to not work properly. TODO: Investigate why this is happening
+    "jax>=0.5.0,!=0.5.3,!=0.6.0", # 0.5.3 and 0.6.0 have a bug that causes resets to not work properly. This is related to the fusing of SimData.mjx_model into the _reset function.
     "mujoco>=3.3.0",
     "mujoco-mjx>=3.3.0",
     "gymnasium",
