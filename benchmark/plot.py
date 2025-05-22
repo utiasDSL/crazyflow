@@ -92,7 +92,7 @@ def plot_fps_data(data_folder: Path):
     print(f"Plot saved to {output_path}")
 
 
-def format_log_axes(ax, dfs, prefix):
+def format_log_axes(ax: plt.Axes, dfs: dict[str, pd.DataFrame], prefix: str):
     """Format logarithmic axes with nice labels.
 
     Args:
