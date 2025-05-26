@@ -2,6 +2,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
+import crazyflow  # noqa: F401, register gymnasium envs
 from crazyflow.control import Control
 from crazyflow.sim import Physics, Sim
 
@@ -62,3 +63,4 @@ def test_reset_multi_world(physics: Physics):
         sim.step(sim.freq // sim.control_freq)
     assert jnp.all(sim.data.states.pos == final_pos)
     assert jnp.all(sim.data.states.quat == final_quat)
+    
