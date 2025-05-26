@@ -161,7 +161,7 @@ class CrazyflowBaseEnv(VectorEnv):
             mask=jnp.ones((self.sim.n_worlds), dtype=bool, device=self.device), reset_params=options
         )
         self.prev_done = jnp.zeros((self.sim.n_worlds), dtype=bool, device=self.device)
-        return self._obs(), None
+        return self._obs(), {}
 
     def reset_masked(self, mask: Array, reset_params: dict | None = None) -> None:
         if reset_params is None:
