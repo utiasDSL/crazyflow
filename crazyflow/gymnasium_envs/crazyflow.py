@@ -157,23 +157,29 @@ class CrazyflowBaseEnv(VectorEnv):
         if seed is not None:
             self.jax_key = jax.random.key(seed)
 
-        self.reset_masked(mask=jnp.ones((self.sim.n_worlds), dtype=bool, device=self.device))
+        self.reset_masked(
+            mask=jnp.ones((self.sim.n_worlds), dtype=bool, device=self.device), reset_params=options
+        )
         self.prev_done = jnp.zeros((self.sim.n_worlds), dtype=bool, device=self.device)
-        return self._obs(), {}
+        return self._obs(), None
 
     def reset_masked(self, mask: Array, reset_params: dict | None = None) -> None:
-        default_reset_params = {
-            "pos_min": jnp.array([-1.0, -1.0, 1.0]),  # x,y,z
-            "pos_max": jnp.array([1.0, 1.0, 2.0]),  # x,y,z
-            "vel_min": -1.0,
-            "vel_max": 1.0,
+        if reset_params is None:
+            reset_params = {}
+
+        default_drone_reset_params = {
+            "pos_min": reset_params.pop("pos_min", jnp.array([-1.0, -1.0, 1.0])),  # x,y,z
+            "pos_max": reset_params.pop("pos_max", jnp.array([1.0, 1.0, 2.0])),  # x,y,z
+            "vel_min": reset_params.pop("vel_min", -1.0),
+            "vel_max": reset_params.pop("vel_max", 1.0),
         }
 
-        if reset_params is not None:
-            invalid_keys = set(reset_params.keys()) - set(default_reset_params.keys())
-            if invalid_keys:
-                raise ValueError(f"Invalid bounds keys: {invalid_keys}")
-            default_reset_params.update(reset_params)
+        # sanity check to see if all keys have been used
+        if len(reset_params) > 0:
+            warnings.warn(
+                f"Unused reset parameters: {reset_params.keys()}. "
+                "These will be ignored in the reset function. In case this parameter has already been used, please make sure to pop it from the dictionary."
+            )
 
         self.sim.reset(mask=mask)
         mask3d = mask[:, None, None]
@@ -183,8 +189,8 @@ class CrazyflowBaseEnv(VectorEnv):
         init_pos = jax.random.uniform(
             key=subkey,
             shape=(self.sim.n_worlds, self.sim.n_drones, 3),
-            minval=default_reset_params["pos_min"],
-            maxval=default_reset_params["pos_max"],
+            minval=default_drone_reset_params["pos_min"],
+            maxval=default_drone_reset_params["pos_max"],
         )
         self.sim.data = self.sim.data.replace(
             states=self.sim.data.states.replace(
@@ -196,8 +202,8 @@ class CrazyflowBaseEnv(VectorEnv):
         init_vel = jax.random.uniform(
             key=subkey,
             shape=(self.sim.n_worlds, self.sim.n_drones, 3),
-            minval=default_reset_params["vel_min"],
-            maxval=default_reset_params["vel_max"],
+            minval=default_drone_reset_params["vel_min"],
+            maxval=default_drone_reset_params["vel_max"],
         )
         self.sim.data = self.sim.data.replace(
             states=self.sim.data.states.replace(
@@ -242,7 +248,9 @@ class CrazyflowBaseEnv(VectorEnv):
     def _obs(self) -> dict[str, Array]:
         fields = self.obs_keys
         states = [getattr(self.sim.data.states, field) for field in fields]
-        return {k: v.squeeze() for k, v in zip(fields, states)}
+        return {
+            k: v[:, 0, :] for k, v in zip(fields, states)
+        }  # drop n_drones dimension, as it is always 1 for now
 
     def close(self):
         self.sim.close()
@@ -273,18 +281,21 @@ class CrazyflowEnvReachGoal(CrazyflowBaseEnv):
         reward = jnp.where(prev_done.reshape(-1, 1), 0.0, reward)
         return reward
 
-    def reset_masked(self, mask: Array) -> None:
-        super().reset_masked(mask)
+    def reset_masked(self, mask: Array, reset_params: dict | None = None) -> None:
+        if reset_params is None:
+            reset_params = {}
 
         # Generate new goals
         self.jax_key, subkey = jax.random.split(self.jax_key)
         new_goals = jax.random.uniform(
             key=subkey,
             shape=(self.sim.n_worlds, 3),
-            minval=jnp.array([-1.0, -1.0, 0.5]),  # x,y,z
-            maxval=jnp.array([1.0, 1.0, 1.5]),  # x,y,z
+            minval=reset_params.pop("goal_pos_min", jnp.array([-1.0, -1.0, 0.5])),  # x,y,z
+            maxval=reset_params.pop("goal_pos_max", jnp.array([1.0, 1.0, 1.5])),  # x,y,z
         )
         self.goal = self.goal.at[mask].set(new_goals[mask])
+
+        super().reset_masked(mask, reset_params)
 
     def step(self, action: Array) -> tuple[Array, Array, Array, Array, dict]:
         if self.render_goal_marker:
@@ -300,7 +311,9 @@ class CrazyflowEnvReachGoal(CrazyflowBaseEnv):
 
     def _obs(self) -> dict[str, Array]:
         obs = super()._obs()
-        obs["difference_to_goal"] = [self.goal - self.sim.data.states.pos]
+        obs["difference_to_goal"] = (
+            self.goal - self.sim.data.states.pos[:, 0, :]
+        )  # drop n_drones dimension, as it is always 1 for now
         return obs
 
 
@@ -329,22 +342,27 @@ class CrazyflowEnvTargetVelocity(CrazyflowBaseEnv):
         reward = jnp.where(prev_done.reshape(-1, 1), 0.0, reward)
         return reward
 
-    def reset_masked(self, mask: Array) -> None:
-        super().reset_masked(mask)
+    def reset_masked(self, mask: Array, reset_params: dict | None = None) -> None:
+        if reset_params is None:
+            reset_params = {}
 
         # Generate new target_vels
         self.jax_key, subkey = jax.random.split(self.jax_key)
         new_target_vel = jax.random.uniform(
             key=subkey,
             shape=(self.sim.n_worlds, 3),
-            minval=jnp.array([-1.0, -1.0, -1.0]),  # x,y,z
-            maxval=jnp.array([1.0, 1.0, 1.0]),  # x,y,z
+            minval=reset_params.pop("target_vel_min", jnp.array([-1.0, -1.0, -1.0])),  # x,y,z
+            maxval=reset_params.pop("target_vel_max", jnp.array([1.0, 1.0, 1.0])),  # x,y,z
         )
         self.target_vel = self.target_vel.at[mask].set(new_target_vel[mask])
 
+        super().reset_masked(mask)
+
     def _obs(self) -> dict[str, Array]:
         obs = super()._obs()
-        obs["difference_to_target_vel"] = [self.target_vel - self.sim.data.states.vel]
+        obs["difference_to_target_vel"] = (
+            self.target_vel - self.sim.data.states.vel[:, 0, :]
+        )  # drop n_drones dimension, as it is always 1 for now
         return obs
 
 
@@ -375,9 +393,6 @@ class CrazyflowEnvLanding(CrazyflowBaseEnv):
         reward = jnp.where(prev_done.reshape(-1, 1), 0.0, reward)
         return reward
 
-    def reset_masked(self, mask: Array) -> None:
-        super().reset_masked(mask)
-
     def step(self, action: Array) -> tuple[Array, Array, Array, Array, dict]:
         if self.render_landing_target:
             for i in range(self.sim.n_worlds):
@@ -392,7 +407,9 @@ class CrazyflowEnvLanding(CrazyflowBaseEnv):
 
     def _obs(self) -> dict[str, Array]:
         obs = super()._obs()
-        obs["difference_to_goal"] = [self.goal - self.sim.data.states.pos]
+        obs["difference_to_goal"] = (
+            self.goal - self.sim.data.states.pos[:, 0, :]
+        )  # drop n_drones dimension, as it is always 1 for now
         return obs
 
 
@@ -478,14 +495,19 @@ class CrazyflowEnvFigureEightTrajectory(CrazyflowBaseEnv):
         reward = jnp.where(prev_done.reshape(-1, 1), 0.0, reward)
         return reward
 
-    def reset_masked(self, mask: Array) -> None:
-        reset_params = {
-            "pos_min": jnp.array([-0.1, -0.1, 1.1]),  # x,y,z
-            "pos_max": jnp.array([0.1, 0.1, 1.3]),  # x,y,z
-            "vel_min": -0.5,
-            "vel_max": 0.5,
+    def reset_masked(self, mask: Array, reset_params: dict | None = None) -> None:
+        if reset_params is None:
+            reset_params = {}
+
+        # Different initial conditions than CrazyflowBaseEnv
+        default_drone_reset_params = {
+            "pos_min": reset_params.pop("pos_min", jnp.array([-0.1, -0.1, 1.1])),  # x,y,z
+            "pos_max": reset_params.pop("pos_max", jnp.array([0.1, 0.1, 1.3])),  # x,y,z
+            "vel_min": reset_params.pop("vel_min", -0.5),
+            "vel_max": reset_params.pop("vel_max", 0.5),
         }
-        super().reset_masked(mask, reset_params)
+
+        super().reset_masked(mask, default_drone_reset_params)
 
     def _obs(self) -> dict[str, Array]:
         obs = super()._obs()
