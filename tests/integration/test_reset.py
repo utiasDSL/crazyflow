@@ -1,8 +1,6 @@
-import gymnasium
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from gymnasium.wrappers.vector import JaxToNumpy  # , JaxToTorch
 
 import crazyflow  # noqa: F401, register gymnasium envs
 from crazyflow.control import Control
