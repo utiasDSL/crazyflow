@@ -339,3 +339,31 @@ def test_seed_reset():
     sim.reset()
     rng_key = jax.random.key_data(sim.data.core.rng_key)[1]
     assert (rng_key == 43).all(), "rng_key was overwritten by reset()"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("physics", [Physics.analytical, Physics.sys_id])
+def test_floor_penetration(physics: Physics):
+    """Test that drones cannot penetrate the floor (z < 0).
+
+    We don't test for mujoco, as mujoco uses collisions by default and will let the drone bounce on
+    the floor.
+    """
+    sim = Sim(physics=physics, control=Control.attitude, freq=500, device="cpu")
+    sim.reset()
+    # Command to fall: zero thrust and attitude that points downward
+    attitude_cmd = np.zeros((1, 1, 4))  # [roll, pitch, yaw, thrust]
+    attitude_cmd[..., 0] = 0.0  # Zero thrust to fall
+    attitude_cmd[..., 1] = 0.5  # Roll to destabilize
+    attitude_cmd[..., 3] = 0.5  # Pitch to destabilize
+    sim.attitude_control(attitude_cmd)
+    # Run simulation for short duration to let drone fall
+    for _ in range(5):  # 0.1 seconds at 500Hz
+        sim.step(10)
+        # Check that drone never goes below floor
+        z_pos = sim.data.states.pos[..., 2]
+        assert jnp.all(z_pos >= -0.001), f"Drone penetrated floor: z={z_pos.min()}"
+    # Check that the drone ended up on the floor (very close to z=0)
+    final_z_pos = sim.data.states.pos[..., 2]
+    assert jnp.all(final_z_pos == -0.001), f"Drone should be on floor but z={final_z_pos}"
+    sim.close()

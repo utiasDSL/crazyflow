@@ -1,3 +1,7 @@
+import os
+
+os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+
 import jax
 
 jax.config.update("jax_compilation_cache_dir", "/tmp/jax_cache")

@@ -132,6 +132,10 @@ class Sim:
             data = disturbance_fn(data)
             data = physics_fn(data)
             data = data.replace(core=data.core.replace(steps=data.core.steps + 1))
+            # We never drop below -0.001 (drones can't pass through the floor). We use -0.001 to
+            # enable checks for negative z sign
+            clip_pos = data.states.pos.at[..., 2].set(jnp.maximum(data.states.pos[..., 2], -0.001))
+            data = data.replace(states=data.states.replace(pos=clip_pos))
             # MuJoCo needs to sync after every physics step, so that the next step control, wrench
             # and disturbance functions see the correct state.
             data = sync_fn(data)
@@ -157,7 +161,7 @@ class Sim:
             if optimize_mjx_model := (data.mjx_model is None):
                 data = data.replace(mjx_model=self.mjx_model)
             data = self.sync_sim2mjx(data)
-            data, _ = jax.lax.scan(single_step, data, length=n_steps, unroll=10)
+            data, _ = jax.lax.scan(single_step, data, length=n_steps, unroll=1)
             if optimize_mjx_model:
                 data = data.replace(mjx_model=None)
             return data
