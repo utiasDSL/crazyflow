@@ -6,7 +6,7 @@ from crazyflow.sim import Sim
 
 def main():
     """Example showing a drone crash."""
-    sim = Sim(physics="mujoco", control=Control.state, freq=500, attitude_freq=500, state_freq=100)
+    sim = Sim(control=Control.state, freq=500, attitude_freq=500, state_freq=100)
     sim.reset()
     fps = 60
 
