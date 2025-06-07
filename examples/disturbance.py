@@ -35,8 +35,11 @@ def main(plot: bool = False):
         sim.render()
 
     # Second run
-    sim.disturbance_fn = disturbance_fn
-    sim.build(mjx=False, data=False, step=True)
+    # We insert the disturbance function into the step pipeline before the integration step. You can
+    # inspect the step pipeline with
+    # print(sim.step_pipeline)
+    sim.step_pipeline = sim.step_pipeline[:2] + (disturbance_fn,) + sim.step_pipeline[2:]
+    sim.build(mjx=False, data=False, default_data=False, step=True)
     pos_disturbed, rpy_disturbed = [], []
     sim.reset()
     for _ in range(3 * sim.control_freq):

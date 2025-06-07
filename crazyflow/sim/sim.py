@@ -72,11 +72,22 @@ class Sim:
         self.data = self.init_data(state_freq, attitude_freq, thrust_freq, rng_key, mjx_data)
         self.default_data = self.init_default_data()
 
-        # Default functions for the simulation pipeline
-        self.disturbance_fn: Callable[[SimData], SimData] = identity
-        self.reset_hook: Callable[[SimData, Array[bool] | None], SimData] = identity
-
         # Build the simulation pipeline and overwrite the default _step implementation with it
+        self.reset_pipeline: tuple[Callable[[SimData, Array[bool] | None], SimData], ...] = tuple()
+        self.step_pipeline: tuple[Callable[[SimData], SimData], ...] = tuple()
+        # The ``select_xxx_fn`` methods return functions, not the results of calling those
+        # functions. They act as factories that produce building blocks for the construction of our
+        # simulation pipeline.
+        self.step_pipeline += (select_control_fn(self.control),)
+        self.step_pipeline += (select_wrench_fn(self.physics),)
+        self.step_pipeline += (select_integrate_fn(self.physics, self.integrator),)
+        # We never drop below -0.001 (drones can't pass through the floor). We use -0.001 to
+        # enable checks for negative z sign
+        self.step_pipeline += (clip_floor_pos,)
+        # MuJoCo needs to sync after every physics step so that the next step control, wrench
+        # and disturbance functions see the correct state.
+        self.step_pipeline += (select_sync_fn(self.physics),)
+
         self.build_reset_fn()
         self.build_step_fn()
 
@@ -116,29 +127,12 @@ class Sim:
         Warning:
             If any settings change, the pipeline of functions needs to be reconstructed.
         """
-        # The ``generate_xxx_fn`` methods return functions, not the results of calling those
-        # functions. They act as factories that produce building blocks for the construction of our
-        # simulation pipeline.
-        ctrl_fn = generate_control_fn(self.control)
-        wrench_fn = generate_wrench_fn(self.physics)
-        disturbance_fn = self.disturbance_fn
-        physics_fn = generate_physics_fn(self.physics, self.integrator)
-        sync_fn = generate_sync_fn(self.physics)
+        pipeline = self.step_pipeline
 
         # None is required by jax.lax.scan to unpack the tuple returned by single_step.
         def single_step(data: SimData, _: None) -> tuple[SimData, None]:
-            data = ctrl_fn(data)
-            data = wrench_fn(data)
-            data = disturbance_fn(data)
-            data = physics_fn(data)
-            data = data.replace(core=data.core.replace(steps=data.core.steps + 1))
-            # We never drop below -0.001 (drones can't pass through the floor). We use -0.001 to
-            # enable checks for negative z sign
-            clip_pos = data.states.pos.at[..., 2].set(jnp.maximum(data.states.pos[..., 2], -0.001))
-            data = data.replace(states=data.states.replace(pos=clip_pos))
-            # MuJoCo needs to sync after every physics step, so that the next step control, wrench
-            # and disturbance functions see the correct state.
-            data = sync_fn(data)
+            for fn in pipeline:
+                data = fn(data)
             return data, None
 
         # ``scan`` allows us control over loop unrolling for single steps from a single WhileOp to
@@ -200,12 +194,13 @@ class Sim:
 
     def build_reset_fn(self):
         """Build the reset function for the current simulation configuration."""
-        reset_hook = self.reset_hook
+        pipeline = self.reset_pipeline
 
         @jax.jit
         def reset(data: SimData, default_data: SimData, mask: Array | None = None) -> SimData:
             data = pytree_replace(data, default_data, mask)  # Does not overwrite rng_key
-            data = reset_hook(data, mask)
+            for fn in pipeline:
+                data = fn(data, mask)
             data = self.sync_sim2mjx(data, self.mjx_model)
             return data
 
@@ -422,8 +417,8 @@ class Sim:
         raise NotInitializedError("_step call before building the simulation pipeline.")
 
 
-def generate_control_fn(control: Control) -> Callable[[SimData], SimData]:
-    """Generate the control function for the given control mode."""
+def select_control_fn(control: Control) -> Callable[[SimData], SimData]:
+    """Select the control function for the given control mode."""
     match control:
         case Control.state:
             return lambda data: step_attitude_controller(step_state_controller(data))
@@ -435,8 +430,8 @@ def generate_control_fn(control: Control) -> Callable[[SimData], SimData]:
             raise NotImplementedError(f"Control mode {control} not implemented")
 
 
-def generate_wrench_fn(physics: Physics) -> Callable[[SimData], SimData]:
-    """Generate the wrench function for the given physics mode."""
+def select_wrench_fn(physics: Physics) -> Callable[[SimData], SimData]:
+    """Select the wrench function for the given physics mode."""
     match physics:
         case Physics.analytical:
             return analytical_wrench
@@ -448,8 +443,8 @@ def generate_wrench_fn(physics: Physics) -> Callable[[SimData], SimData]:
             raise NotImplementedError(f"Physics mode {physics} not implemented")
 
 
-def generate_derivative_fn(physics: Physics) -> Callable[[SimData], SimData]:
-    """Generate the derivative function for the given physics mode."""
+def select_derivative_fn(physics: Physics) -> Callable[[SimData], SimData]:
+    """Select the derivative function for the given physics mode."""
     match physics:
         case Physics.analytical:
             return analytical_derivative
@@ -459,34 +454,40 @@ def generate_derivative_fn(physics: Physics) -> Callable[[SimData], SimData]:
             raise NotImplementedError(f"Physics mode {physics} not implemented")
 
 
-def generate_integrator_fn(
-    integrator: Integrator,
-) -> Callable[[SimData, Callable[[SimData], SimData]], SimData]:
-    """Generate the integrator function for the given integrator mode."""
+def select_integrate_fn(physics: Physics, integrator: Integrator) -> Callable[[SimData], SimData]:
+    """Select the integration function for the given physics and integrator mode."""
     match integrator:
         case Integrator.euler:
-            return euler
+            integrate_fn = euler
         case Integrator.rk4:
-            return rk4
+            integrate_fn = rk4
         case _:
             raise NotImplementedError(f"Integrator {integrator} not implemented")
 
-
-def generate_physics_fn(physics: Physics, integrator: Integrator) -> Callable[[SimData], SimData]:
-    """Generate the physics function for the given physics mode."""
     match physics:
         case Physics.sys_id | Physics.analytical:
-            integrator_fn = generate_integrator_fn(integrator)
-            derivative_fn = generate_derivative_fn(physics)
-            return lambda data: integrator_fn(data, derivative_fn)
+            derivative_fn = select_derivative_fn(physics)
+
+            def integrate(data: SimData) -> SimData:
+                data = integrate_fn(data, derivative_fn)
+                data = data.replace(core=data.core.replace(steps=data.core.steps + 1))
+                return data
+
+            return integrate
         case Physics.mujoco:
-            return mjx_physics_fn
+
+            def integrate(data: SimData) -> SimData:
+                data = mjx_physics_fn(data)
+                data = data.replace(core=data.core.replace(steps=data.core.steps + 1))
+                return data
+
+            return integrate
         case _:
             raise NotImplementedError(f"Physics mode {physics} not implemented")
 
 
-def generate_sync_fn(physics: Physics) -> Callable[[SimData], SimData]:
-    """Generate the sync function for the given physics mode."""
+def select_sync_fn(physics: Physics) -> Callable[[SimData], SimData]:
+    """Select the sync function for the given physics mode."""
     match physics:
         case Physics.sys_id | Physics.analytical:
             return Sim.sync_sim2mjx
@@ -630,6 +631,12 @@ def identity(data: SimData, *args: Any, **kwargs: Any) -> SimData:
     Used as default function for optional pipeline steps.
     """
     return data
+
+
+def clip_floor_pos(data: SimData) -> SimData:
+    """Clip the position of the drone to the floor."""
+    clip_pos = data.states.pos.at[..., 2].set(jnp.maximum(data.states.pos[..., 2], -0.001))
+    return data.replace(states=data.states.replace(pos=clip_pos))
 
 
 @partial(jax.jit, static_argnames="device")
