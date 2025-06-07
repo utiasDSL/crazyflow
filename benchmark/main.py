@@ -7,7 +7,6 @@ import gymnasium
 import jax
 import jax.numpy as jnp
 import numpy as np
-from jaxlib.xla_extension import XlaRuntimeError
 from ml_collections import config_dict
 
 import crazyflow  # noqa: F401, ensure gymnasium envs are registered
@@ -189,13 +188,7 @@ def main():
 
         # Test with a single step first to see if we should continue
         sim_config.freq = 500  # Test sim at 500 hz
-        try:
-            test_times = profile_step(sim_config, 1, device)
-        except XlaRuntimeError as e:
-            if "RESOURCE_EXHAUSTED" in str(e):
-                print(f"  Skipping benchmark for {n_worlds} and higher - resource exhausted")
-                break
-            raise e
+        test_times = profile_step(sim_config, 1, device)
 
         single_step_time = test_times[0]
         # If single step takes too long, skip this and remaining tests
@@ -209,13 +202,7 @@ def main():
         # Configure simulator
         print(f"  Running simulator benchmark ({n_worlds} worlds)...")
         # Run simulator benchmark using existing function
-        try:
-            times_sim = profile_step(sim_config, n_steps, device)
-        except XlaRuntimeError as e:
-            if "RESOURCE_EXHAUSTED" in str(e):
-                print(f"  Skipping benchmark for {n_worlds} and higher - resource exhausted")
-                break
-            raise e
+        times_sim = profile_step(sim_config, n_steps, device)
 
         # Calculate metrics for CSV
         total_time = sum(times_sim)
@@ -248,7 +235,7 @@ def main():
         sim_config.freq = 50  # Test gym at 50 hz
         try:
             times_gym = profile_gym_env_step(sim_config, n_steps, device)
-        except (XlaRuntimeError, ValueError) as e:
+        except ValueError as e:
             if "RESOURCE_EXHAUSTED" in str(e):
                 print(f"  Skipping benchmark for {n_worlds} - resource exhausted")
                 continue  # Only continue, we might still be able to benchmark sim
