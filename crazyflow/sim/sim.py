@@ -15,7 +15,7 @@ from mujoco.mjx import Data, Model
 from crazyflow.constants import J_INV, MASS, SIGN_MIX_MATRIX, J
 from crazyflow.control.control import Control, attitude2rpm, pwm2rpm, state2attitude, thrust2pwm
 from crazyflow.exception import ConfigError, NotInitializedError
-from crazyflow.sim.integration import Integrator, euler, rk4
+from crazyflow.sim.integration import Integrator, euler, rk4, symplectic_euler
 from crazyflow.sim.physics import (
     Physics,
     collective_force2acceleration,
@@ -461,6 +461,8 @@ def select_integrate_fn(physics: Physics, integrator: Integrator) -> Callable[[S
             integrate_fn = euler
         case Integrator.rk4:
             integrate_fn = rk4
+        case Integrator.symplectic_euler:
+            integrate_fn = symplectic_euler
         case _:
             raise NotImplementedError(f"Integrator {integrator} not implemented")
 
@@ -635,8 +637,10 @@ def identity(data: SimData, *args: Any, **kwargs: Any) -> SimData:
 
 def clip_floor_pos(data: SimData) -> SimData:
     """Clip the position of the drone to the floor."""
-    clip_pos = data.states.pos.at[..., 2].set(jnp.maximum(data.states.pos[..., 2], -0.001))
-    return data.replace(states=data.states.replace(pos=clip_pos))
+    clip = data.states.pos[..., 2] < -0.001
+    clip_pos = data.states.pos.at[..., 2].set(jnp.where(clip, -0.001, data.states.pos[..., 2]))
+    clip_vel = data.states.vel.at[..., 2].set(jnp.where(clip, 0, data.states.vel[..., 2]))
+    return data.replace(states=data.states.replace(pos=clip_pos, vel=clip_vel))
 
 
 @partial(jax.jit, static_argnames="device")
