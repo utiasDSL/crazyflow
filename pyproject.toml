@@ -41,7 +41,7 @@ Homepage = "https://github.com/utiasDSL/crazyflow"
 Repository = "https://github.com/utiasDSL/crazyflow"
 
 [tool.setuptools.packages]
-find = {}
+find = {include = ["crazyflow"]}
 
 [tool.setuptools.dynamic]
 version = { attr = "crazyflow.__version__" }
