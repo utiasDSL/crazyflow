@@ -258,11 +258,21 @@ def test_sim_state_control_device(device: str):
 
 @pytest.mark.parametrize("device", ["gpu", "cpu"])
 @pytest.mark.render
-def test_render(device: str):
+def test_render_human(device: str):
     skip_unavailable_device(device)
     sim = Sim(device=device)
     sim.render()
     sim.viewer.close()
+
+
+# Do not mark as render to ensure it runs by default. This function will not open a viewer.
+@pytest.mark.parametrize("device", ["gpu", "cpu"])
+def test_render_rgb_array(device: str):
+    skip_unavailable_device(device)
+    sim = Sim(n_worlds=2, device=device)
+    img = sim.render(mode="rgb_array")
+    assert isinstance(img, np.ndarray), "Image must be a numpy array"
+    assert img.ndim == 3, "Image must be 3D"
 
 
 @pytest.mark.unit

@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 from functools import partial
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import TYPE_CHECKING, Any, Callable
 
 import jax
 import jax.numpy as jnp
@@ -10,7 +12,6 @@ from einops import rearrange
 from gymnasium.envs.mujoco.mujoco_rendering import MujocoRenderer
 from jax import Array, Device
 from jax.scipy.spatial.transform import Rotation as R
-from mujoco.mjx import Data, Model
 
 from crazyflow.constants import J_INV, MASS, SIGN_MIX_MATRIX, J
 from crazyflow.control.control import Control, attitude2rpm, pwm2rpm, state2attitude, thrust2pwm
@@ -27,6 +28,10 @@ from crazyflow.sim.physics import (
 )
 from crazyflow.sim.structs import SimControls, SimCore, SimData, SimParams, SimState, SimStateDeriv
 from crazyflow.utils import grid_2d, leaf_replace, patch_viewer, pytree_replace, to_device
+
+if TYPE_CHECKING:
+    from mujoco.mjx import Data, Model
+    from numpy.typing import NDArray
 
 
 class Sim:
@@ -300,10 +305,19 @@ class Sim:
         controls = to_device(cmd, self.device)
         self.data = self.data.replace(controls=self.data.controls.replace(thrust=controls))
 
-    def render(self, mode: Optional[str] = "human", world: Optional[int] = 0, default_cam_config: Optional[dict] = None):
+    def render(
+        self, mode: str | None = "human", world: int = 0, default_cam_config: dict | None = None
+    ) -> NDArray | None:
         if self.viewer is None:
             patch_viewer()
-            self.viewer = MujocoRenderer(self.mj_model, self.mj_data, max_geom=self.max_visual_geom, default_cam_config=default_cam_config, height=480, width=640)
+            self.viewer = MujocoRenderer(
+                self.mj_model,
+                self.mj_data,
+                max_geom=self.max_visual_geom,
+                default_cam_config=default_cam_config,
+                height=480,
+                width=640,
+            )
         self.mj_data.qpos[:] = self.data.mjx_data.qpos[world, :]
         self.mj_data.mocap_pos[:] = self.data.mjx_data.mocap_pos[world, :]
         self.mj_data.mocap_quat[:] = self.data.mjx_data.mocap_quat[world, :]
