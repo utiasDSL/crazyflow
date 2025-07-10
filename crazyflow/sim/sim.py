@@ -1,6 +1,6 @@
 from functools import partial
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 import jax
 import jax.numpy as jnp
@@ -300,15 +300,15 @@ class Sim:
         controls = to_device(cmd, self.device)
         self.data = self.data.replace(controls=self.data.controls.replace(thrust=controls))
 
-    def render(self):
+    def render(self, mode: Optional[str] = "human", world: Optional[int] = 0, default_cam_config: Optional[dict] = None):
         if self.viewer is None:
             patch_viewer()
-            self.viewer = MujocoRenderer(self.mj_model, self.mj_data, max_geom=self.max_visual_geom)
-        self.mj_data.qpos[:] = self.data.mjx_data.qpos[0, :]
-        self.mj_data.mocap_pos[:] = self.data.mjx_data.mocap_pos[0, :]
-        self.mj_data.mocap_quat[:] = self.data.mjx_data.mocap_quat[0, :]
+            self.viewer = MujocoRenderer(self.mj_model, self.mj_data, max_geom=self.max_visual_geom, default_cam_config=default_cam_config, height=480, width=640)
+        self.mj_data.qpos[:] = self.data.mjx_data.qpos[world, :]
+        self.mj_data.mocap_pos[:] = self.data.mjx_data.mocap_pos[world, :]
+        self.mj_data.mocap_quat[:] = self.data.mjx_data.mocap_quat[world, :]
         mujoco.mj_forward(self.mj_model, self.mj_data)
-        self.viewer.render("human")
+        return self.viewer.render(mode)
 
     def seed(self, seed: int):
         """Set the JAX rng key for the simulation.
