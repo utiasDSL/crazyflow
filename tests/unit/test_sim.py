@@ -270,9 +270,12 @@ def test_render_human(device: str):
 def test_render_rgb_array(device: str):
     skip_unavailable_device(device)
     sim = Sim(n_worlds=2, device=device)
-    img = sim.render(mode="rgb_array")
+    img = sim.render(mode="rgb_array", width=1024, height=1024)
     assert isinstance(img, np.ndarray), "Image must be a numpy array"
-    assert img.ndim == 3, "Image must be 3D"
+    assert img.shape == (1024, 1024, 3), f"Unexpected image shape {img.shape}"
+    # Check if mj_model.vis.global_.offwidth is set correctly
+    assert not all(img[0, 0, :] == 0), "Image contains black patches"
+    assert not all(img[-1, -1, :] == 0), "Image contains black patches"
 
 
 @pytest.mark.unit
