@@ -75,7 +75,8 @@ class Sim:
         self.viewer: MujocoRenderer | None = None
 
         self.data = self.init_data(state_freq, attitude_freq, thrust_freq, rng_key, mjx_data)
-        self.default_data = self.init_default_data()
+        self.default_data: SimData
+        self.build_default_data()
 
         # Build the simulation pipeline and overwrite the default _step implementation with it
         self.reset_pipeline: tuple[Callable[[SimData, Array[bool] | None], SimData], ...] = tuple()
@@ -95,172 +96,6 @@ class Sim:
 
         self.build_reset_fn()
         self.build_step_fn()
-
-    def build_mjx_spec(self) -> mujoco.MjSpec:
-        """Build the MuJoCo model specification for the simulation."""
-        assert self._xml_path.exists(), f"Model file {self._xml_path} does not exist"
-        spec = mujoco.MjSpec.from_file(str(self._xml_path))
-        spec.option.timestep = 1 / self.freq
-        spec.copy_during_attach = True
-        drone_spec = mujoco.MjSpec.from_file(str(self.drone_path))
-        frame = spec.worldbody.add_frame(name="world")
-        # Add drones and their actuators
-        for i in range(self.n_drones):
-            drone_body = drone_spec.body("drone")
-            if drone_body is None:
-                raise ValueError("Drone body not found in drone spec")
-            drone = frame.attach_body(drone_body, "", f":{i}")
-            drone.add_freejoint()
-        return spec
-
-    def build_mjx_model(self, spec: mujoco.MjSpec) -> tuple[Any, Any, Model, Data]:
-        """Build the MuJoCo model and data structures for the simulation."""
-        mj_model = spec.compile()
-        mj_data = mujoco.MjData(mj_model)
-        mjx_model = mjx.put_model(mj_model, device=self.device)
-        mjx_data = mjx.put_data(mj_model, mj_data, device=self.device)
-        mjx_data = jax.vmap(lambda _: mjx_data)(range(self.n_worlds))
-        return mj_model, mj_data, mjx_model, mjx_data
-
-    def build_step_fn(self):
-        """Setup the chain of functions that are called in Sim.step().
-
-        We know all the functions that are called in succession since the simulation is configured
-        at initialization time. Instead of branching through options at runtime, we construct a step
-        function at initialization that selects the correct functions based on the settings.
-
-        Warning:
-            If any settings change, the pipeline of functions needs to be reconstructed.
-        """
-        pipeline = self.step_pipeline
-
-        # None is required by jax.lax.scan to unpack the tuple returned by single_step.
-        def single_step(data: SimData, _: None) -> tuple[SimData, None]:
-            for fn in pipeline:
-                data = fn(data)
-            return data, None
-
-        # ``scan`` allows us control over loop unrolling for single steps from a single WhileOp to
-        # complete unrolling, reducing either compilation times or fusing the loops to give XLA
-        # maximum freedom to reorder operations and jointly optimize the pipeline. This is especially
-        # relevant for the common use case of running multiple sim steps in an outer loop, e.g. in
-        # gym environments.
-        # Having n_steps as a static argument is fine, since patterns with n_steps > 1 will almost
-        # always use the same n_steps value for successive calls.
-        @partial(jax.jit, static_argnames="n_steps")
-        def step(data: SimData, n_steps: int = 1) -> SimData:
-            # Performance optimization: When step is called, jax checks if it can reuse a previously
-            # compiled version of the function. This check flattens the sim.data PyTree and compares
-            # the metadata of each leaf with the cached metadata. The more leaves contained in
-            # sim.data, the more time is spent on the cache lookup even if the function has already
-            # been compiled. Since mjx_model contains many PyTree nodes and it is not used by
-            # physics modes other than mujoco with domain randomization, we set it to None and
-            # capture the current sim.mjx_model in the step function's closure. Changes to the
-            # params are synced to mjx_model at the start of the step function.
-            if optimize_mjx_model := (data.mjx_model is None):
-                data = data.replace(mjx_model=self.mjx_model)
-            data = self.sync_sim2mjx(data)
-            data, _ = jax.lax.scan(single_step, data, length=n_steps, unroll=1)
-            if optimize_mjx_model:
-                data = data.replace(mjx_model=None)
-            return data
-
-        self._step = step
-
-    def init_data(
-        self, state_freq: int, attitude_freq: int, thrust_freq: int, rng_key: Array, mjx_data: Data
-    ) -> tuple[SimData, SimData]:
-        """Initialize the simulation data."""
-        drone_ids = [self.mj_model.body(f"drone:{i}").id for i in range(self.n_drones)]
-        N, D = self.n_worlds, self.n_drones
-        data = SimData(
-            states=SimState.create(N, D, self.device),
-            states_deriv=SimStateDeriv.create(N, D, self.device),
-            controls=SimControls.create(N, D, state_freq, attitude_freq, thrust_freq, self.device),
-            params=SimParams.create(N, D, MASS, J, J_INV, self.device),
-            core=SimCore.create(self.freq, N, D, drone_ids, rng_key, self.device),
-            mjx_data=mjx_data,
-            mjx_model=None,
-        )
-        if D > 1:  # If multiple drones, arrange them in a grid
-            grid = grid_2d(D)
-            states = data.states.replace(pos=data.states.pos.at[..., :2].set(grid))
-            data = data.replace(states=states)
-        data = self.sync_sim2mjx(data, self.mjx_model)
-        return data
-
-    def init_default_data(self) -> SimData:
-        """Initialize the default data for the simulation.
-
-        Todo:
-            Only save the data of one world.
-        """
-        return self.data.replace()
-
-    def build_reset_fn(self):
-        """Build the reset function for the current simulation configuration."""
-        pipeline = self.reset_pipeline
-
-        @jax.jit
-        def reset(data: SimData, default_data: SimData, mask: Array | None = None) -> SimData:
-            data = pytree_replace(data, default_data, mask)  # Does not overwrite rng_key
-            for fn in pipeline:
-                data = fn(data, mask)
-            data = self.sync_sim2mjx(data, self.mjx_model)
-            return data
-
-        self._reset = reset
-
-    def build(
-        self,
-        *,
-        mjx: bool = True,
-        data: bool = True,
-        default_data: bool = True,
-        reset: bool = True,
-        step: bool = True,
-    ):
-        """Build the simulation pipeline.
-
-        This method is used to (re)build the simulation pipeline after changing the MuJoCo
-        model specification or any of the default functions that are used in the compiled step
-        function.
-
-        Warning:
-            Depending on what you build, you reset the simulation state. For example, rebuilding the
-            simulation data will reset the drone states.
-
-        Args:
-            mjx: Flag to (re)build the MuJoCo model and data structures.
-            data: Flag to (re)build the simulation data.
-            default_data: Flag to (re)build the default data. Useful for setting the reset state to
-                the current state.
-            reset: Flag to (re)build the reset function.
-            step: Flag to (re)build the simulation step function.
-        """
-        # TODO: Write tests for all options
-        if mjx:
-            if self.viewer is not None:
-                self.viewer.close()
-                self.viewer = None
-            self.mj_model, self.mj_data, self.mjx_model, mjx_data = self.build_mjx_model(self.spec)
-            self.data = self.data.replace(mjx_data=mjx_data)
-            self.data = self.sync_sim2mjx(self.data, self.mjx_model)
-            self.default_data = self.default_data.replace(mjx_data=mjx_data)
-        if data:
-            self.data = self.init_data(
-                self.data.controls.state_freq,
-                self.data.controls.attitude_freq,
-                self.data.controls.thrust_freq,
-                self.data.core.rng_key,
-                self.data.mjx_data if not mjx else mjx_data,
-            )
-        if default_data:
-            self.default_data = self.init_default_data()
-        if reset:
-            self.build_reset_fn()
-        if step:
-            self.build_step_fn()
 
     def reset(self, mask: Array | None = None):
         """Reset the simulation to the initial state.
@@ -343,6 +178,135 @@ class Sim:
         if self.viewer is not None:
             self.viewer.close()
         self.viewer = None
+
+    def build_mjx_spec(self) -> mujoco.MjSpec:
+        """Build the MuJoCo model specification for the simulation."""
+        assert self._xml_path.exists(), f"Model file {self._xml_path} does not exist"
+        spec = mujoco.MjSpec.from_file(str(self._xml_path))
+        spec.option.timestep = 1 / self.freq
+        spec.copy_during_attach = True
+        drone_spec = mujoco.MjSpec.from_file(str(self.drone_path))
+        frame = spec.worldbody.add_frame(name="world")
+        # Add drones and their actuators
+        for i in range(self.n_drones):
+            drone_body = drone_spec.body("drone")
+            if drone_body is None:
+                raise ValueError("Drone body not found in drone spec")
+            drone = frame.attach_body(drone_body, "", f":{i}")
+            drone.add_freejoint()
+        return spec
+
+    def build_mjx_model(self, spec: mujoco.MjSpec) -> tuple[Any, Any, Model, Data]:
+        """Build the MuJoCo model and data structures for the simulation."""
+        mj_model = spec.compile()
+        mj_data = mujoco.MjData(mj_model)
+        mjx_model = mjx.put_model(mj_model, device=self.device)
+        mjx_data = mjx.put_data(mj_model, mj_data, device=self.device)
+        mjx_data = jax.vmap(lambda _: mjx_data)(range(self.n_worlds))
+        return mj_model, mj_data, mjx_model, mjx_data
+
+    def build_step_fn(self):
+        """Setup the chain of functions that are called in Sim.step().
+
+        We know all the functions that are called in succession since the simulation is configured
+        at initialization time. Instead of branching through options at runtime, we construct a step
+        function at initialization that selects the correct functions based on the settings.
+
+        Warning:
+            If any settings change, the pipeline of functions needs to be reconstructed.
+        """
+        pipeline = self.step_pipeline
+
+        # None is required by jax.lax.scan to unpack the tuple returned by single_step.
+        def single_step(data: SimData, _: None) -> tuple[SimData, None]:
+            for fn in pipeline:
+                data = fn(data)
+            return data, None
+
+        # ``scan`` allows us control over loop unrolling for single steps from a single WhileOp to
+        # complete unrolling, reducing either compilation times or fusing the loops to give XLA
+        # maximum freedom to reorder operations and jointly optimize the pipeline. This is especially
+        # relevant for the common use case of running multiple sim steps in an outer loop, e.g. in
+        # gym environments.
+        # Having n_steps as a static argument is fine, since patterns with n_steps > 1 will almost
+        # always use the same n_steps value for successive calls.
+        @partial(jax.jit, static_argnames="n_steps")
+        def step(data: SimData, n_steps: int = 1) -> SimData:
+            # Performance optimization: When step is called, jax checks if it can reuse a previously
+            # compiled version of the function. This check flattens the sim.data PyTree and compares
+            # the metadata of each leaf with the cached metadata. The more leaves contained in
+            # sim.data, the more time is spent on the cache lookup even if the function has already
+            # been compiled. Since mjx_model contains many PyTree nodes and it is not used by
+            # physics modes other than mujoco with domain randomization, we set it to None and
+            # capture the current sim.mjx_model in the step function's closure. Changes to the
+            # params are synced to mjx_model at the start of the step function.
+            if optimize_mjx_model := (data.mjx_model is None):
+                data = data.replace(mjx_model=self.mjx_model)
+            data = self.sync_sim2mjx(data)
+            data, _ = jax.lax.scan(single_step, data, length=n_steps, unroll=1)
+            if optimize_mjx_model:
+                data = data.replace(mjx_model=None)
+            return data
+
+        self._step = step
+
+    def build_reset_fn(self):
+        """Build the reset function for the current simulation configuration."""
+        pipeline = self.reset_pipeline
+
+        @jax.jit
+        def reset(data: SimData, default_data: SimData, mask: Array | None = None) -> SimData:
+            data = pytree_replace(data, default_data, mask)  # Does not overwrite rng_key
+            for fn in pipeline:
+                data = fn(data, mask)
+            data = self.sync_sim2mjx(data, self.mjx_model)
+            return data
+
+        self._reset = reset
+
+    def build_data(self):
+        self.data = self.init_data(
+            self.data.controls.state_freq,
+            self.data.controls.attitude_freq,
+            self.data.controls.thrust_freq,
+            self.data.core.rng_key,
+            self.data.mjx_data,
+        )
+
+    def build_default_data(self):
+        """Initialize the default data for the simulation."""
+        self.default_data = self.data.replace()
+
+    def build_mjx(self):
+        if self.viewer is not None:
+            self.viewer.close()
+            self.viewer = None
+        self.mj_model, self.mj_data, self.mjx_model, mjx_data = self.build_mjx_model(self.spec)
+        self.data = self.data.replace(mjx_data=mjx_data)
+        self.data = self.sync_sim2mjx(self.data, self.mjx_model)
+        self.default_data = self.default_data.replace(mjx_data=mjx_data)
+
+    def init_data(
+        self, state_freq: int, attitude_freq: int, thrust_freq: int, rng_key: Array, mjx_data: Data
+    ) -> tuple[SimData, SimData]:
+        """Initialize the simulation data."""
+        drone_ids = [self.mj_model.body(f"drone:{i}").id for i in range(self.n_drones)]
+        N, D = self.n_worlds, self.n_drones
+        data = SimData(
+            states=SimState.create(N, D, self.device),
+            states_deriv=SimStateDeriv.create(N, D, self.device),
+            controls=SimControls.create(N, D, state_freq, attitude_freq, thrust_freq, self.device),
+            params=SimParams.create(N, D, MASS, J, J_INV, self.device),
+            core=SimCore.create(self.freq, N, D, drone_ids, rng_key, self.device),
+            mjx_data=mjx_data,
+            mjx_model=None,
+        )
+        if D > 1:  # If multiple drones, arrange them in a grid
+            grid = grid_2d(D)
+            states = data.states.replace(pos=data.states.pos.at[..., :2].set(grid))
+            data = data.replace(states=states)
+        data = self.sync_sim2mjx(data, self.mjx_model)
+        return data
 
     @property
     def time(self) -> Array:

@@ -29,7 +29,7 @@ def test_disturbance(physics: Physics):
 
     sim.reset()
     sim.step_pipeline = sim.step_pipeline[:2] + (disturbance_fn,) + sim.step_pipeline[2:]
-    sim.build(mjx=False, data=False, default_data=False)
+    sim.build_step_fn()
     for _ in range(sim.control_freq):
         sim.state_control(control)
         sim.step(sim.freq // sim.control_freq)

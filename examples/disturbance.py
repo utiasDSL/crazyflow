@@ -39,7 +39,7 @@ def main(plot: bool = False):
     # inspect the step pipeline with
     # print(sim.step_pipeline)
     sim.step_pipeline = sim.step_pipeline[:2] + (disturbance_fn,) + sim.step_pipeline[2:]
-    sim.build(mjx=False, data=False, default_data=False, step=True)
+    sim.build_step_fn()
     pos_disturbed, rpy_disturbed = [], []
     sim.reset()
     for _ in range(3 * sim.control_freq):
