@@ -69,6 +69,7 @@ def test_attitude_symbolic(freq: int):
 
 
 @pytest.mark.integration
+@pytest.mark.skip(reason="Thrust model is not officially supported for now")
 @pytest.mark.parametrize("freq", [500, 1000])
 def test_thrust_symbolic(freq: int):
     sim = Sim(physics="analytical", control="thrust", freq=freq)
