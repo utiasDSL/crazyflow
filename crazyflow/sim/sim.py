@@ -353,7 +353,7 @@ class Sim:
             An boolean array of shape (n_worlds,) that is True if any contact is present.
         """
         if body is None:
-            return self.data.mjx_data.contact.dist < 0
+            return self.data.mjx_data._impl.contact.dist < 0
         body_id = self.mj_model.body(body).id
         geom_start = self.mj_model.body_geomadr[body_id]
         geom_count = self.mj_model.body_geomnum[body_id]
@@ -624,7 +624,9 @@ def clip_floor_pos(data: SimData) -> SimData:
     """Clip the position of the drone to the floor."""
     clip = data.states.pos[..., 2] < -0.001
     clip_pos = data.states.pos.at[..., 2].set(jnp.where(clip, -0.001, data.states.pos[..., 2]))
-    clip_vel = data.states.vel.at[..., 2].set(jnp.where(clip, 0, data.states.vel[..., 2]))
+    clip_vel = data.states.vel.at[..., :3].set(
+        jnp.where(clip[..., None], 0, data.states.vel[..., :3])
+    )
     return data.replace(states=data.states.replace(pos=clip_pos, vel=clip_vel))
 
 

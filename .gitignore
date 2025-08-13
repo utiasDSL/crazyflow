@@ -17,3 +17,6 @@ build
 tutorials/ppo/wandb
 dist
 benchmark/data
+# pixi environments
+.pixi
+*.egg-info

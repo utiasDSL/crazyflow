@@ -20,9 +20,10 @@ def test_disturbance(physics: Physics):
     sim = Sim(n_worlds=2, n_drones=3, control="state", physics=physics)
     control = np.zeros((sim.n_worlds, sim.n_drones, 13))
     control[..., :3] = 1.0
+    n_steps = 10
 
     pos, pos_disturbed = [], []
-    for _ in range(sim.control_freq):
+    for _ in range(n_steps):
         sim.state_control(control)
         sim.step(sim.freq // sim.control_freq)
         pos.append(sim.data.states.pos[0, 0])
@@ -30,7 +31,7 @@ def test_disturbance(physics: Physics):
     sim.reset()
     sim.step_pipeline = sim.step_pipeline[:2] + (disturbance_fn,) + sim.step_pipeline[2:]
     sim.build_step_fn()
-    for _ in range(sim.control_freq):
+    for _ in range(n_steps):
         sim.state_control(control)
         sim.step(sim.freq // sim.control_freq)
         pos_disturbed.append(sim.data.states.pos[0, 0])

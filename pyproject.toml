@@ -18,16 +18,17 @@ classifiers = [
 ]
 
 dependencies = [
-    "jax>=0.5.0,!=0.5.3,!=0.6.0", # 0.5.3 and 0.6.0 have a bug that causes resets to not work properly. This is related to the fusing of SimData.mjx_model into the _reset function.
+    "jax>=0.7.0", # 0.5.3 and 0.6.0 have a bug that causes resets to not work properly. This is related to the fusing of SimData.mjx_model into the _reset function.
     "mujoco>=3.3.0",
     "mujoco-mjx>=3.3.0",
-    "gymnasium",
+    "gymnasium[mujoco]>=1.2.0",
     "imageio",
     "einops",
     "flax",
     "ml_collections",
     "casadi",
     "numpy",
+    "drone-models @ git+https://github.com/utiasDSL/drone-models.git@08ffb18",
 ]
 requires-python = ">=3.10"
 
@@ -106,3 +107,18 @@ skip-magic-trailing-comma = true
 line-ending = "auto"
 docstring-code-format = true
 docstring-code-line-length = "dynamic"
+
+[tool.pixi.workspace]
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+
+[tool.pixi.pypi-dependencies]
+crazyflow = { path = "./", editable = true }
+
+[tool.pixi.environments]
+default = { solve-group = "default" }
+benchmark = { features = ["benchmark"], solve-group = "default" }
+gpu = { features = ["gpu"], solve-group = "default" }
+test = { features = ["test"], solve-group = "default" }
+
+[tool.pixi.tasks]

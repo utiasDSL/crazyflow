@@ -8,7 +8,7 @@ import mujoco
 import numpy as np
 from gymnasium import spaces
 from gymnasium.envs.mujoco.mujoco_rendering import MujocoRenderer
-from gymnasium.vector import VectorEnv, VectorWrapper
+from gymnasium.vector import AutoresetMode, VectorEnv, VectorWrapper
 from gymnasium.vector.utils import batch_space
 from jax import Array
 
@@ -52,7 +52,7 @@ class CrazyflowBaseEnv(VectorEnv):
 
     obs_keys = ["pos", "quat", "vel", "ang_vel"]
     # TODO: Once we switch to gymnasium >= 1.1.0, we should set the autoreset mode
-    # metadata = {"autoreset_mode": AutoresetMode.NEXT_STEP}
+    metadata = {"autoreset_mode": AutoresetMode.NEXT_STEP}
 
     def __init__(
         self,
