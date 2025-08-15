@@ -81,7 +81,7 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E4", "E7", "E9", "F", "I", "D", "TCH", "ANN"]
-ignore = ["ANN401", "ANN101"]
+ignore = ["ANN401"]
 fixable = ["ALL"]
 unfixable = []
 
@@ -122,3 +122,11 @@ gpu = { features = ["gpu"], solve-group = "default" }
 test = { features = ["test", "gpu"], solve-group = "default" }
 
 [tool.pixi.tasks]
+
+[tool.pixi.dependencies]  
+# TODO: Remove compilers once scipy 1.17 is released and drone-models have been updated.
+gcc = ">=15.1.0,<15.2"
+cxx-compiler = ">=1.0.0,<2"
+gfortran = ">=15.1.0,<15.2"
+openblas = ">=0.3.30,<0.4"
+ruff = "*"

@@ -1,14 +1,9 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 import jax
 import jax.numpy as jnp
 from flax.struct import dataclass, field
 from jax import Array, Device
-
-if TYPE_CHECKING:
-    from mujoco.mjx import Data, Model
 
 
 @dataclass
