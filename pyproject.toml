@@ -18,7 +18,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "jax>=0.7.0", # 0.5.3 and 0.6.0 have a bug that causes resets to not work properly. This is related to the fusing of SimData.mjx_model into the _reset function.
+    "jax>=0.7.0", # 0.5.3 and 0.6.0 have a bug that causes resets to not work properly.
     "mujoco>=3.3.0",
     "mujoco-mjx>=3.3.0",
     "gymnasium[mujoco]>=1.2.0",
@@ -119,6 +119,6 @@ crazyflow = { path = "./", editable = true }
 default = { solve-group = "default" }
 benchmark = { features = ["benchmark", "gpu"], solve-group = "default" }
 gpu = { features = ["gpu"], solve-group = "default" }
-test = { features = ["test"], solve-group = "default" }
+test = { features = ["test", "gpu"], solve-group = "default" }
 
 [tool.pixi.tasks]

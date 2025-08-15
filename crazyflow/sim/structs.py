@@ -186,6 +186,8 @@ class SimCore:
     """MuJoCo IDs of the drones in the simulation."""
     rng_key: Array  # (N, 1)
     """Random number generator key for the simulation."""
+    mjx_synced: bool = field(pytree_node=False)
+    """Whether the simulation data is synchronized with the MuJoCo model."""
 
     @staticmethod
     def create(
@@ -208,6 +210,7 @@ class SimCore:
             n_drones=n_drones,
             drone_ids=jnp.array(drone_ids, dtype=jnp.int32, device=device),
             rng_key=rng_key,
+            mjx_synced=False,
         )
 
 
@@ -223,10 +226,3 @@ class SimData:
     """Drone parameters."""
     core: SimCore
     """Core parameters of the simulation."""
-    mjx_data: Data
-    """MuJoCo data structure."""
-    mjx_model: Model | None
-    """MuJoCo model structure.
-
-    Can be set to None for performance optimizations. See `Sim.build_step` for more details.
-    """

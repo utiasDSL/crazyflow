@@ -22,7 +22,6 @@ SYS_ID_PARAMS = {
 class Physics(str, Enum):
     """Physics mode for the simulation."""
 
-    mujoco = "mujoco"
     analytical = "analytical"
     sys_id = "sys_id"
     default = analytical
