@@ -1,3 +1,5 @@
+import os
+
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -26,6 +28,11 @@ def available_backends() -> list[str]:
 def skip_unavailable_device(device: str):
     if device not in available_backends():
         pytest.skip(f"{device} device not available")
+
+
+def skip_headless():
+    if os.environ.get("DISPLAY") is None:
+        pytest.skip("DISPLAY is not set, skipping test in headless environment")
 
 
 def array_meta_assert(
@@ -270,6 +277,7 @@ def test_render_human(device: str):
 @pytest.mark.parametrize("device", ["gpu", "cpu"])
 def test_render_rgb_array(device: str):
     skip_unavailable_device(device)
+    skip_headless()
     sim = Sim(n_worlds=2, device=device)
     img = sim.render(mode="rgb_array", width=1024, height=1024)
     assert isinstance(img, np.ndarray), "Image must be a numpy array"
