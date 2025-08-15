@@ -3,6 +3,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+import fire
 import gymnasium
 import jax
 import jax.numpy as jnp
@@ -140,9 +141,8 @@ def profile_reset(sim_config: config_dict.ConfigDict, n_steps: int, device: str)
     analyze_timings(times_masked, n_steps, sim.n_worlds, sim.freq)
 
 
-def main():
+def main(device: str = "cpu", n_worlds_exp: int = 6):
     """Main entry point for profiling."""
-    device = "cpu"
     sim_config = config_dict.ConfigDict()
     sim_config.n_worlds = 1
     sim_config.n_drones = 1
@@ -182,7 +182,7 @@ def main():
 
     n_steps = 1000
     # Test with increasing number of parallel environments (worlds)
-    for n_worlds in [1, 10, 100, 1000, 10000, 100000, 1000000]:
+    for n_worlds in [10**i for i in range(n_worlds_exp + 1)]:
         print(f"\nTesting with {n_worlds} parallel environments:")
         sim_config.n_worlds = n_worlds
 
@@ -213,7 +213,7 @@ def main():
 
         # Save simulator results
         # Reopen CSV writer in append mode
-        with open(csv_file, "w", newline="") as f:
+        with open(csv_file, "a", newline="") as f:
             csv_writer = csv.writer(f)
             csv_writer.writerow(
                 [
@@ -270,4 +270,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    fire.Fire(main)

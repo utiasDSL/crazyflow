@@ -35,7 +35,7 @@ requires-python = ">=3.10"
 [project.optional-dependencies]
 test = ["pytest>=8.0.0", "pytest-cov", "pytest-timeout"]
 gpu = ["jax[cuda12]"]
-benchmark = ["fire"]
+benchmark = ["fire", "matplotlib", "pandas"]
 
 [project.urls]
 Homepage = "https://github.com/utiasDSL/crazyflow"
@@ -117,7 +117,7 @@ crazyflow = { path = "./", editable = true }
 
 [tool.pixi.environments]
 default = { solve-group = "default" }
-benchmark = { features = ["benchmark"], solve-group = "default" }
+benchmark = { features = ["benchmark", "gpu"], solve-group = "default" }
 gpu = { features = ["gpu"], solve-group = "default" }
 test = { features = ["test"], solve-group = "default" }
 
