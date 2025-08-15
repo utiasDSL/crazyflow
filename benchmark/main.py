@@ -181,90 +181,110 @@ def main(device: str = "cpu", n_worlds_exp: int = 6):
     # Reopen the file in append mode for each result
 
     n_steps = 1000
+    skip_sim, skip_gym = False, False
     # Test with increasing number of parallel environments (worlds)
     for n_worlds in [10**i for i in range(n_worlds_exp + 1)]:
-        print(f"\nTesting with {n_worlds} parallel environments:")
-        sim_config.n_worlds = n_worlds
+        if not skip_sim:
+            print(f"\nTesting with {n_worlds} parallel environments:")
+            sim_config.n_worlds = n_worlds
 
-        # Test with a single step first to see if we should continue
-        sim_config.freq = 500  # Test sim at 500 hz
-        test_times = profile_step(sim_config, 1, device)
+            # Test with a single step first to see if we should continue
+            sim_config.freq = 500  # Test sim at 500 hz
+            single_step_time = profile_step(sim_config, 2, device)[1]
 
-        single_step_time = test_times[0]
-        # If single step takes too long, skip this and remaining tests
-        if single_step_time > max_seconds_per_run / n_steps:  # threshold for the tests
-            print(
-                f"  Skipping benchmark for {n_worlds} and higher - single step took "
-                f"{single_step_time * 1000:.2f}s (> 1m)"
-            )
-            break
+            # If single step takes too long, skip this and remaining tests
+            if single_step_time > max_seconds_per_run / n_steps:  # threshold for the tests
+                print(
+                    f"  Skipping benchmark for {n_worlds} and higher - single step took "
+                    f"{single_step_time * n_steps:.2f}s (> 1m)"
+                )
+                skip_sim = True
 
-        # Configure simulator
-        print(f"  Running simulator benchmark ({n_worlds} worlds)...")
-        # Run simulator benchmark using existing function
-        times_sim = profile_step(sim_config, n_steps, device)
+        if not skip_sim:
+            # Configure simulator
+            print(f"  Running simulator benchmark ({n_worlds} worlds)...")
+            # Run simulator benchmark using existing function
+            times_sim = profile_step(sim_config, n_steps, device)
 
-        # Calculate metrics for CSV
-        total_time = sum(times_sim)
-        avg_step_time = np.mean(times_sim)
-        n_frames = n_steps * n_worlds
-        fps = n_frames / total_time
-        real_time_factor = (n_steps / sim_config.freq) * n_worlds / total_time
+            # Calculate metrics for CSV
+            total_time = sum(times_sim)
+            avg_step_time = np.mean(times_sim)
+            n_frames = n_steps * n_worlds
+            fps = n_frames / total_time
+            real_time_factor = (n_steps / sim_config.freq) * n_worlds / total_time
 
-        # Save simulator results
-        # Reopen CSV writer in append mode
-        with open(csv_file, "a", newline="") as f:
-            csv_writer = csv.writer(f)
-            csv_writer.writerow(
-                [
-                    "simulator",
-                    1,  # n_drones
-                    n_worlds,
-                    n_steps,
-                    total_time,
-                    avg_step_time,
-                    fps,
-                    real_time_factor,
-                    sim_config.device,
-                ]
-            )
-            f.flush()
+            # Save simulator results
+            # Reopen CSV writer in append mode
+            with open(csv_file, "a", newline="") as f:
+                csv_writer = csv.writer(f)
+                csv_writer.writerow(
+                    [
+                        "simulator",
+                        1,  # n_drones
+                        n_worlds,
+                        n_steps,
+                        total_time,
+                        avg_step_time,
+                        fps,
+                        real_time_factor,
+                        sim_config.device,
+                    ]
+                )
+                f.flush()
 
-        print(f"  Running gym environment benchmark ({n_worlds} worlds)...")
-        # Run gym environment benchmark using existing function
-        sim_config.freq = 50  # Test gym at 50 hz
-        try:
-            times_gym = profile_gym_env_step(sim_config, n_steps, device)
-        except ValueError as e:
-            if "RESOURCE_EXHAUSTED" in str(e):
-                print(f"  Skipping benchmark for {n_worlds} - resource exhausted")
-                continue  # Only continue, we might still be able to benchmark sim
-            raise e
+        if not skip_gym:
+            print(f"  Running gym environment benchmark ({n_worlds} worlds)...")
+            # Run gym environment benchmark using existing function
+            sim_config.freq = 50  # Test gym at 50 hz
+            try:
+                single_step_time = profile_gym_env_step(sim_config, 2, device)[1]
+                # If single step takes too long, skip this test only
+                if single_step_time > max_seconds_per_run / n_steps:  # threshold for the tests
+                    print(
+                        f"  Skipping benchmark for {n_worlds} - single step took "
+                        f"{single_step_time * n_steps:.2f}s (> 1m)"
+                    )
+                    skip_gym = True
+            except ValueError as e:
+                if "RESOURCE_EXHAUSTED" in str(e):
+                    print(f"  Skipping benchmark for {n_worlds} - resource exhausted")
+                    skip_gym = True
+                else:
+                    raise e
 
-        # Calculate metrics for CSV
-        total_time = sum(times_gym)
-        avg_step_time = np.mean(times_gym)
-        n_frames = n_steps * n_worlds
-        fps = n_frames / total_time
-        real_time_factor = (n_steps / sim_config.freq) * sim_config.n_worlds / total_time
+        if not skip_gym:
+            try:
+                times_gym = profile_gym_env_step(sim_config, n_steps, device)
+            except ValueError as e:
+                if "RESOURCE_EXHAUSTED" in str(e):
+                    print(f"  Skipping benchmark for {n_worlds} - resource exhausted")
+                    continue  # Only continue, we might still be able to benchmark sim
+                raise e
 
-        # Save gym environment results
-        with open(csv_file, "a", newline="") as f:
-            csv_writer = csv.writer(f)
-            csv_writer.writerow(
-                [
-                    "gym_env",
-                    sim_config.n_drones,
-                    sim_config.n_worlds,
-                    n_steps,
-                    total_time,
-                    avg_step_time,
-                    fps,
-                    real_time_factor,
-                    sim_config.device,
-                ]
-            )
-            f.flush()
+            # Calculate metrics for CSV
+            total_time = sum(times_gym)
+            avg_step_time = np.mean(times_gym)
+            n_frames = n_steps * n_worlds
+            fps = n_frames / total_time
+            real_time_factor = (n_steps / sim_config.freq) * sim_config.n_worlds / total_time
+
+            # Save gym environment results
+            with open(csv_file, "a", newline="") as f:
+                csv_writer = csv.writer(f)
+                csv_writer.writerow(
+                    [
+                        "gym_env",
+                        sim_config.n_drones,
+                        sim_config.n_worlds,
+                        n_steps,
+                        total_time,
+                        avg_step_time,
+                        fps,
+                        real_time_factor,
+                        sim_config.device,
+                    ]
+                )
+                f.flush()
 
     print(f"\nBenchmark results saved to {csv_file}")
 
