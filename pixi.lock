@@ -651,7 +651,7 @@ packages:
 - pypi: ./
   name: crazyflow
   version: 0.0.2
-  sha256: fa578d9e32160a2db129ca83530a0ba7bcb345c1a5a1f6a017fa31009916bbec
+  sha256: 0b6426149a63e9e386921e02a474651979fe9f5e2b94142e8cdf52a9ce0c7cfe
   requires_dist:
   - jax>=0.7.0
   - mujoco>=3.3.0
@@ -667,6 +667,7 @@ packages:
   - pytest>=8.0.0 ; extra == 'test'
   - pytest-cov ; extra == 'test'
   - pytest-timeout ; extra == 'test'
+  - gymnasium[array-api] ; extra == 'test'
   - jax[cuda12] ; extra == 'gpu'
   - fire ; extra == 'benchmark'
   - matplotlib ; extra == 'benchmark'
