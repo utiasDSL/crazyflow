@@ -2,7 +2,7 @@
 
 --------------------------------------------------------------------------------
 
-Fast, parallelizable simulations of Crazyflies with JAX and MuJoCo.
+Fast, parallelizable simulations of Crazyflies with JAX.
 
 [![Python Version]][Python Version URL] [![Ruff Check]][Ruff Check URL] [![Documentation Status]][Documentation Status URL] [![Tests]][Tests URL]
 
@@ -32,7 +32,6 @@ The simulation is built as a pipeline of functions that are composed at initiali
 Multiple physics models are supported:
 - analytical: A first-principles model based on physical equations
 - sys_id: A system-identified model trained on real drone data
-- mujoco: MuJoCo physics engine for more complex interactions
 
 #### Control Modes
 Different control interfaces are available:
@@ -41,9 +40,10 @@ Different control interfaces are available:
 - thrust: Low-level control of individual motor thrusts
 
 #### Integration Methods
-For analytical and system-identified physics:
+We support multiple integration schemes for additional precision:
 - euler: Simple first-order integration
 - rk4: Fourth-order Runge-Kutta integration for higher accuracy
+- symplectic\_euler: Symplectic integration for conservation of energy
 
 ### Parallelization
 Crazyflow supports massive parallelization across:
@@ -57,6 +57,12 @@ The framework supports domain randomization through the crazyflow/randomize modu
 
 ### Functional Design
 The simulation follows a functional programming paradigm: All state is contained in immutable data structures. Updates create new states rather than modifying existing ones. All functions are pure, enabling JAX's transformations (JIT, grad, vmap) and thus automatic differentiation through the entire simulation, making it suitable for gradient-based optimization and reinforcement learning.
+
+### Contacts and Non-Drone Models
+We focus on drones dynamics in free-space flight. Consequently, no models other than drones are available in the simulation and contact dynamics with external objects are not considered. However, we use MuJoCo for contact detection and visualization. Users can load their own objects into the simulation by changing the MuJoCo world spec. Drone collisions with these objects will be detected during collision checks, but they won't have an effect on the dynamics (i.e. drones will pass through objects). Similarly, the objects themselves will be static.
+
+### Visualization
+We use `gymnasium`'s MuJoCo renderer and synchronize the simulation data with MuJoCo to either render an interactive UI or RGB arrays.
 
 ## Examples
 The repository includes several example scripts demonstrating different capabilities:
