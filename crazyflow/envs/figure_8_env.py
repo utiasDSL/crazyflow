@@ -92,7 +92,7 @@ class FigureEightEnv(DroneEnv):
 
     def reward(self) -> Array:
         return self._reward(
-            self.terminated(), self.sim.data.states.pos, self.trajectory[self.steps]
+            self.terminated(), self.sim.data.states.pos, self.trajectory[self.steps.squeeze()]
         )
 
     @property
