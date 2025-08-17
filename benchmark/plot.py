@@ -111,16 +111,25 @@ def format_log_axes(ax: plt.Axes, dfs: dict[str, pd.DataFrame], prefix: str):
     ax.set_xticklabels([xticklabels[i] for i in valid_indices])
 
     # Get min and max y values for plots
-    min_y = min([df["fps"].min() for key, df in dfs.items() if key.startswith(prefix)])
-    max_y = max([df["fps"].max() for key, df in dfs.items() if key.startswith(prefix)])
+    min_y = min([df["fps"].min() for key, df in dfs.items()])
+    max_y = max([df["fps"].max() for key, df in dfs.items()])
 
     # Create logarithmic y-ticks
-    yticks = np.array([1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000])
-    mask = (yticks >= min_y * 0.1) & (yticks <= max_y * 10)
-    valid_indices = np.nonzero(mask)[0]
-    ax.set_yticks(yticks[valid_indices])
-    yticklabels = ["1", "10", "100", "1K", "10K", "100K", "1M", "10M", "100M"]
-    ax.set_yticklabels([yticklabels[i] for i in valid_indices])
+    # Generate yticks based on data range
+    min_power = int(np.floor(np.log10(min_y)))
+    max_power = int(np.ceil(np.log10(max_y)))
+    yticks = np.array([10**i for i in range(min_power, max_power + 1)])
+    ax.set_yticks(yticks)
+    yticklabels = []
+    abbrev = {1e9: "B", 1e6: "M", 1e3: "K"}
+    for i in yticks:
+        for divisor, suffix in sorted(abbrev.items(), reverse=True):
+            if i >= divisor:
+                yticklabels.append(f"{int(i // divisor)}{suffix}")
+                break
+        else:
+            yticklabels.append(f"{int(i)}")
+    ax.set_yticklabels(yticklabels)
 
     # Remove minor ticks for cleaner appearance
     ax.minorticks_off()

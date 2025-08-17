@@ -181,7 +181,7 @@ class SimCore:
     """MuJoCo IDs of the drones in the simulation."""
     rng_key: Array  # (N, 1)
     """Random number generator key for the simulation."""
-    mjx_synced: bool = field(pytree_node=False)
+    mjx_synced: Array  # (1,)
     """Whether the simulation data is synchronized with the MuJoCo model."""
 
     @staticmethod
@@ -205,7 +205,7 @@ class SimCore:
             n_drones=n_drones,
             drone_ids=jnp.array(drone_ids, dtype=jnp.int32, device=device),
             rng_key=rng_key,
-            mjx_synced=False,
+            mjx_synced=jnp.array(False, dtype=jnp.bool_, device=device),
         )
 
 

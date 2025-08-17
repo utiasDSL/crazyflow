@@ -397,3 +397,13 @@ def test_contacts(physics: Physics):
     contacts = sim.contacts()
     assert jnp.all(contacts), "Drone should be in contact with the floor"
     sim.close()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("physics", [Physics.sys_id, Physics.analytical])
+def test_recompilation(physics: Physics):
+    sim = Sim(physics=physics, control=Control.attitude, freq=500, device="cpu")
+    # Make sure we don't recompile the step function after the first call
+    sim.step(1)
+    sim.step(1)
+    assert sim._step._cache_size() == 1, "Step function should not be recompiled"

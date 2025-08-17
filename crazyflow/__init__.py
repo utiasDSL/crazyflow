@@ -1,4 +1,4 @@
-import crazyflow.gymnasium_envs  # noqa: F401, ensure gymnasium envs are registered
+import crazyflow.envs  # noqa: F401, ensure gymnasium envs are registered
 from crazyflow.control import Control
 from crazyflow.sim import Physics, Sim
 

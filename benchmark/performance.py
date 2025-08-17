@@ -13,7 +13,7 @@ import crazyflow  # noqa: F401, ensure gymnasium envs are registered
 from crazyflow.sim import Sim
 
 if TYPE_CHECKING:
-    from crazyflow.gymnasium_envs import CrazyflowEnvReachGoal
+    from crazyflow.envs import ReachPosEnv
 
 
 def profile_step(sim_config: config_dict.ConfigDict, n_steps: int, device: str):
@@ -44,7 +44,7 @@ def profile_step(sim_config: config_dict.ConfigDict, n_steps: int, device: str):
 def profile_gym_env_step(sim_config: config_dict.ConfigDict, n_steps: int, device: str):
     device = jax.devices(device)[0]
 
-    envs: CrazyflowEnvReachGoal = gymnasium.make_vec(
+    envs: ReachPosEnv = gymnasium.make_vec(
         "DroneReachPos-v0", time_horizon_in_seconds=2, num_envs=sim_config.n_worlds, **sim_config
     )
 

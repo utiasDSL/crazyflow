@@ -8,6 +8,7 @@ import gymnasium
 import jax
 import jax.numpy as jnp
 import numpy as np
+from jax.errors import JaxRuntimeError
 from ml_collections import config_dict
 
 import crazyflow  # noqa: F401, ensure gymnasium envs are registered
@@ -42,7 +43,7 @@ def analyze_timings(times: list[float], n_steps: int, n_worlds: int, freq: float
 
 
 def profile_gym_env_step(
-    sim_config: config_dict.ConfigDict, n_steps: int, device: str
+    sim_config: config_dict.ConfigDict, n_steps: int, device: str, print_summary: bool = True
 ) -> list[float]:
     """Profile the Crazyflow gym environment step performance."""
     times = []
@@ -50,7 +51,7 @@ def profile_gym_env_step(
 
     envs = gymnasium.make_vec(
         "DroneReachPos-v0",
-        time_horizon_in_seconds=3,
+        max_episode_time=3,
         num_envs=sim_config.n_worlds,
         device=sim_config.device,
         freq=sim_config.freq,
@@ -61,7 +62,7 @@ def profile_gym_env_step(
     action = np.zeros((sim_config.n_worlds, 4), dtype=np.float32)
     action[..., 0] = 0.3
     # Step through env once to ensure JIT compilation
-    envs.reset(seed=42)
+    envs.reset()
     envs.step(action)
 
     jax.block_until_ready(envs.unwrapped.sim.data)  # Ensure JIT compiled dynamics
@@ -74,12 +75,15 @@ def profile_gym_env_step(
         times.append(time.perf_counter() - tstart)
 
     envs.close()
-    print("Gym env step performance:")
-    analyze_timings(times, n_steps, envs.unwrapped.sim.n_worlds, envs.unwrapped.sim.freq)
+    if print_summary:
+        print("Gym env step performance:")
+        analyze_timings(times, n_steps, envs.unwrapped.sim.n_worlds, sim_config.freq)
     return times
 
 
-def profile_step(sim_config: config_dict.ConfigDict, n_steps: int, device: str) -> list[float]:
+def profile_step(
+    sim_config: config_dict.ConfigDict, n_steps: int, device: str, print_summary: bool = True
+) -> list[float]:
     """Profile the Crazyflow simulator step performance."""
     sim = Sim(**sim_config)
     times = []
@@ -100,8 +104,9 @@ def profile_step(sim_config: config_dict.ConfigDict, n_steps: int, device: str) 
         jax.block_until_ready(sim.data)
         times.append(time.perf_counter() - tstart)
 
-    print("Sim step performance:")
-    analyze_timings(times, n_steps, sim.n_worlds, sim.freq)
+    if print_summary:
+        print("Sim step performance:")
+        analyze_timings(times, n_steps, sim.n_worlds, sim.freq)
     return times
 
 
@@ -184,25 +189,24 @@ def main(device: str = "cpu", n_worlds_exp: int = 6):
     skip_sim, skip_gym = False, False
     # Test with increasing number of parallel environments (worlds)
     for n_worlds in [10**i for i in range(n_worlds_exp + 1)]:
+        sim_config.n_worlds = n_worlds
+        print("-" * 80)
         if not skip_sim:
-            print(f"\nTesting with {n_worlds} parallel environments:")
-            sim_config.n_worlds = n_worlds
-
             # Test with a single step first to see if we should continue
             sim_config.freq = 500  # Test sim at 500 hz
-            single_step_time = profile_step(sim_config, 2, device)[1]
+            single_step_time = profile_step(sim_config, 2, device, print_summary=False)[1]
 
             # If single step takes too long, skip this and remaining tests
             if single_step_time > max_seconds_per_run / n_steps:  # threshold for the tests
                 print(
-                    f"  Skipping benchmark for {n_worlds} and higher - single step took "
+                    f"  Skipping benchmark for {n_worlds} and higher - projected time "
                     f"{single_step_time * n_steps:.2f}s (> 1m)"
                 )
                 skip_sim = True
 
         if not skip_sim:
             # Configure simulator
-            print(f"  Running simulator benchmark ({n_worlds} worlds)...")
+            print(f"Running simulator benchmark ({n_worlds} worlds)...")
             # Run simulator benchmark using existing function
             times_sim = profile_step(sim_config, n_steps, device)
 
@@ -233,33 +237,30 @@ def main(device: str = "cpu", n_worlds_exp: int = 6):
                 f.flush()
 
         if not skip_gym:
-            print(f"  Running gym environment benchmark ({n_worlds} worlds)...")
+            print(f"Running gym environment benchmark ({n_worlds} worlds)...")
             # Run gym environment benchmark using existing function
             sim_config.freq = 50  # Test gym at 50 hz
             try:
-                single_step_time = profile_gym_env_step(sim_config, 2, device)[1]
+                step_times = profile_gym_env_step(sim_config, 2, device, print_summary=False)
+                single_step_time = step_times[1]
                 # If single step takes too long, skip this test only
                 if single_step_time > max_seconds_per_run / n_steps:  # threshold for the tests
                     print(
-                        f"  Skipping benchmark for {n_worlds} - single step took "
+                        f"  Skipping benchmark for {n_worlds} - projected time "
                         f"{single_step_time * n_steps:.2f}s (> 1m)"
                     )
                     skip_gym = True
-            except ValueError as e:
-                if "RESOURCE_EXHAUSTED" in str(e):
-                    print(f"  Skipping benchmark for {n_worlds} - resource exhausted")
-                    skip_gym = True
-                else:
-                    raise e
+            except JaxRuntimeError:
+                print(f"  Skipping benchmark for {n_worlds} - resource exhausted")
+                skip_gym = True
 
         if not skip_gym:
             try:
                 times_gym = profile_gym_env_step(sim_config, n_steps, device)
-            except ValueError as e:
-                if "RESOURCE_EXHAUSTED" in str(e):
-                    print(f"  Skipping benchmark for {n_worlds} - resource exhausted")
-                    continue  # Only continue, we might still be able to benchmark sim
-                raise e
+            except JaxRuntimeError:
+                print(f"  Skipping benchmark for {n_worlds} - resource exhausted")
+                skip_gym = True
+                continue
 
             # Calculate metrics for CSV
             total_time = sum(times_gym)

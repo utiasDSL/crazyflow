@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from functools import partial, wraps
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, ParamSpec, TypeVar
 
 import jax
 import jax.numpy as jnp
@@ -25,14 +25,17 @@ from crazyflow.sim.physics import (
     surrogate_identified_collective_wrench,
 )
 from crazyflow.sim.structs import SimControls, SimCore, SimData, SimParams, SimState, SimStateDeriv
-from crazyflow.utils import grid_2d, leaf_replace, patch_viewer, pytree_replace, to_device
+from crazyflow.utils import grid_2d, leaf_replace, pytree_replace, to_device
 
 if TYPE_CHECKING:
     from mujoco.mjx import Data, Model
     from numpy.typing import NDArray
 
+Params = ParamSpec("Params")  # Represents arbitrary parameters
+Return = TypeVar("Return")  # Represents the return type
 
-def requires_mujoco_sync(fn: Callable[[SimData], SimData]) -> Callable[[SimData], SimData]:
+
+def requires_mujoco_sync(fn: Callable[Params, Return]) -> Callable[Params, Return]:
     """Decorator to ensure that the simulation data is synchronized with the MuJoCo mjx data."""
 
     @wraps(fn)
@@ -157,7 +160,6 @@ class Sim:
         height: int = 480,
     ) -> NDArray | None:
         if self.viewer is None:
-            patch_viewer()
             self.mj_model.vis.global_.offwidth = width
             self.mj_model.vis.global_.offheight = height
             self.viewer = MujocoRenderer(
