@@ -71,6 +71,8 @@ class DroneEnv(VectorEnv):
             physics: The crazyflow physics simulation model.
             freq: The frequency at which the environment is run.
             device: The device of the environment and the simulation.
+            reset_randomization: A function that randomizes the initial state of the simulation. If
+                None, the default randomization for pos and vel is used.
         """
         self.num_envs = num_envs
         self.device = jax.devices(device)[0]

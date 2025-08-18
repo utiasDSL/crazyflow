@@ -6,9 +6,6 @@ from typing import TypeVar
 
 import jax
 import jax.numpy as jnp
-import mujoco
-import numpy as np
-from gymnasium.envs.mujoco.mujoco_rendering import BaseRender
 from jax import Array
 
 
