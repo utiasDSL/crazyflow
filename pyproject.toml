@@ -28,7 +28,7 @@ dependencies = [
     "ml_collections",
     "casadi",
     "numpy",
-    "drone-models @ git+https://github.com/utiasDSL/drone-models.git@08ffb18",
+    # "drone-models @ git+https://github.com/utiasDSL/drone-models.git@08ffb18",
 ]
 requires-python = ">=3.10"
 
