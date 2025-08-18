@@ -1,14 +1,9 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 import jax
 import jax.numpy as jnp
 from flax.struct import dataclass, field
 from jax import Array, Device
-
-if TYPE_CHECKING:
-    from mujoco.mjx import Data, Model
 
 
 @dataclass
@@ -186,6 +181,8 @@ class SimCore:
     """MuJoCo IDs of the drones in the simulation."""
     rng_key: Array  # (N, 1)
     """Random number generator key for the simulation."""
+    mjx_synced: Array  # (1,)
+    """Whether the simulation data is synchronized with the MuJoCo model."""
 
     @staticmethod
     def create(
@@ -208,6 +205,7 @@ class SimCore:
             n_drones=n_drones,
             drone_ids=jnp.array(drone_ids, dtype=jnp.int32, device=device),
             rng_key=rng_key,
+            mjx_synced=jnp.array(False, dtype=jnp.bool_, device=device),
         )
 
 
@@ -223,10 +221,3 @@ class SimData:
     """Drone parameters."""
     core: SimCore
     """Core parameters of the simulation."""
-    mjx_data: Data
-    """MuJoCo data structure."""
-    mjx_model: Model | None
-    """MuJoCo model structure.
-
-    Can be set to None for performance optimizations. See `Sim.build_step` for more details.
-    """

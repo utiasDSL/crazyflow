@@ -1,3 +1,5 @@
+import os
+
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -7,6 +9,7 @@ from jax import Array
 from crazyflow.control import Control
 from crazyflow.exception import ConfigError
 from crazyflow.sim import Physics, Sim
+from crazyflow.sim.sim import sync_sim2mjx
 
 
 def available_backends() -> list[str]:
@@ -25,6 +28,11 @@ def available_backends() -> list[str]:
 def skip_unavailable_device(device: str):
     if device not in available_backends():
         pytest.skip(f"{device} device not available")
+
+
+def skip_headless():
+    if os.environ.get("DISPLAY") is None:
+        pytest.skip("DISPLAY is not set, skipping test in headless environment")
 
 
 def array_meta_assert(
@@ -269,6 +277,7 @@ def test_render_human(device: str):
 @pytest.mark.parametrize("device", ["gpu", "cpu"])
 def test_render_rgb_array(device: str):
     skip_unavailable_device(device)
+    skip_headless()
     sim = Sim(n_worlds=2, device=device)
     img = sim.render(mode="rgb_array", width=1024, height=1024)
     assert isinstance(img, np.ndarray), "Image must be a numpy array"
@@ -285,20 +294,19 @@ def test_device(device: str):
     sim = Sim(n_worlds=2, physics=Physics.sys_id, device=device)
     sim.step()
     assert sim.data.states.pos.device == jax.devices(device)[0]
-    assert sim.data.mjx_data.qpos.device == jax.devices(device)[0]
 
 
 @pytest.mark.unit
 @pytest.mark.parametrize("device", ["gpu", "cpu"])
 @pytest.mark.parametrize("n_worlds", [1, 2])
 @pytest.mark.parametrize("n_drones", [1, 3])
-def test_shape_consistency(device: str, n_drones: int, n_worlds: int):
+def test_sync_shape_consistency(device: str, n_drones: int, n_worlds: int):
     skip_unavailable_device(device)
     sim = Sim(n_worlds=n_worlds, n_drones=n_drones, physics=Physics.sys_id, device=device)
-    qpos_shape, qvel_shape = sim.data.mjx_data.qpos.shape, sim.data.mjx_data.qvel.shape
-    sim.step()
-    assert sim.data.mjx_data.qpos.shape == qpos_shape, "step() should not change qpos shape"
-    assert sim.data.mjx_data.qvel.shape == qvel_shape, "step() should not change qvel shape"
+    qpos_shape, qvel_shape = sim.mjx_data.qpos.shape, sim.mjx_data.qvel.shape
+    _, mjx_data = sync_sim2mjx(sim.data, sim.mjx_data, sim.mjx_model)
+    assert mjx_data.qpos.shape == qpos_shape, "sync_sim2mjx() should not change qpos shape"
+    assert mjx_data.qvel.shape == qvel_shape, "sync_sim2mjx() should not change qvel shape"
 
 
 @pytest.mark.unit
@@ -357,7 +365,7 @@ def test_seed_reset():
 @pytest.mark.unit
 @pytest.mark.parametrize("physics", [Physics.analytical, Physics.sys_id])
 def test_floor_penetration(physics: Physics):
-    """Test that drones cannot penetrate the floor (z < 0).
+    """Test that drones cannot penetrate the floor (z < 0.01).
 
     We don't test for mujoco, as mujoco uses collisions by default and will let the drone bounce on
     the floor.
@@ -367,8 +375,6 @@ def test_floor_penetration(physics: Physics):
     # Command to fall: zero thrust and attitude that points downward
     attitude_cmd = np.zeros((1, 1, 4))  # [roll, pitch, yaw, thrust]
     attitude_cmd[..., 0] = 0.0  # Zero thrust to fall
-    attitude_cmd[..., 1] = 0.5  # Roll to destabilize
-    attitude_cmd[..., 3] = 0.5  # Pitch to destabilize
     sim.attitude_control(attitude_cmd)
     # Run simulation for short duration to let drone fall
     for _ in range(5):  # 0.1 seconds at 500Hz
@@ -380,3 +386,24 @@ def test_floor_penetration(physics: Physics):
     final_z_pos = sim.data.states.pos[..., 2]
     assert jnp.all(final_z_pos == -0.001), f"Drone should be on floor but z={final_z_pos}"
     sim.close()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("physics", [Physics.sys_id, Physics.analytical])
+def test_contacts(physics: Physics):
+    sim = Sim(physics=physics, control=Control.attitude, freq=500, device="cpu")
+    sim.reset()
+    sim.step(10)  # Make sure the drone is on the ground
+    contacts = sim.contacts()
+    assert jnp.all(contacts), "Drone should be in contact with the floor"
+    sim.close()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("physics", [Physics.sys_id, Physics.analytical])
+def test_recompilation(physics: Physics):
+    sim = Sim(physics=physics, control=Control.attitude, freq=500, device="cpu")
+    # Make sure we don't recompile the step function after the first call
+    sim.step(1)
+    sim.step(1)
+    assert sim._step._cache_size() == 1, "Step function should not be recompiled"

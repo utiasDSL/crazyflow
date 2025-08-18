@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from functools import partial
+from functools import partial, wraps
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, ParamSpec, TypeVar
 
 import jax
 import jax.numpy as jnp
@@ -13,7 +13,7 @@ from gymnasium.envs.mujoco.mujoco_rendering import MujocoRenderer
 from jax import Array, Device
 from jax.scipy.spatial.transform import Rotation as R
 
-from crazyflow.constants import J_INV, MASS, SIGN_MIX_MATRIX, J
+from crazyflow.constants import J_INV, MASS, J
 from crazyflow.control.control import Control, attitude2rpm, pwm2rpm, state2attitude, thrust2pwm
 from crazyflow.exception import ConfigError, NotInitializedError
 from crazyflow.sim.integration import Integrator, euler, rk4, symplectic_euler
@@ -22,16 +22,29 @@ from crazyflow.sim.physics import (
     collective_force2acceleration,
     collective_torque2ang_vel_deriv,
     rpms2collective_wrench,
-    rpms2motor_forces,
-    rpms2motor_torques,
     surrogate_identified_collective_wrench,
 )
 from crazyflow.sim.structs import SimControls, SimCore, SimData, SimParams, SimState, SimStateDeriv
-from crazyflow.utils import grid_2d, leaf_replace, patch_viewer, pytree_replace, to_device
+from crazyflow.utils import grid_2d, leaf_replace, pytree_replace, to_device
 
 if TYPE_CHECKING:
     from mujoco.mjx import Data, Model
     from numpy.typing import NDArray
+
+Params = ParamSpec("Params")  # Represents arbitrary parameters
+Return = TypeVar("Return")  # Represents the return type
+
+
+def requires_mujoco_sync(fn: Callable[Params, Return]) -> Callable[Params, Return]:
+    """Decorator to ensure that the simulation data is synchronized with the MuJoCo mjx data."""
+
+    @wraps(fn)
+    def wrapper(sim: Sim, *args: Any, **kwargs: Any) -> SimData:
+        if not sim.data.core.mjx_synced:
+            sim.data, sim.mjx_data = sync_sim2mjx(sim.data, sim.mjx_data, sim.mjx_model)
+        return fn(sim, *args, **kwargs)
+
+    return wrapper
 
 
 class Sim:
@@ -71,10 +84,10 @@ class Sim:
         # Initialize MuJoCo world and data
         self._xml_path = xml_path or self.default_path
         self.spec = self.build_mjx_spec()
-        self.mj_model, self.mj_data, self.mjx_model, mjx_data = self.build_mjx_model(self.spec)
+        self.mj_model, self.mj_data, self.mjx_model, self.mjx_data = self.build_mjx_model(self.spec)
         self.viewer: MujocoRenderer | None = None
 
-        self.data = self.init_data(state_freq, attitude_freq, thrust_freq, rng_key, mjx_data)
+        self.data = self.init_data(state_freq, attitude_freq, thrust_freq, rng_key)
         self.default_data: SimData
         self.build_default_data()
 
@@ -90,9 +103,6 @@ class Sim:
         # We never drop below -0.001 (drones can't pass through the floor). We use -0.001 to
         # enable checks for negative z sign
         self.step_pipeline += (clip_floor_pos,)
-        # MuJoCo needs to sync after every physics step so that the next step control, wrench
-        # and disturbance functions see the correct state.
-        self.step_pipeline += (select_sync_fn(self.physics),)
 
         self.build_reset_fn()
         self.build_step_fn()
@@ -140,6 +150,7 @@ class Sim:
         controls = to_device(cmd, self.device)
         self.data = self.data.replace(controls=self.data.controls.replace(thrust=controls))
 
+    @requires_mujoco_sync
     def render(
         self,
         mode: str | None = "human",
@@ -149,7 +160,6 @@ class Sim:
         height: int = 480,
     ) -> NDArray | None:
         if self.viewer is None:
-            patch_viewer()
             self.mj_model.vis.global_.offwidth = width
             self.mj_model.vis.global_.offheight = height
             self.viewer = MujocoRenderer(
@@ -160,9 +170,9 @@ class Sim:
                 height=height,
                 width=width,
             )
-        self.mj_data.qpos[:] = self.data.mjx_data.qpos[world, :]
-        self.mj_data.mocap_pos[:] = self.data.mjx_data.mocap_pos[world, :]
-        self.mj_data.mocap_quat[:] = self.data.mjx_data.mocap_quat[world, :]
+        self.mj_data.qpos[:] = self.mjx_data.qpos[world, :]
+        self.mj_data.mocap_pos[:] = self.mjx_data.mocap_pos[world, :]
+        self.mj_data.mocap_quat[:] = self.mjx_data.mocap_quat[world, :]
         mujoco.mj_forward(self.mj_model, self.mj_data)
         return self.viewer.render(mode)
 
@@ -232,20 +242,8 @@ class Sim:
         # always use the same n_steps value for successive calls.
         @partial(jax.jit, static_argnames="n_steps")
         def step(data: SimData, n_steps: int = 1) -> SimData:
-            # Performance optimization: When step is called, jax checks if it can reuse a previously
-            # compiled version of the function. This check flattens the sim.data PyTree and compares
-            # the metadata of each leaf with the cached metadata. The more leaves contained in
-            # sim.data, the more time is spent on the cache lookup even if the function has already
-            # been compiled. Since mjx_model contains many PyTree nodes and it is not used by
-            # physics modes other than mujoco with domain randomization, we set it to None and
-            # capture the current sim.mjx_model in the step function's closure. Changes to the
-            # params are synced to mjx_model at the start of the step function.
-            if optimize_mjx_model := (data.mjx_model is None):
-                data = data.replace(mjx_model=self.mjx_model)
-            data = self.sync_sim2mjx(data)
             data, _ = jax.lax.scan(single_step, data, length=n_steps, unroll=1)
-            if optimize_mjx_model:
-                data = data.replace(mjx_model=None)
+            data = data.replace(core=data.core.replace(mjx_synced=False))  # Flag mjx data as stale
             return data
 
         self._step = step
@@ -259,7 +257,7 @@ class Sim:
             data = pytree_replace(data, default_data, mask)  # Does not overwrite rng_key
             for fn in pipeline:
                 data = fn(data, mask)
-            data = self.sync_sim2mjx(data, self.mjx_model)
+            data = data.replace(core=data.core.replace(mjx_synced=False))  # Flag mjx data as stale
             return data
 
         self._reset = reset
@@ -270,7 +268,6 @@ class Sim:
             self.data.controls.attitude_freq,
             self.data.controls.thrust_freq,
             self.data.core.rng_key,
-            self.data.mjx_data,
         )
 
     def build_default_data(self):
@@ -281,13 +278,10 @@ class Sim:
         if self.viewer is not None:
             self.viewer.close()
             self.viewer = None
-        self.mj_model, self.mj_data, self.mjx_model, mjx_data = self.build_mjx_model(self.spec)
-        self.data = self.data.replace(mjx_data=mjx_data)
-        self.data = self.sync_sim2mjx(self.data, self.mjx_model)
-        self.default_data = self.default_data.replace(mjx_data=mjx_data)
+        self.mj_model, self.mj_data, self.mjx_model, self.mjx_data = self.build_mjx_model(self.spec)
 
     def init_data(
-        self, state_freq: int, attitude_freq: int, thrust_freq: int, rng_key: Array, mjx_data: Data
+        self, state_freq: int, attitude_freq: int, thrust_freq: int, rng_key: Array
     ) -> tuple[SimData, SimData]:
         """Initialize the simulation data."""
         drone_ids = [self.mj_model.body(f"drone:{i}").id for i in range(self.n_drones)]
@@ -298,14 +292,11 @@ class Sim:
             controls=SimControls.create(N, D, state_freq, attitude_freq, thrust_freq, self.device),
             params=SimParams.create(N, D, MASS, J, J_INV, self.device),
             core=SimCore.create(self.freq, N, D, drone_ids, rng_key, self.device),
-            mjx_data=mjx_data,
-            mjx_model=None,
         )
         if D > 1:  # If multiple drones, arrange them in a grid
             grid = grid_2d(D)
             states = data.states.replace(pos=data.states.pos.at[..., :2].set(grid))
             data = data.replace(states=states)
-        data = self.sync_sim2mjx(data, self.mjx_model)
         return data
 
     @property
@@ -343,6 +334,7 @@ class Sim:
                 raise NotImplementedError(f"Control mode {self.control} not implemented")
         return controllable(self.data.core.steps, self.data.core.freq, control_steps, control_freq)
 
+    @requires_mujoco_sync
     def contacts(self, body: str | None = None) -> Array:
         """Get contact information from the simulation.
 
@@ -353,45 +345,11 @@ class Sim:
             An boolean array of shape (n_worlds,) that is True if any contact is present.
         """
         if body is None:
-            return self.data.mjx_data.contact.dist < 0
+            return self.mjx_data._impl.contact.dist < 0
         body_id = self.mj_model.body(body).id
         geom_start = self.mj_model.body_geomadr[body_id]
         geom_count = self.mj_model.body_geomnum[body_id]
-        return contacts(geom_start, geom_count, self.data.mjx_data)
-
-    @staticmethod
-    @jax.jit
-    def sync_sim2mjx(data: SimData, mjx_model: Model | None = None) -> SimData:
-        states = data.states
-        pos, quat, vel, ang_vel = states.pos, states.quat, states.vel, states.ang_vel
-        quat = quat[..., [3, 0, 1, 2]]  # MuJoCo quat is [w, x, y, z], ours is [x, y, z, w]
-        qpos = rearrange(jnp.concat([pos, quat], axis=-1), "w d qpos -> w (d qpos)")
-        qvel = rearrange(jnp.concat([vel, ang_vel], axis=-1), "w d qvel -> w (d qvel)")
-        mjx_data = data.mjx_data
-        mjx_model = data.mjx_model if mjx_model is None else mjx_model
-        assert mjx_model is not None, "MuJoCo model is not initialized"
-        mjx_data = mjx_data.replace(qpos=qpos, qvel=qvel)
-        mjx_data = jax.vmap(mjx.kinematics, in_axes=(None, 0))(mjx_model, mjx_data)
-        mjx_data = jax.vmap(mjx.collision, in_axes=(None, 0))(mjx_model, mjx_data)
-        data = data.replace(mjx_data=mjx_data)
-        if data.mjx_model is None:  # Only modify model if it is part of data
-            return data
-        # Sync model parameters such as mass and inertia for domain randomization
-        # This is currently not supported. See https://github.com/google-deepmind/mujoco/issues/1607
-        # TODO: Implement once mjx supports batching single model fields.
-        return data
-
-    @staticmethod
-    @jax.jit
-    def sync_mjx2sim(data: SimData) -> SimData:
-        mjx_data = data.mjx_data
-        qpos = mjx_data.qpos.reshape(data.core.n_worlds, data.core.n_drones, 7)
-        qvel = mjx_data.qvel.reshape(data.core.n_worlds, data.core.n_drones, 6)
-        pos, quat = jnp.split(qpos, [3], axis=-1)
-        vel, ang_vel = jnp.split(qvel, [3], axis=-1)
-        quat = quat[..., [1, 2, 3, 0]]  # MuJoCo quat is [w, x, y, z], ours is [x, y, z, w]
-        states = data.states.replace(pos=pos, quat=quat, vel=vel, ang_vel=ang_vel)
-        return data.replace(states=states)
+        return contacts(geom_start, geom_count, self.mjx_data)
 
     @staticmethod
     def _reset(data: SimData, default_data: SimData, mask: Array | None = None) -> SimData:
@@ -422,8 +380,6 @@ def select_wrench_fn(physics: Physics) -> Callable[[SimData], SimData]:
             return analytical_wrench
         case Physics.sys_id:
             return identified_wrench
-        case Physics.mujoco:
-            return mujoco_wrench
         case _:
             raise NotImplementedError(f"Physics mode {physics} not implemented")
 
@@ -451,37 +407,14 @@ def select_integrate_fn(physics: Physics, integrator: Integrator) -> Callable[[S
         case _:
             raise NotImplementedError(f"Integrator {integrator} not implemented")
 
-    match physics:
-        case Physics.sys_id | Physics.analytical:
-            derivative_fn = select_derivative_fn(physics)
+    derivative_fn = select_derivative_fn(physics)
 
-            def integrate(data: SimData) -> SimData:
-                data = integrate_fn(data, derivative_fn)
-                data = data.replace(core=data.core.replace(steps=data.core.steps + 1))
-                return data
+    def integrate(data: SimData) -> SimData:
+        data = integrate_fn(data, derivative_fn)
+        data = data.replace(core=data.core.replace(steps=data.core.steps + 1))
+        return data
 
-            return integrate
-        case Physics.mujoco:
-
-            def integrate(data: SimData) -> SimData:
-                data = mjx_physics_fn(data)
-                data = data.replace(core=data.core.replace(steps=data.core.steps + 1))
-                return data
-
-            return integrate
-        case _:
-            raise NotImplementedError(f"Physics mode {physics} not implemented")
-
-
-def select_sync_fn(physics: Physics) -> Callable[[SimData], SimData]:
-    """Select the sync function for the given physics mode."""
-    match physics:
-        case Physics.sys_id | Physics.analytical:
-            return Sim.sync_sim2mjx
-        case Physics.mujoco:
-            return Sim.sync_mjx2sim
-        case _:
-            raise NotImplementedError(f"Physics mode {physics} not implemented")
+    return integrate
 
 
 @jax.jit
@@ -509,6 +442,21 @@ def contacts(geom_start: int, geom_count: int, data: Data) -> Array:
     geom2_valid = data.contact.geom2 >= geom_start
     geom2_valid &= data.contact.geom2 < geom_start + geom_count
     return (data.contact.dist < 0) & (geom1_valid | geom2_valid)
+
+
+@jax.jit
+def sync_sim2mjx(data: SimData, mjx_data: Data, mjx_model: Model) -> tuple[SimData, Data]:
+    """Synchronize the simulation data with the MuJoCo model."""
+    states = data.states
+    pos, quat, vel, ang_vel = states.pos, states.quat, states.vel, states.ang_vel
+    quat = jnp.roll(quat, 1, axis=-1)  # MuJoCo quat is [w, x, y, z], ours is [x, y, z, w]
+    qpos = rearrange(jnp.concat([pos, quat], axis=-1), "w d qpos -> w (d qpos)")
+    qvel = rearrange(jnp.concat([vel, ang_vel], axis=-1), "w d qvel -> w (d qvel)")
+    mjx_data = mjx_data.replace(qpos=qpos, qvel=qvel)
+    mjx_data = jax.vmap(mjx.kinematics, in_axes=(None, 0))(mjx_model, mjx_data)
+    mjx_data = jax.vmap(mjx.collision, in_axes=(None, 0))(mjx_model, mjx_data)
+    data = data.replace(core=data.core.replace(mjx_synced=True))
+    return data, mjx_data
 
 
 def step_state_controller(data: SimData) -> SimData:
@@ -585,33 +533,6 @@ def identified_wrench(data: SimData) -> SimData:
 identified_derivative = analytical_derivative  # We can use the same derivative function for both
 
 
-def mujoco_wrench(data: SimData) -> SimData:
-    """Compute the wrench from the MuJoCo dynamics model."""
-    forces = rpms2motor_forces(data.controls.rpms)
-    torques = SIGN_MIX_MATRIX[..., 2] * rpms2motor_torques(data.controls.rpms)
-    # Zero out external forces and torques to avoid summation over multiple steps
-    states = data.states
-    force, torque = jnp.zeros_like(states.force), jnp.zeros_like(states.torque)
-    states = states.replace(motor_forces=forces, motor_torques=torques, force=force, torque=torque)
-    return data.replace(states=states)
-
-
-batched_mjx_step = jax.vmap(mjx.step, in_axes=(None, 0))
-
-
-def mjx_physics_fn(data: SimData) -> SimData:
-    """Step the MuJoCo simulation."""
-    force_torques = jnp.concatenate([data.states.motor_forces, data.states.motor_torques], axis=-1)
-    force_torques = rearrange(force_torques, "w d ft -> w (d ft)")
-    mjx_data = data.mjx_data.replace(ctrl=force_torques)
-    # Add disturbances from data.states.force/torque with mjx_data.xfrc_applied
-    xfrc = jnp.concatenate([data.states.force, data.states.torque], axis=-1)
-    xfrc_applied = data.mjx_data.xfrc_applied.at[:, data.core.drone_ids, :].set(xfrc)
-    mjx_data = mjx_data.replace(xfrc_applied=xfrc_applied)
-    mjx_data = batched_mjx_step(data.mjx_model, mjx_data)
-    return data.replace(mjx_data=mjx_data)
-
-
 def identity(data: SimData, *args: Any, **kwargs: Any) -> SimData:
     """Identity function for the simulation pipeline.
 
@@ -624,7 +545,9 @@ def clip_floor_pos(data: SimData) -> SimData:
     """Clip the position of the drone to the floor."""
     clip = data.states.pos[..., 2] < -0.001
     clip_pos = data.states.pos.at[..., 2].set(jnp.where(clip, -0.001, data.states.pos[..., 2]))
-    clip_vel = data.states.vel.at[..., 2].set(jnp.where(clip, 0, data.states.vel[..., 2]))
+    clip_vel = data.states.vel.at[..., :3].set(
+        jnp.where(clip[..., None], 0, data.states.vel[..., :3])
+    )
     return data.replace(states=data.states.replace(pos=clip_pos, vel=clip_vel))
 
 

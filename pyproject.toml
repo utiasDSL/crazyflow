@@ -18,23 +18,24 @@ classifiers = [
 ]
 
 dependencies = [
-    "jax>=0.5.0,!=0.5.3,!=0.6.0", # 0.5.3 and 0.6.0 have a bug that causes resets to not work properly. This is related to the fusing of SimData.mjx_model into the _reset function.
+    "jax>=0.7.0", # 0.5.3 and 0.6.0 have a bug that causes resets to not work properly.
     "mujoco>=3.3.0",
     "mujoco-mjx>=3.3.0",
-    "gymnasium",
+    "gymnasium[mujoco]>=1.2.0",
     "imageio",
     "einops",
     "flax",
     "ml_collections",
     "casadi",
     "numpy",
+    # "drone-models @ git+https://github.com/utiasDSL/drone-models.git@08ffb18",
 ]
 requires-python = ">=3.10"
 
 [project.optional-dependencies]
-test = ["pytest>=8.0.0", "pytest-cov", "pytest-timeout"]
+test = ["pytest>=8.0.0", "pytest-cov", "pytest-timeout", "gymnasium[array-api]"]
 gpu = ["jax[cuda12]"]
-benchmark = ["fire"]
+benchmark = ["fire", "matplotlib", "pandas"]
 
 [project.urls]
 Homepage = "https://github.com/utiasDSL/crazyflow"
@@ -80,7 +81,7 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E4", "E7", "E9", "F", "I", "D", "TCH", "ANN"]
-ignore = ["ANN401", "ANN101"]
+ignore = ["ANN401"]
 fixable = ["ALL"]
 unfixable = []
 
@@ -106,3 +107,26 @@ skip-magic-trailing-comma = true
 line-ending = "auto"
 docstring-code-format = true
 docstring-code-line-length = "dynamic"
+
+[tool.pixi.workspace]
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+
+[tool.pixi.pypi-dependencies]
+crazyflow = { path = "./", editable = true }
+
+[tool.pixi.environments]
+default = { solve-group = "default" }
+benchmark = { features = ["benchmark", "gpu"], solve-group = "default" }
+gpu = { features = ["gpu"], solve-group = "default" }
+test = { features = ["test", "gpu"], solve-group = "default" }
+
+[tool.pixi.tasks]
+
+[tool.pixi.dependencies]  
+# TODO: Remove compilers once scipy 1.17 is released and drone-models have been updated.
+gcc = ">=15.1.0,<15.2"
+cxx-compiler = ">=1.0.0,<2"
+gfortran = ">=15.1.0,<15.2"
+openblas = ">=0.3.30,<0.4"
+ruff = "*"
