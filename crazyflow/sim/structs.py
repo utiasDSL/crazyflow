@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import typing
+
 import jax
 import jax.numpy as jnp
 from flax.struct import dataclass, field
 from jax import Array, Device
+
+from crazyflow.control import Control
+from crazyflow.control.mellinger import MellingerStateData
 
 
 @dataclass
@@ -146,6 +151,54 @@ class SimControls:
         )
 
 
+class ControlData(typing.Protocol):
+    cmd: Array  # (N, M, X)
+    """Control command for the drone."""
+    steps: Array  # (N, 1)
+    """Last simulation steps that the state control command was applied."""
+    freq: int
+    """Frequency of the state control command."""
+    # Parameters for the controller
+    params: typing.Any
+
+
+@dataclass
+class SimControlsNew:
+    state: ControlData | None = None
+    """State control data."""
+    attitude: ControlData | None = None
+    """Attitude control data."""
+    thrust: ControlData | None = None
+    """Thrust control data."""
+
+    @staticmethod
+    def create(
+        n_worlds: int,
+        n_drones: int,
+        control: Control,
+        state_freq: int | None,
+        attitude_freq: int | None,
+        thrust_freq: int | None,
+        device: Device,
+    ) -> SimControlsNew:
+        """Create a default set of controls for the simulation."""
+        match control:
+            case Control.state:
+                state = MellingerStateData.create(n_worlds, n_drones, state_freq, "", device)
+                attitude = None  # MellingerAttitudeData.create(n_worlds, n_drones, device)
+                thrust = None  # MellingerThrustData.create(n_worlds, n_drones, device)
+                return SimControlsNew(state=state, attitude=attitude, thrust=thrust)
+            case Control.attitude:
+                attitude = None  # MellingerAttitudeData.create(n_worlds, n_drones, device)
+                thrust = None  # MellingerThrustData.create(n_worlds, n_drones, device)
+                return SimControlsNew(attitude=attitude, thrust=thrust)
+            case Control.thrust:
+                thrust = None  # MellingerThrustData.create(n_worlds, n_drones, device)
+                return SimControlsNew(thrust=thrust)
+            case _:
+                raise ValueError(f"Control mode {control} not implemented")
+
+
 @dataclass
 class SimParams:
     mass: Array  # (N, M, 1)
@@ -217,6 +270,8 @@ class SimData:
     """Derivative of the state of the simulation."""
     controls: SimControls
     """Drone control values."""
+    new_controls: SimControlsNew
+    """New style control data TODO improve this"""
     params: SimParams
     """Drone parameters."""
     core: SimCore

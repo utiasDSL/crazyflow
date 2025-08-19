@@ -1,0 +1,3 @@
+[submodule "submodules/drone-models"]
+	path = submodules/drone-models
+	url = https://github.com/utiasDSL/drone-models.git

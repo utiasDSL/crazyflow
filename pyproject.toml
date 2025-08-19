@@ -28,6 +28,7 @@ dependencies = [
     "ml_collections",
     "casadi",
     "numpy",
+    "scipy @ git+https://github.com/amacati/scipy.git@broadcasting",  # TODO: Replace with scipy 1.17 once released
     # "drone-models @ git+https://github.com/utiasDSL/drone-models.git@08ffb18",
 ]
 requires-python = ">=3.10"
@@ -42,7 +43,7 @@ Homepage = "https://github.com/utiasDSL/crazyflow"
 Repository = "https://github.com/utiasDSL/crazyflow"
 
 [tool.setuptools.packages]
-find = {include = ["crazyflow"]}
+find = {include = ["crazyflow", "drone-models"]}
 
 [tool.setuptools.dynamic]
 version = { attr = "crazyflow.__version__" }
@@ -114,6 +115,7 @@ platforms = ["linux-64"]
 
 [tool.pixi.pypi-dependencies]
 crazyflow = { path = "./", editable = true }
+drone-models = { path = "./submodules/drone-models", editable = true }
 
 [tool.pixi.environments]
 default = { solve-group = "default" }

@@ -8,13 +8,15 @@ import jax
 import jax.numpy as jnp
 import mujoco
 import mujoco.mjx as mjx
+from drone_models.controller.mellinger import state2attitude
 from einops import rearrange
 from gymnasium.envs.mujoco.mujoco_rendering import MujocoRenderer
 from jax import Array, Device
 from jax.scipy.spatial.transform import Rotation as R
 
 from crazyflow.constants import J_INV, MASS, J
-from crazyflow.control.control import Control, attitude2rpm, pwm2rpm, state2attitude, thrust2pwm
+from crazyflow.control.control import Control, attitude2rpm, controllable, pwm2rpm, thrust2pwm
+from crazyflow.control.control import state2attitude as state2attitude_legacy
 from crazyflow.exception import ConfigError, NotInitializedError
 from crazyflow.sim.integration import Integrator, euler, rk4, symplectic_euler
 from crazyflow.sim.physics import (
@@ -24,12 +26,22 @@ from crazyflow.sim.physics import (
     rpms2collective_wrench,
     surrogate_identified_collective_wrench,
 )
-from crazyflow.sim.structs import SimControls, SimCore, SimData, SimParams, SimState, SimStateDeriv
+from crazyflow.sim.structs import (
+    SimControls,
+    SimControlsNew,
+    SimCore,
+    SimData,
+    SimParams,
+    SimState,
+    SimStateDeriv,
+)
 from crazyflow.utils import grid_2d, leaf_replace, pytree_replace, to_device
 
 if TYPE_CHECKING:
     from mujoco.mjx import Data, Model
     from numpy.typing import NDArray
+
+    from crazyflow.control.mellinger import MellingerStateData
 
 Params = ParamSpec("Params")  # Represents arbitrary parameters
 Return = TypeVar("Return")  # Represents the return type
@@ -141,7 +153,11 @@ class Sim:
         assert controls.shape == (self.n_worlds, self.n_drones, 13), "controls shape mismatch"
         assert self.control == Control.state, "State control is not enabled by the sim config"
         controls = to_device(controls, self.device)
-        self.data = self.data.replace(controls=self.data.controls.replace(state=controls))
+        self.data = self.data.replace(
+            new_controls=self.data.new_controls.replace(
+                state=self.data.new_controls.state.replace(cmd=controls)
+            )
+        )
 
     def thrust_control(self, cmd: Array):
         """Set the desired thrust for all drones in all worlds."""
@@ -182,7 +198,7 @@ class Sim:
         Args:
             seed: The seed for the JAX rng.
         """
-        self.data = seed_sim(self.data, seed, self.device)
+        self.data: SimData = seed_sim(self.data, seed, self.device)
 
     def close(self):
         if self.viewer is not None:
@@ -282,7 +298,7 @@ class Sim:
 
     def init_data(
         self, state_freq: int, attitude_freq: int, thrust_freq: int, rng_key: Array
-    ) -> tuple[SimData, SimData]:
+    ) -> SimData:
         """Initialize the simulation data."""
         drone_ids = [self.mj_model.body(f"drone:{i}").id for i in range(self.n_drones)]
         N, D = self.n_worlds, self.n_drones
@@ -292,6 +308,9 @@ class Sim:
             controls=SimControls.create(N, D, state_freq, attitude_freq, thrust_freq, self.device),
             params=SimParams.create(N, D, MASS, J, J_INV, self.device),
             core=SimCore.create(self.freq, N, D, drone_ids, rng_key, self.device),
+            new_controls=SimControlsNew.create(
+                N, D, self.control, state_freq, attitude_freq, thrust_freq, self.device
+            ),
         )
         if D > 1:  # If multiple drones, arrange them in a grid
             grid = grid_2d(D)
@@ -418,23 +437,6 @@ def select_integrate_fn(physics: Physics, integrator: Integrator) -> Callable[[S
 
 
 @jax.jit
-def controllable(step: Array, freq: int, control_steps: Array, control_freq: int) -> Array:
-    """Check which worlds can currently update their controllers.
-
-    Args:
-        step: The current step of the simulation.
-        freq: The frequency of the simulation.
-        control_steps: The steps at which the controllers were last updated.
-        control_freq: The frequency of the controllers.
-
-    Returns:
-        A boolean mask of shape (n_worlds,) that is True at the worlds where the controllers can be
-        updated.
-    """
-    return ((step - control_steps) >= (freq / control_freq)) | (control_steps == -1)
-
-
-@jax.jit
 def contacts(geom_start: int, geom_count: int, data: Data) -> Array:
     """Filter contacts from MuJoCo data."""
     geom1_valid = data.contact.geom1 >= geom_start
@@ -461,18 +463,53 @@ def sync_sim2mjx(data: SimData, mjx_data: Data, mjx_model: Model) -> tuple[SimDa
 
 def step_state_controller(data: SimData) -> SimData:
     """Compute the updated controls for the state controller."""
-    states, controls = data.states, data.controls
-    mask = controllable(data.core.steps, data.core.freq, controls.state_steps, controls.state_freq)
-    des_pos, des_vel = controls.state[..., :3], controls.state[..., 3:6]
-    des_yaw = controls.state[..., [9]]  # Keep (N, M, 1) shape for broadcasting
-    dt = 1 / data.controls.state_freq
-    attitude, pos_err_i = state2attitude(
-        states.pos, states.vel, states.quat, des_pos, des_vel, des_yaw, controls.pos_err_i, dt
+    states, ctrl_state = data.states, data.new_controls.state
+    assert ctrl_state is not None, "Using state controller without initialized state control data"
+    ctrl_state: MellingerStateData
+    mask = controllable(data.core.steps, data.core.freq, ctrl_state.steps, ctrl_state.freq)
+    jax.debug.print("Ctrl cmd: {cmd}", cmd=ctrl_state.cmd)
+    attitude, (pos_err_i,) = state2attitude(
+        states.pos,
+        states.quat,
+        states.vel,
+        states.ang_vel,
+        ctrl_state.cmd,
+        ctrl_freq=ctrl_state.freq,
+        ctrl_errors=(ctrl_state.pos_err_i,),
+        **ctrl_state.params._asdict(),
     )
-    controls = leaf_replace(
-        controls, mask, state_steps=data.core.steps, staged_attitude=attitude, pos_err_i=pos_err_i
+    jax.debug.print("Attitude: {attitude}", attitude=attitude)
+    ctrl_state = leaf_replace(ctrl_state, mask, steps=data.core.steps, pos_err_i=pos_err_i)
+    data = data.replace(
+        controls=data.controls.replace(staged_attitude=attitude),
+        new_controls=data.new_controls.replace(state=ctrl_state),
     )
-    return data.replace(controls=controls)
+    return data
+
+
+# def step_state_controller(data: SimData) -> SimData:
+#     """Compute the updated controls for the state controller."""
+#     states, ctrl_state = data.states, data.new_controls.state
+#     assert ctrl_state is not None, "Using state controller without initialized state control data"
+#     mask = controllable(data.core.steps, data.core.freq, ctrl_state.steps, ctrl_state.freq)
+#     attitude, pos_err_i = state2attitude_legacy(
+#         states.pos,
+#         states.vel,
+#         states.quat,
+#         ctrl_state.cmd[..., :3],
+#         ctrl_state.cmd[..., 3:6],
+#         ctrl_state.cmd[..., [9]],
+#         ctrl_state.pos_err_i,
+#         1 / ctrl_state.freq,
+#     )
+#     attitude = jnp.roll(attitude, -1, axis=-1)
+#     jax.debug.print("Attitude: {attitude}", attitude=attitude)
+#     ctrl_state = leaf_replace(ctrl_state, mask, steps=data.core.steps, pos_err_i=pos_err_i)
+#     data = data.replace(
+#         controls=data.controls.replace(staged_attitude=attitude),
+#         new_controls=data.new_controls.replace(state=ctrl_state),
+#     )
+#     return data
 
 
 def step_attitude_controller(data: SimData) -> SimData:
@@ -531,14 +568,6 @@ def identified_wrench(data: SimData) -> SimData:
 
 
 identified_derivative = analytical_derivative  # We can use the same derivative function for both
-
-
-def identity(data: SimData, *args: Any, **kwargs: Any) -> SimData:
-    """Identity function for the simulation pipeline.
-
-    Used as default function for optional pipeline steps.
-    """
-    return data
 
 
 def clip_floor_pos(data: SimData) -> SimData:

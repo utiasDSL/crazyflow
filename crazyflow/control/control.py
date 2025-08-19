@@ -50,6 +50,23 @@ class Control(str, Enum):
     default = attitude
 
 
+@jax.jit
+def controllable(step: Array, freq: int, control_steps: Array, control_freq: int) -> Array:
+    """Check which worlds can currently update their controllers.
+
+    Args:
+        step: The current step of the simulation.
+        freq: The frequency of the simulation.
+        control_steps: The steps at which the controllers were last updated.
+        control_freq: The frequency of the controllers.
+
+    Returns:
+        A boolean mask of shape (n_worlds,) that is True at the worlds where the controllers can be
+        updated.
+    """
+    return ((step - control_steps) >= (freq / control_freq)) | (control_steps == -1)
+
+
 KF: float = 3.16e-10
 KM: float = 7.94e-12
 P_F: Array = np.array([0.4, 0.4, 1.25])
@@ -111,7 +128,7 @@ def attitude2rpm(
 ) -> tuple[Array, Array]:
     """Convert the desired collective thrust and attitude into motor RPMs."""
     rot = R.from_quat(quat)
-    target_rot = R.from_euler("xyz", controls[1:])
+    target_rot = R.from_euler("xyz", controls[:3])
     drot = (target_rot.inv() * rot).as_matrix()
     # Extract the anti-symmetric part of the relative rotation matrix.
     rot_e = jnp.array([drot[2, 1] - drot[1, 2], drot[0, 2] - drot[2, 0], drot[1, 0] - drot[0, 1]])
@@ -123,7 +140,7 @@ def attitude2rpm(
     # PID target torques.
     target_torques = -P_T * rot_e + D_T * rpy_rates_e + I_T * rpy_err_i
     target_torques = jnp.clip(target_torques, -3200, 3200)
-    thrust_per_motor = jnp.atleast_1d(controls[0]) / 4
+    thrust_per_motor = jnp.atleast_1d(controls[3]) / 4
     pwm = jnp.clip(thrust2pwm(thrust_per_motor) + MIX_MATRIX @ target_torques, MIN_PWM, MAX_PWM)
     return pwm2rpm(pwm), rpy_err_i
 
