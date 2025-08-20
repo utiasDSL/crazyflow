@@ -10,18 +10,21 @@ from crazyflow.sim.structs import SimData
 
 
 def main():
-    sim = Sim(control=Control.state)
+    sim = Sim(control=Control.attitude, physics="analytical", attitude_freq=50)
     sim_step = sim._step
 
     def step(cmd: NDArray, data: SimData) -> jax.Array:
-        data = data.replace(controls=data.controls.replace(state=cmd))
+        data = data.replace(
+            controls=data.controls.replace(attitude=data.controls.attitude.replace(staged_cmd=cmd))
+        )
         data = sim_step(data, sim.freq // sim.control_freq)
-        return (data.states.pos[0, 0, 2] - 1.0) ** 2  # Quadratic cost to reach 1m height
+        # Quadratic cost to reach 1m height
+        return (data.states.pos[0, 0, 2] - 1.0) ** 2 - 1e-3 * jnp.sum(cmd**2)
 
     step_grad = jax.jit(jax.grad(step))
 
-    cmd = jnp.zeros((1, 1, 13), dtype=jnp.float32)
-    cmd = cmd.at[..., 2].set(0.1)
+    cmd = jnp.zeros((1, 1, 4), dtype=jnp.float32)
+    cmd = cmd.at[..., 3].set(0.3)
 
     # Trigger jax's jit to compile the gradient function. This is not necessary, but it ensures that
     # the timings are not affected by the compilation time.

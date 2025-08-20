@@ -50,4 +50,4 @@ def _randomize_mass_params(data: SimData, mass: Array, mask: Array | None = None
 @jax.jit
 def _randomize_inertia_params(data: SimData, new_j: Array, mask: Array | None = None) -> SimData:
     new_j_inv = jnp.linalg.inv(new_j)
-    return data.replace(params=leaf_replace(data.params, mask, J=new_j, J_INV=new_j_inv))
+    return data.replace(params=leaf_replace(data.params, mask, J=new_j, J_inv=new_j_inv))

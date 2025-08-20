@@ -70,7 +70,7 @@ def test_sim_init(physics: Physics, device: str, control: Control, n_worlds: int
     n_drones = 1
     skip_unavailable_device(device)
 
-    if physics == Physics.sys_id and control == Control.thrust:
+    if physics == Physics.sys_id and control == Control.force_torque:
         with pytest.raises(ConfigError):
             Sim(n_worlds=n_worlds, physics=physics, device=device, control=control)
         return
@@ -88,7 +88,7 @@ def test_sim_init(physics: Physics, device: str, control: Control, n_worlds: int
 
     # Test control buffer shapes
     array_meta_assert(sim.data.controls.attitude, (n_worlds, n_drones, 4), device)
-    array_meta_assert(sim.data.controls.thrust, (n_worlds, n_drones, 4), device)
+    array_meta_assert(sim.data.controls.force_torque, (n_worlds, n_drones, 6), device)
     array_meta_assert(sim.data.controls.state, (n_worlds, n_drones, 13), device)
 
 
@@ -179,8 +179,8 @@ def test_reset_masked(device: str, physics: Physics):
 @pytest.mark.parametrize("device", ["gpu", "cpu"])
 def test_sim_step(n_worlds: int, n_drones: int, physics: Physics, control: Control, device: str):
     skip_unavailable_device(device)
-    if physics == Physics.sys_id and control == Control.thrust:
-        return
+    if physics == Physics.sys_id and control == Control.force_torque:
+        pytest.skip("Force-torque control is not supported with sys_id physics")
     sim = Sim(n_worlds=n_worlds, n_drones=n_drones, physics=physics, device=device, control=control)
     sim.step(2)
 
@@ -401,7 +401,7 @@ def test_contacts(physics: Physics):
 
 @pytest.mark.unit
 @pytest.mark.parametrize("physics", [Physics.sys_id, Physics.analytical])
-def test_recompilation(physics: Physics):
+def test_compile(physics: Physics):
     sim = Sim(physics=physics, control=Control.attitude, freq=500, device="cpu")
     # Make sure we don't recompile the step function after the first call
     sim.step(1)

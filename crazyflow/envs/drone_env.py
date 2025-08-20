@@ -33,8 +33,8 @@ def action_space(control_type: Control) -> spaces.Box:
                 np.array([4 * MIN_THRUST, -np.pi / 2, -np.pi / 2, -np.pi / 2], dtype=np.float32),
                 np.array([4 * MAX_THRUST, np.pi / 2, np.pi / 2, np.pi / 2], dtype=np.float32),
             )
-        case Control.thrust:
-            return spaces.Box(MIN_THRUST, MAX_THRUST, shape=(4,))
+        case Control.force_torque:
+            return spaces.Box(-1.0, 1.0, shape=(6,))
         case _:
             raise ValueError(f"Invalid control type {control_type}")
 
@@ -128,8 +128,8 @@ class DroneEnv(VectorEnv):
                 raise NotImplementedError("State control currently not supported")
             case Control.attitude:
                 self.sim.attitude_control(action)
-            case Control.thrust:
-                self.sim.thrust_control(action)
+            case Control.force_torque:
+                self.sim.force_torque_control(action)
             case _:
                 raise ValueError(f"Invalid control type {self.sim.control}")
 

@@ -32,7 +32,7 @@ def test_symbolic_thrust_model_creation():
 
 @pytest.mark.unit
 @pytest.mark.parametrize("n_worlds", [1, 2])
-@pytest.mark.parametrize("control", [Control.attitude, Control.thrust])
+@pytest.mark.parametrize("control", [Control.attitude, Control.force_torque])
 def test_symbolic_from_sim(n_worlds: int, control: Control):
     """Test creating symbolic model from sim instance."""
     sim = Sim(n_worlds=n_worlds, n_drones=1, control=control)

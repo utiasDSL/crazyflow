@@ -48,7 +48,7 @@ def surrogate_identified_collective_wrench(
         J: The drone's inertia matrix.
         dt: The simulation time step.
     """
-    collective_thrust, attitude = controls[0], controls[1:]
+    attitude, collective_thrust = controls[:3], controls[3]
     rot = R.from_quat(quat)
     thrust = rot.apply(jnp.array([0, 0, collective_thrust]))
     drift = rot.apply(jnp.array([0, 0, 1]))
@@ -84,9 +84,9 @@ def collective_force2acceleration(force: Array, mass: Array) -> Array:
 
 
 @partial(vectorize, signature="(3),(4),(3,3)->(3)")
-def collective_torque2ang_vel_deriv(torque: Array, quat: Array, J_INV: Array) -> Array:
+def collective_torque2ang_vel_deriv(torque: Array, quat: Array, J_inv: Array) -> Array:
     """Convert torques to ang_vel_deriv."""
-    return J_INV @ R.from_quat(quat).apply(torque, inverse=True)
+    return J_inv @ R.from_quat(quat).apply(torque, inverse=True)
 
 
 @partial(vectorize, signature="(4),(4),(3),(3,3)->(3),(3)")

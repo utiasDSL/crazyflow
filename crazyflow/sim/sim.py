@@ -8,27 +8,30 @@ import jax
 import jax.numpy as jnp
 import mujoco
 import mujoco.mjx as mjx
-from drone_models.controller.mellinger import state2attitude
+from drone_models.controller.mellinger import (
+    attitude2force_torque,
+    force_torque2rotor_vel,
+    state2attitude,
+)
+from drone_models.transform import rotor_vel2body_force, rotor_vel2body_torque
 from einops import rearrange
 from gymnasium.envs.mujoco.mujoco_rendering import MujocoRenderer
 from jax import Array, Device
 from jax.scipy.spatial.transform import Rotation as R
 
-from crazyflow.constants import J_INV, MASS, J
-from crazyflow.control.control import Control, attitude2rpm, controllable, pwm2rpm, thrust2pwm
-from crazyflow.control.control import state2attitude as state2attitude_legacy
+from crazyflow.constants import ARM_LEN, J_INV, KF, KM, MASS, SIGN_MIX_MATRIX, J
+from crazyflow.control.control import Control, controllable
 from crazyflow.exception import ConfigError, NotInitializedError
 from crazyflow.sim.integration import Integrator, euler, rk4, symplectic_euler
 from crazyflow.sim.physics import (
     Physics,
     collective_force2acceleration,
     collective_torque2ang_vel_deriv,
-    rpms2collective_wrench,
     surrogate_identified_collective_wrench,
 )
 from crazyflow.sim.structs import (
+    SimConstants,
     SimControls,
-    SimControlsNew,
     SimCore,
     SimData,
     SimParams,
@@ -41,7 +44,11 @@ if TYPE_CHECKING:
     from mujoco.mjx import Data, Model
     from numpy.typing import NDArray
 
-    from crazyflow.control.mellinger import MellingerStateData
+    from crazyflow.control.mellinger import (
+        MellingerAttitudeData,
+        MellingerForceTorqueData,
+        MellingerStateData,
+    )
 
 Params = ParamSpec("Params")  # Represents arbitrary parameters
 Return = TypeVar("Return")  # Represents the return type
@@ -73,15 +80,15 @@ class Sim:
         freq: int = 500,
         state_freq: int = 100,
         attitude_freq: int = 500,
-        thrust_freq: int = 500,
+        force_torque_freq: int = 500,
         device: str = "cpu",
         xml_path: Path | None = None,
         rng_key: int = 0,
     ):
         assert Physics(physics) in Physics, f"Physics mode {physics} not implemented"
         assert Control(control) in Control, f"Control mode {control} not implemented"
-        if physics == Physics.sys_id and control == Control.thrust:
-            raise ConfigError("Thrust control is not supported with sys_id physics")
+        if physics != Physics.analytical and control == Control.force_torque:
+            raise ConfigError("Force-torque control is only supported with analytical physics")
         if freq > 10_000 and not jax.config.jax_enable_x64:
             raise ConfigError("Double precision mode is required for high frequency simulations")
         self.physics = physics
@@ -99,7 +106,7 @@ class Sim:
         self.mj_model, self.mj_data, self.mjx_model, self.mjx_data = self.build_mjx_model(self.spec)
         self.viewer: MujocoRenderer | None = None
 
-        self.data = self.init_data(state_freq, attitude_freq, thrust_freq, rng_key)
+        self.data = self.init_data(state_freq, attitude_freq, force_torque_freq, rng_key)
         self.default_data: SimData
         self.build_default_data()
 
@@ -110,7 +117,7 @@ class Sim:
         # functions. They act as factories that produce building blocks for the construction of our
         # simulation pipeline.
         self.step_pipeline += (select_control_fn(self.control),)
-        self.step_pipeline += (select_wrench_fn(self.physics),)
+        self.step_pipeline += (select_physics_fn(self.physics),)
         self.step_pipeline += (select_integrate_fn(self.physics, self.integrator),)
         # We never drop below -0.001 (drones can't pass through the floor). We use -0.001 to
         # enable checks for negative z sign
@@ -134,6 +141,17 @@ class Sim:
         assert n_steps > 0, "Number of steps must be positive"
         self.data = self._step(self.data, n_steps=n_steps)
 
+    def state_control(self, controls: Array):
+        """Set the desired state for all drones in all worlds."""
+        assert controls.shape == (self.n_worlds, self.n_drones, 13), "controls shape mismatch"
+        assert self.control == Control.state, "State control is not enabled by the sim config"
+        controls = to_device(controls, self.device)
+        self.data = self.data.replace(
+            controls=self.data.controls.replace(
+                state=self.data.controls.state.replace(staged_cmd=controls)
+            )
+        )
+
     def attitude_control(self, controls: Array):
         """Set the desired attitude for all drones in all worlds.
 
@@ -146,25 +164,26 @@ class Sim:
         assert controls.shape == (self.n_worlds, self.n_drones, 4), "controls shape mismatch"
         assert self.control == Control.attitude, "Attitude control is not enabled by the sim config"
         controls = to_device(controls, self.device)
-        self.data = self.data.replace(controls=self.data.controls.replace(staged_attitude=controls))
-
-    def state_control(self, controls: Array):
-        """Set the desired state for all drones in all worlds."""
-        assert controls.shape == (self.n_worlds, self.n_drones, 13), "controls shape mismatch"
-        assert self.control == Control.state, "State control is not enabled by the sim config"
-        controls = to_device(controls, self.device)
         self.data = self.data.replace(
-            new_controls=self.data.new_controls.replace(
-                state=self.data.new_controls.state.replace(cmd=controls)
+            controls=self.data.controls.replace(
+                attitude=self.data.controls.attitude.replace(staged_cmd=controls)
             )
         )
 
-    def thrust_control(self, cmd: Array):
-        """Set the desired thrust for all drones in all worlds."""
+    def force_torque_control(self, cmd: Array):
+        """Set the desired force and torque for all drones in all worlds."""
         assert cmd.shape == (self.n_worlds, self.n_drones, 4), "Command shape mismatch"
-        assert self.control == Control.thrust, "Thrust control is not enabled by the sim config"
+        assert self.control == Control.force_torque, (
+            "Force-torque control is not enabled by the sim config"
+        )
         controls = to_device(cmd, self.device)
-        self.data = self.data.replace(controls=self.data.controls.replace(thrust=controls))
+        self.data = self.data.replace(
+            controls=self.data.controls.replace(
+                force_torque=self.data.controls.force_torque.replace(
+                    staged_cmd_force=controls[..., [0]], staged_cmd_torque=controls[..., 1:]
+                )
+            )
+        )
 
     @requires_mujoco_sync
     def render(
@@ -282,7 +301,7 @@ class Sim:
         self.data = self.init_data(
             self.data.controls.state_freq,
             self.data.controls.attitude_freq,
-            self.data.controls.thrust_freq,
+            self.data.controls.force_torque_freq,
             self.data.core.rng_key,
         )
 
@@ -297,7 +316,7 @@ class Sim:
         self.mj_model, self.mj_data, self.mjx_model, self.mjx_data = self.build_mjx_model(self.spec)
 
     def init_data(
-        self, state_freq: int, attitude_freq: int, thrust_freq: int, rng_key: Array
+        self, state_freq: int, attitude_freq: int, force_torque_freq: int, rng_key: Array
     ) -> SimData:
         """Initialize the simulation data."""
         drone_ids = [self.mj_model.body(f"drone:{i}").id for i in range(self.n_drones)]
@@ -305,12 +324,14 @@ class Sim:
         data = SimData(
             states=SimState.create(N, D, self.device),
             states_deriv=SimStateDeriv.create(N, D, self.device),
-            controls=SimControls.create(N, D, state_freq, attitude_freq, thrust_freq, self.device),
-            params=SimParams.create(N, D, MASS, J, J_INV, self.device),
-            core=SimCore.create(self.freq, N, D, drone_ids, rng_key, self.device),
-            new_controls=SimControlsNew.create(
-                N, D, self.control, state_freq, attitude_freq, thrust_freq, self.device
+            controls=SimControls.create(
+                N, D, self.control, state_freq, attitude_freq, force_torque_freq, self.device
             ),
+            params=SimParams.create(N, D, MASS, J, J_INV, self.device),
+            constants=SimConstants.create(
+                ARM_LEN / jnp.sqrt(2), SIGN_MIX_MATRIX, KF, KM, self.device
+            ),
+            core=SimCore.create(self.freq, N, D, drone_ids, rng_key, self.device),
         )
         if D > 1:  # If multiple drones, arrange them in a grid
             grid = grid_2d(D)
@@ -325,11 +346,11 @@ class Sim:
     @property
     def control_freq(self) -> int:
         if self.control == Control.state:
-            return self.data.controls.state_freq
+            return self.data.controls.state.freq
         if self.control == Control.attitude:
-            return self.data.controls.attitude_freq
-        if self.control == Control.thrust:
-            return self.data.controls.thrust_freq
+            return self.data.controls.attitude.freq
+        if self.control == Control.force_torque:
+            return self.data.controls.force_torque.freq
         raise NotImplementedError(f"Control mode {self.control} not implemented")
 
     @property
@@ -344,11 +365,12 @@ class Sim:
         controls = self.data.controls
         match self.control:
             case Control.state:
-                control_steps, control_freq = controls.state_steps, controls.state_freq
+                control_steps, control_freq = controls.state.steps, controls.state.freq
             case Control.attitude:
-                control_steps, control_freq = (controls.attitude_steps, controls.attitude_freq)
-            case Control.thrust:
-                control_steps, control_freq = (controls.thrust_steps, controls.thrust_freq)
+                control_steps, control_freq = controls.attitude.steps, controls.attitude.freq
+            case Control.force_torque:
+                control_steps = controls.force_torque.steps
+                control_freq = controls.force_torque.freq
             case _:
                 raise NotImplementedError(f"Control mode {self.control} not implemented")
         return controllable(self.data.core.steps, self.data.core.freq, control_steps, control_freq)
@@ -383,22 +405,23 @@ def select_control_fn(control: Control) -> Callable[[SimData], SimData]:
     """Select the control function for the given control mode."""
     match control:
         case Control.state:
+            # TODO: Add force torque control step
             return lambda data: step_attitude_controller(step_state_controller(data))
         case Control.attitude:
-            return step_attitude_controller
-        case Control.thrust:
-            return step_thrust_controller
+            return lambda data: step_force_torque_controller(step_attitude_controller(data))
+        case Control.force_torque:
+            return step_force_torque_controller
         case _:
             raise NotImplementedError(f"Control mode {control} not implemented")
 
 
-def select_wrench_fn(physics: Physics) -> Callable[[SimData], SimData]:
-    """Select the wrench function for the given physics mode."""
+def select_physics_fn(physics: Physics) -> Callable[[SimData], SimData]:
+    """Select the physics function for the given physics mode."""
     match physics:
         case Physics.analytical:
-            return analytical_wrench
+            return first_principle_physics
         case Physics.sys_id:
-            return identified_wrench
+            return identified_physics
         case _:
             raise NotImplementedError(f"Physics mode {physics} not implemented")
 
@@ -430,8 +453,7 @@ def select_integrate_fn(physics: Physics, integrator: Integrator) -> Callable[[S
 
     def integrate(data: SimData) -> SimData:
         data = integrate_fn(data, derivative_fn)
-        data = data.replace(core=data.core.replace(steps=data.core.steps + 1))
-        return data
+        return data.replace(core=data.core.replace(steps=data.core.steps + 1))
 
     return integrate
 
@@ -463,92 +485,108 @@ def sync_sim2mjx(data: SimData, mjx_data: Data, mjx_model: Model) -> tuple[SimDa
 
 def step_state_controller(data: SimData) -> SimData:
     """Compute the updated controls for the state controller."""
-    states, ctrl_state = data.states, data.new_controls.state
-    assert ctrl_state is not None, "Using state controller without initialized state control data"
-    ctrl_state: MellingerStateData
-    mask = controllable(data.core.steps, data.core.freq, ctrl_state.steps, ctrl_state.freq)
-    jax.debug.print("Ctrl cmd: {cmd}", cmd=ctrl_state.cmd)
-    attitude, (pos_err_i,) = state2attitude(
+    states, state_ctrl = data.states, data.controls.state
+    assert state_ctrl is not None, "Using state controller without initialized data"
+    state_ctrl: MellingerStateData
+    mask = controllable(data.core.steps, data.core.freq, state_ctrl.steps, state_ctrl.freq)
+    state_ctrl = leaf_replace(state_ctrl, mask, cmd=state_ctrl.staged_cmd)
+    rpyt, pos_err_i = state2attitude(
         states.pos,
         states.quat,
         states.vel,
         states.ang_vel,
-        ctrl_state.cmd,
-        ctrl_freq=ctrl_state.freq,
-        ctrl_errors=(ctrl_state.pos_err_i,),
-        **ctrl_state.params._asdict(),
+        state_ctrl.cmd,
+        ctrl_errors=(state_ctrl.pos_err_i,),
+        ctrl_freq=state_ctrl.freq,
+        **state_ctrl.params._asdict(),
     )
-    jax.debug.print("Attitude: {attitude}", attitude=attitude)
-    ctrl_state = leaf_replace(ctrl_state, mask, steps=data.core.steps, pos_err_i=pos_err_i)
-    data = data.replace(
-        controls=data.controls.replace(staged_attitude=attitude),
-        new_controls=data.new_controls.replace(state=ctrl_state),
-    )
+    state_ctrl = leaf_replace(state_ctrl, mask, steps=data.core.steps, pos_err_i=pos_err_i)
+    attitude_ctrl = data.controls.attitude.replace(staged_cmd=rpyt)
+    data = data.replace(controls=data.controls.replace(state=state_ctrl, attitude=attitude_ctrl))
     return data
-
-
-# def step_state_controller(data: SimData) -> SimData:
-#     """Compute the updated controls for the state controller."""
-#     states, ctrl_state = data.states, data.new_controls.state
-#     assert ctrl_state is not None, "Using state controller without initialized state control data"
-#     mask = controllable(data.core.steps, data.core.freq, ctrl_state.steps, ctrl_state.freq)
-#     attitude, pos_err_i = state2attitude_legacy(
-#         states.pos,
-#         states.vel,
-#         states.quat,
-#         ctrl_state.cmd[..., :3],
-#         ctrl_state.cmd[..., 3:6],
-#         ctrl_state.cmd[..., [9]],
-#         ctrl_state.pos_err_i,
-#         1 / ctrl_state.freq,
-#     )
-#     attitude = jnp.roll(attitude, -1, axis=-1)
-#     jax.debug.print("Attitude: {attitude}", attitude=attitude)
-#     ctrl_state = leaf_replace(ctrl_state, mask, steps=data.core.steps, pos_err_i=pos_err_i)
-#     data = data.replace(
-#         controls=data.controls.replace(staged_attitude=attitude),
-#         new_controls=data.new_controls.replace(state=ctrl_state),
-#     )
-#     return data
 
 
 def step_attitude_controller(data: SimData) -> SimData:
     """Compute the updated controls for the attitude controller."""
-    controls = data.controls
-    steps, freq = data.core.steps, data.core.freq
-    mask = controllable(steps, freq, controls.attitude_steps, controls.attitude_freq)
-    # Commit the staged attitude controls
-    staged_attitude = controls.staged_attitude
-    controls = leaf_replace(controls, mask, attitude_steps=steps, attitude=staged_attitude)
-    # Compute the new rpm values from the committed attitude controls
-    quat, attitude = data.states.quat, controls.attitude
-    dt = 1 / controls.attitude_freq
-    rpms, rpy_err_i = attitude2rpm(attitude, quat, controls.last_rpy, controls.rpy_err_i, dt)
-    rpy = R.from_quat(quat).as_euler("xyz")
-    controls = leaf_replace(controls, mask, rpms=rpms, rpy_err_i=rpy_err_i, last_rpy=rpy)
-    return data.replace(controls=controls)
+    states, attitude_ctrl = data.states, data.controls.attitude
+    assert attitude_ctrl is not None, "Using attitude controller without initialized data"
+    attitude_ctrl: MellingerAttitudeData
+    mask = controllable(data.core.steps, data.core.freq, attitude_ctrl.steps, attitude_ctrl.freq)
+    attitude_ctrl = leaf_replace(attitude_ctrl, mask, cmd=attitude_ctrl.staged_cmd)
+    force, torque, r_int_error = attitude2force_torque(
+        states.pos,
+        states.quat,
+        states.vel,
+        states.ang_vel,
+        attitude_ctrl.cmd,
+        ctrl_errors=(attitude_ctrl.r_int_error,),
+        ctrl_info=(attitude_ctrl.last_ang_vel,),
+        ctrl_freq=attitude_ctrl.freq,
+        **attitude_ctrl.params._asdict(),
+    )
+    attitude_ctrl = leaf_replace(
+        attitude_ctrl,
+        mask,
+        r_int_error=r_int_error,
+        last_ang_vel=states.ang_vel,
+        steps=data.core.steps,
+    )
+    force_torque_ctrl = data.controls.force_torque.replace(
+        staged_cmd_force=force, staged_cmd_torque=torque
+    )
+    # TODO: Remove. Set the force and torque directly into the physics step.
+    r = R.from_quat(states.quat)
+    torque = r.apply(torque)
+    force = r.apply(jnp.zeros_like(torque).at[..., 2].set(force[..., 0]))
+    data = data.replace(states=data.states.replace(force=force, torque=torque))
+    return data.replace(
+        controls=data.controls.replace(attitude=attitude_ctrl, force_torque=force_torque_ctrl)
+    )
 
 
-def step_thrust_controller(data: SimData) -> SimData:
+def step_force_torque_controller(data: SimData) -> SimData:
     """Compute the updated controls for the thrust controller."""
-    controls = data.controls
-    steps = data.core.steps
-    mask = controllable(steps, data.core.freq, controls.thrust_steps, controls.thrust_freq)
-    rpms = pwm2rpm(thrust2pwm(controls.thrust))
-    controls = leaf_replace(controls, mask, thrust_steps=steps, rpms=rpms)
-    return data.replace(controls=controls)
+    ft_ctrl = data.controls.force_torque
+    assert ft_ctrl is not None, "Using force torque controller without initialized data"
+    ft_ctrl: MellingerForceTorqueData
+    mask = controllable(data.core.steps, data.core.freq, ft_ctrl.steps, ft_ctrl.freq)
+    ft_ctrl = leaf_replace(
+        ft_ctrl, mask, cmd_force=ft_ctrl.staged_cmd_force, cmd_torque=ft_ctrl.staged_cmd_torque
+    )
+    rotor_vel = force_torque2rotor_vel(
+        ft_ctrl.cmd_force, ft_ctrl.cmd_torque, **ft_ctrl.params._asdict()
+    )
+    ft_ctrl = leaf_replace(ft_ctrl, mask, steps=data.core.steps)
+    data = data.replace(controls=data.controls.replace(rotor_vel=rotor_vel, force_torque=ft_ctrl))
+    # TODO: Remove
+    r = R.from_quat(data.states.quat)
+    cmd_force = jnp.zeros_like(ft_ctrl.cmd_torque)
+    cmd_force = cmd_force.at[..., 2].set(ft_ctrl.cmd_force[..., 0])
+    force, torque = r.apply(cmd_force), r.apply(ft_ctrl.cmd_torque)
+    data = data.replace(states=data.states.replace(force=force, torque=torque))
+    return data
 
 
-def analytical_wrench(data: SimData) -> SimData:
+def first_principle_physics(data: SimData) -> SimData:
     """Compute the wrench from the analytical dynamics model."""
-    states, controls, params = data.states, data.controls, data.params
-    force, torque = rpms2collective_wrench(controls.rpms, states.quat, states.ang_vel, params.J)
+    return data
+    data = data.replace(states=data.states.replace(rotor_vel=data.controls.rotor_vel))
+    body_force = rotor_vel2body_force(data.states.rotor_vel, data.constants.KF)
+    body_torque = rotor_vel2body_torque(
+        data.states.rotor_vel,
+        data.constants.KF,
+        data.constants.KM,
+        data.constants.L,
+        data.constants.MIXING_MATRIX,
+    )
+    r = R.from_quat(data.states.quat)
+    force, torque = r.apply(body_force), r.apply(body_torque)
     return data.replace(states=data.states.replace(force=force, torque=torque))
 
 
 def analytical_derivative(data: SimData) -> SimData:
     """Compute the derivative of the states."""
-    quat, mass, J_inv = data.states.quat, data.params.mass, data.params.J_INV
+    quat, mass, J_inv = data.states.quat, data.params.mass, data.params.J_inv
     acc = collective_force2acceleration(data.states.force, mass)
     ang_vel_deriv = collective_torque2ang_vel_deriv(data.states.torque, quat, J_inv)
     vel, ang_vel = (data.states.vel, data.states.ang_vel)  # Already given in the states
@@ -557,12 +595,12 @@ def analytical_derivative(data: SimData) -> SimData:
     return data.replace(states_deriv=deriv)
 
 
-def identified_wrench(data: SimData) -> SimData:
+def identified_physics(data: SimData) -> SimData:
     """Compute the wrench from the identified dynamics model."""
-    states, controls = data.states, data.controls
+    states = data.states
     mass, J = data.params.mass, data.params.J
     force, torque = surrogate_identified_collective_wrench(
-        controls.attitude, states.quat, states.ang_vel, mass, J, 1 / data.core.freq
+        data.controls.attitude.cmd, states.quat, states.ang_vel, mass, J, 1 / data.core.freq
     )
     return data.replace(states=data.states.replace(force=force, torque=torque))
 

@@ -1,9 +1,10 @@
 import jax
 import numpy as np
 import pytest
+from drone_models.controller.mellinger import state2attitude
 from scipy.spatial.transform import Rotation as R
 
-from crazyflow.control.control import Control, state2attitude
+from crazyflow.control.control import Control
 from crazyflow.sim import Physics, Sim
 
 
@@ -35,13 +36,21 @@ def test_attitude_interface(physics: Physics):
     jit_state2attitude = jax.jit(state2attitude)
 
     i_error = np.zeros((1, 1, 3))
+    cmd = np.zeros((1, 1, 13))
+    cmd[0, 0, 2] = 1.0  # Set z position target to 1.0
 
     for _ in range(int(2 * sim.control_freq)):  # Run simulation for 2 seconds
         pos, vel, quat = sim.data.states.pos, sim.data.states.vel, sim.data.states.quat
-        des_pos = np.array([[[0, 0, 1.0]]])
-        dt = 1 / sim.data.controls.attitude_freq
         cmd, i_error = jit_state2attitude(
-            pos, vel, quat, des_pos, np.zeros((1, 1, 3)), np.zeros((1, 1, 1)), i_error, dt
+            pos,
+            quat,
+            vel,
+            None,
+            cmd,
+            (i_error,),
+            None,
+            sim.data.controls.state.freq,
+            **sim.data.controls.state.params._asdict(),
         )
         sim.attitude_control(cmd)
         sim.step(sim.freq // sim.control_freq)

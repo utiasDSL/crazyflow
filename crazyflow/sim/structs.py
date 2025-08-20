@@ -8,7 +8,11 @@ from flax.struct import dataclass, field
 from jax import Array, Device
 
 from crazyflow.control import Control
-from crazyflow.control.mellinger import MellingerStateData
+from crazyflow.control.mellinger import (
+    MellingerAttitudeData,
+    MellingerForceTorqueData,
+    MellingerStateData,
+)
 
 
 @dataclass
@@ -25,32 +29,24 @@ class SimState:
     """Force applied to the drone's center of mass in the world frame."""
     torque: Array  # (N, M, 3)  # CoM torque
     """Torque applied to the drone's center of mass in the world frame."""
-    motor_forces: Array  # (N, M, 4)  # Motor forces along body frame z axis
+    rotor_vel: Array  # (N, M, 4)  # Motor forces along body frame z axis
     """Motor forces along body frame z axis."""
-    motor_torques: Array  # (N, M, 4)  # Motor torques around the body frame z axis
-    """Motor torques around the body frame z axis."""
 
     @staticmethod
     def create(n_worlds: int, n_drones: int, device: Device) -> SimState:
         """Create a default set of states for the simulation."""
-        pos = jnp.zeros((n_worlds, n_drones, 3), device=device)
-        quat = jnp.zeros((n_worlds, n_drones, 4), device=device)
-        quat = quat.at[..., -1].set(1.0)
-        vel = jnp.zeros((n_worlds, n_drones, 3), device=device)
-        ang_vel = jnp.zeros((n_worlds, n_drones, 3), device=device)
-        force = jnp.zeros((n_worlds, n_drones, 3), device=device)
-        torque = jnp.zeros((n_worlds, n_drones, 3), device=device)
-        motor_forces = jnp.zeros((n_worlds, n_drones, 4), device=device)
-        motor_torques = jnp.zeros((n_worlds, n_drones, 4), device=device)
+        zeros_3d = jnp.zeros((n_worlds, n_drones, 3), device=device)
+        q_identity = jnp.zeros((n_worlds, n_drones, 4), device=device)
+        q_identity = q_identity.at[..., -1].set(1.0)
+        rotor_vel = jnp.zeros((n_worlds, n_drones, 4), device=device)
         return SimState(
-            pos=pos,
-            quat=quat,
-            force=force,
-            torque=torque,
-            motor_forces=motor_forces,
-            motor_torques=motor_torques,
-            vel=vel,
-            ang_vel=ang_vel,
+            pos=zeros_3d,
+            quat=q_identity,
+            vel=zeros_3d,
+            ang_vel=zeros_3d,
+            force=zeros_3d,
+            torque=zeros_3d,
+            rotor_vel=rotor_vel,
         )
 
 
@@ -75,101 +71,35 @@ class SimStateDeriv:
         return SimStateDeriv(dpos=dpos, drot=drot, dvel=dvel, dang_vel=dang_vel)
 
 
-@dataclass
-class SimControls:
-    state: Array  # (N, M, 13)
-    """Full state control command for the drone.
-
-    A command consists of [x, y, z, vx, vy, vz, ax, ay, az, yaw, roll_rate, pitch_rate, yaw_rate].
-    We currently do not use the acceleration and angle rate components. This is subject to change.
-    """
-    state_steps: Array  # (N, 1)
-    """Last simulation steps that the state control command was applied."""
-    state_freq: int = field(pytree_node=False)
-    """Frequency of the state control command."""
-    attitude: Array  # (N, M, 4)
-    """Attitude control command for the drone.
-
-    A command consists of [collective thrust, roll, pitch, yaw].
-    """
-    staged_attitude: Array  # (N, M, 4)
-    """Staged attitude control command for the drone that has not been applied yet.
-
-    See `Sim.attitude_control` for more details.
-    """
-    attitude_steps: Array  # (N, 1)
-    """Last simulation steps that the attitude control command was applied."""
-    attitude_freq: int = field(pytree_node=False)
-    """Frequency of the attitude control command."""
-    thrust: Array  # (N, M, 4)
-    """Thrust control command for the drone.
-
-    A command consists of [thrust1, thrust2, thrust3, thrust4] for each motor.
-    """
-    thrust_steps: Array  # (N, 1)
-    """Last simulation steps that the thrust control command was applied."""
-    thrust_freq: int = field(pytree_node=False)
-    """Frequency of the thrust control command."""
-    rpms: Array  # (N, M, 4)
-    """RPMs for each motor."""
-    rpy_err_i: Array  # (N, M, 3)
-    """Integral of the rpy error."""
-    pos_err_i: Array  # (N, M, 3)
-    """Integral of the position error."""
-    last_rpy: Array  # (N, M, 3)
-    """Last rpy for 'xyz' euler angles.
-
-    Required to compute the integral term in the attitude controller.
-    """
-
-    @staticmethod
-    def create(
-        n_worlds: int,
-        n_drones: int,
-        state_freq: int = 100,
-        attitude_freq: int = 500,
-        thrust_freq: int = 500,
-        device: Device | str = "cpu",
-    ) -> SimControls:
-        """Create a default set of controls for the simulation."""
-        device = jax.devices(device)[0] if isinstance(device, str) else device
-        return SimControls(
-            state=jnp.zeros((n_worlds, n_drones, 13), device=device),
-            state_steps=-jnp.ones((n_worlds, 1), dtype=jnp.int32, device=device),
-            state_freq=state_freq,
-            attitude=jnp.zeros((n_worlds, n_drones, 4), device=device),
-            staged_attitude=jnp.zeros((n_worlds, n_drones, 4), device=device),
-            attitude_steps=-jnp.ones((n_worlds, 1), dtype=jnp.int32, device=device),
-            attitude_freq=attitude_freq,
-            thrust=jnp.zeros((n_worlds, n_drones, 4), device=device),
-            thrust_steps=-jnp.ones((n_worlds, 1), dtype=jnp.int32, device=device),
-            thrust_freq=thrust_freq,
-            rpms=jnp.zeros((n_worlds, n_drones, 4), device=device),
-            rpy_err_i=jnp.zeros((n_worlds, n_drones, 3), device=device),
-            pos_err_i=jnp.zeros((n_worlds, n_drones, 3), device=device),
-            last_rpy=jnp.zeros((n_worlds, n_drones, 3), device=device),
-        )
-
-
 class ControlData(typing.Protocol):
+    staged_cmd: Array  # (N, M, X)
+    """Staged control command for the drone.
+
+    The most recent control input gets staged here until the next controller tick and is then
+    committed to the cmd field.
+    """
     cmd: Array  # (N, M, X)
     """Control command for the drone."""
+    staged_cmd: Array  # (N, M, X)
+    """Staged control command for the drone."""
     steps: Array  # (N, 1)
     """Last simulation steps that the state control command was applied."""
     freq: int
     """Frequency of the state control command."""
     # Parameters for the controller
-    params: typing.Any
+    params: tuple[typing.Any, ...]
 
 
 @dataclass
-class SimControlsNew:
-    state: ControlData | None = None
+class SimControls:
+    state: ControlData | None
     """State control data."""
-    attitude: ControlData | None = None
+    attitude: ControlData | None
     """Attitude control data."""
-    thrust: ControlData | None = None
-    """Thrust control data."""
+    force_torque: ControlData | None
+    """Force and torque control data."""
+    rotor_vel: Array  # (N, M, 4)
+    """Desired motor speed."""
 
     @staticmethod
     def create(
@@ -178,23 +108,40 @@ class SimControlsNew:
         control: Control,
         state_freq: int | None,
         attitude_freq: int | None,
-        thrust_freq: int | None,
+        force_torque_freq: int | None,
         device: Device,
-    ) -> SimControlsNew:
+    ) -> SimControls:
         """Create a default set of controls for the simulation."""
+        rotor_vel = jnp.zeros((n_worlds, n_drones, 4), device=device)
         match control:
             case Control.state:
                 state = MellingerStateData.create(n_worlds, n_drones, state_freq, "", device)
-                attitude = None  # MellingerAttitudeData.create(n_worlds, n_drones, device)
-                thrust = None  # MellingerThrustData.create(n_worlds, n_drones, device)
-                return SimControlsNew(state=state, attitude=attitude, thrust=thrust)
+                attitude = MellingerAttitudeData.create(
+                    n_worlds, n_drones, attitude_freq, "", device
+                )
+                force_torque = MellingerForceTorqueData.create(
+                    n_worlds, n_drones, force_torque_freq, "", device
+                )
+                return SimControls(
+                    state=state, attitude=attitude, force_torque=force_torque, rotor_vel=rotor_vel
+                )
             case Control.attitude:
-                attitude = None  # MellingerAttitudeData.create(n_worlds, n_drones, device)
-                thrust = None  # MellingerThrustData.create(n_worlds, n_drones, device)
-                return SimControlsNew(attitude=attitude, thrust=thrust)
-            case Control.thrust:
-                thrust = None  # MellingerThrustData.create(n_worlds, n_drones, device)
-                return SimControlsNew(thrust=thrust)
+                attitude = attitude = MellingerAttitudeData.create(
+                    n_worlds, n_drones, attitude_freq, "", device
+                )
+                force_torque = MellingerForceTorqueData.create(
+                    n_worlds, n_drones, force_torque_freq, "", device
+                )
+                return SimControls(
+                    state=None, attitude=attitude, force_torque=force_torque, rotor_vel=rotor_vel
+                )
+            case Control.force_torque:
+                force_torque = MellingerForceTorqueData.create(
+                    n_worlds, n_drones, force_torque_freq, "", device
+                )
+                return SimControls(
+                    state=None, attitude=None, force_torque=force_torque, rotor_vel=rotor_vel
+                )
             case _:
                 raise ValueError(f"Control mode {control} not implemented")
 
@@ -205,19 +152,40 @@ class SimParams:
     """Mass of the drone."""
     J: Array  # (N, M, 3, 3)
     """Inertia matrix of the drone."""
-    J_INV: Array  # (N, M, 3, 3)
+    J_inv: Array  # (N, M, 3, 3)
     """Inverse of the inertia matrix of the drone."""
 
     @staticmethod
     def create(
-        n_worlds: int, n_drones: int, mass: float, J: Array, J_INV: Array, device: Device
+        n_worlds: int, n_drones: int, mass: float, J: Array, J_inv: Array, device: Device
     ) -> SimParams:
         """Create a default set of parameters for the simulation."""
         mass = jnp.ones((n_worlds, n_drones, 1), device=device) * mass
-        j, j_inv = jnp.array(J, device=device), jnp.array(J_INV, device=device)
+        j, j_inv = jnp.array(J, device=device), jnp.array(J_inv, device=device)
         J = jnp.tile(j[None, None, :, :], (n_worlds, n_drones, 1, 1))
-        J_INV = jnp.tile(j_inv[None, None, :, :], (n_worlds, n_drones, 1, 1))
-        return SimParams(mass=mass, J=J, J_INV=J_INV)
+        J_inv = jnp.tile(j_inv[None, None, :, :], (n_worlds, n_drones, 1, 1))
+        return SimParams(mass=mass, J=J, J_inv=J_inv)
+
+
+@dataclass
+class SimConstants:
+    L: float
+    """Arm length of the drone."""
+    MIXING_MATRIX: Array  # (3, 4)
+    """Mixing matrix of the drone."""
+    KF: float
+    """Force constant of the drone."""
+    KM: float
+    """Torque constant of the drone."""
+
+    @staticmethod
+    def create(
+        L: float, mixing_matrix: Array, KF: float, KM: float, device: Device
+    ) -> SimConstants:
+        """Create a default set of constants for the simulation."""
+        return SimConstants(
+            L=L, MIXING_MATRIX=jnp.array(mixing_matrix, device=device), KF=KF, KM=KM
+        )
 
 
 @dataclass
@@ -269,10 +237,10 @@ class SimData:
     states_deriv: SimStateDeriv
     """Derivative of the state of the simulation."""
     controls: SimControls
-    """Drone control values."""
-    new_controls: SimControlsNew
-    """New style control data TODO improve this"""
+    """Drone controller data."""
     params: SimParams
     """Drone parameters."""
+    constants: SimConstants
+    """Drone constants."""
     core: SimCore
     """Core parameters of the simulation."""

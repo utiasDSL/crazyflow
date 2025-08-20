@@ -19,7 +19,7 @@ import numpy as np
 from jax import Array
 from jax.scipy.spatial.transform import Rotation as R
 
-from crazyflow.constants import GRAVITY, MASS, MIX_MATRIX
+from crazyflow.constants import MIX_MATRIX
 
 
 class Control(str, Enum):
@@ -41,8 +41,8 @@ class Control(str, Enum):
     Note:
         Recommended frequency is >=100 Hz.
     """
-    thrust = "thrust"
-    """Thrust control takes [thrust1, thrust2, thrust3, thrust4] for each drone motor.
+    force_torque = "force_torque"
+    """Force and torque control takes [fx, fy, fz, tx, ty, tz].
 
     Note:
         Recommended frequency is >=500 Hz.
@@ -88,38 +88,6 @@ MAX_THRUST: float = KF * MAX_RPM**2
 THRUST_CURVE_A: float = -1.1264
 THRUST_CURVE_B: float = 2.2541
 THRUST_CURVE_C: float = 0.0209
-
-
-@partial(jnp.vectorize, signature="(3),(3),(4),(3),(3),(1),(3)->(4),(3)", excluded=[7])
-def state2attitude(
-    pos: Array,
-    vel: Array,
-    quat: Array,
-    des_pos: Array,
-    des_vel: Array,
-    des_yaw: Array,
-    i_error: Array,
-    dt: float,
-) -> tuple[Array, Array]:
-    """Compute the next desired collective thrust and roll/pitch/yaw of the drone."""
-    pos_error, vel_error = des_pos - pos, des_vel - vel
-    # Update integral error
-    i_error = jnp.clip(i_error + pos_error * dt, -I_F_RANGE, I_F_RANGE)
-    # Compute target thrust
-    thrust = P_F * pos_error + I_F * i_error + D_F * vel_error
-    thrust = thrust.at[2].add(MASS * GRAVITY)
-    # Update z_axis to the current orientation of the drone
-    z_axis = R.from_quat(quat).as_matrix()[:, 2]
-    # Project the thrust onto the z-axis
-    thrust_desired = jnp.clip(thrust @ z_axis, 0.3 * MASS * GRAVITY, 1.8 * MASS * GRAVITY)
-    # Update the desired z-axis
-    z_axis = thrust / jnp.linalg.norm(thrust)
-    yaw_axis = jnp.concatenate([jnp.cos(des_yaw), jnp.sin(des_yaw), jnp.array([0.0])])
-    y_axis = jnp.cross(z_axis, yaw_axis)
-    y_axis = y_axis / jnp.linalg.norm(y_axis)
-    x_axis = jnp.cross(y_axis, z_axis)
-    euler_desired = R.from_matrix(jnp.vstack([x_axis, y_axis, z_axis]).T).as_euler("xyz")
-    return jnp.concatenate([jnp.atleast_1d(thrust_desired), euler_desired]), i_error
 
 
 @partial(jnp.vectorize, signature="(4),(4),(3),(3)->(4),(3)", excluded=[4])
