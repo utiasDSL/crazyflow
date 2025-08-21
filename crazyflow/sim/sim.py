@@ -492,9 +492,9 @@ def sync_sim2mjx(data: SimData, mjx_data: Data, mjx_model: Model) -> tuple[SimDa
 
 def step_state_controller(data: SimData) -> SimData:
     """Compute the updated controls for the state controller."""
-    states, state_ctrl = data.states, data.controls.state
+    states = data.states
+    state_ctrl: MellingerStateData = data.controls.state
     assert state_ctrl is not None, "Using state controller without initialized data"
-    state_ctrl: MellingerStateData
     mask = controllable(data.core.steps, data.core.freq, state_ctrl.steps, state_ctrl.freq)
     state_ctrl = leaf_replace(state_ctrl, mask, cmd=state_ctrl.staged_cmd)
     rpyt, pos_err_i = state2attitude(
@@ -509,15 +509,14 @@ def step_state_controller(data: SimData) -> SimData:
     )
     state_ctrl = leaf_replace(state_ctrl, mask, steps=data.core.steps, pos_err_i=pos_err_i)
     attitude_ctrl = leaf_replace(data.controls.attitude, mask, staged_cmd=rpyt)
-    data = data.replace(controls=data.controls.replace(state=state_ctrl, attitude=attitude_ctrl))
-    return data
+    return data.replace(controls=data.controls.replace(state=state_ctrl, attitude=attitude_ctrl))
 
 
 def step_attitude_controller(data: SimData) -> SimData:
     """Compute the updated controls for the attitude controller."""
-    states, attitude_ctrl = data.states, data.controls.attitude
+    states = data.states
+    attitude_ctrl: MellingerAttitudeData = data.controls.attitude
     assert attitude_ctrl is not None, "Using attitude controller without initialized data"
-    attitude_ctrl: MellingerAttitudeData
     mask = controllable(data.core.steps, data.core.freq, attitude_ctrl.steps, attitude_ctrl.freq)
     attitude_ctrl = leaf_replace(attitude_ctrl, mask, cmd=attitude_ctrl.staged_cmd)
     force, torque, r_int_error = attitude2force_torque(
@@ -537,22 +536,23 @@ def step_attitude_controller(data: SimData) -> SimData:
         last_ang_vel=states.ang_vel,
         steps=data.core.steps,
     )
-    ft_ctrl = data.controls.force_torque.replace(staged_cmd=jnp.concat([force, torque], axis=-1))
+    ft_ctrl = leaf_replace(
+        data.controls.force_torque, mask, staged_cmd=jnp.concat([force, torque], axis=-1)
+    )
     # TODO: Remove. Set the force and torque directly into the physics step.
     r = R.from_quat(states.quat)
     torque = r.apply(torque)
     force = r.apply(jnp.zeros_like(torque).at[..., 2].set(force[..., 0]))
     states = leaf_replace(states, mask, force=force, torque=torque)
     return data.replace(
-        states=states, controls=data.controls.replace(attitude=attitude_ctrl, force_torque=ft_ctrl)
+        controls=data.controls.replace(attitude=attitude_ctrl, force_torque=ft_ctrl)
     )
 
 
 def step_force_torque_controller(data: SimData) -> SimData:
     """Compute the updated controls for the thrust controller."""
-    ft_ctrl = data.controls.force_torque
+    ft_ctrl: MellingerForceTorqueData = data.controls.force_torque
     assert ft_ctrl is not None, "Using force torque controller without initialized data"
-    ft_ctrl: MellingerForceTorqueData
     mask = controllable(data.core.steps, data.core.freq, ft_ctrl.steps, ft_ctrl.freq)
     ft_ctrl = leaf_replace(ft_ctrl, mask, cmd=ft_ctrl.staged_cmd)
     rotor_vel = force_torque2rotor_vel(
@@ -565,8 +565,7 @@ def step_force_torque_controller(data: SimData) -> SimData:
     cmd_force = jnp.zeros_like(ft_ctrl.cmd[..., 1:])
     cmd_force = cmd_force.at[..., 2].set(ft_ctrl.cmd[..., 0])
     force, torque = r.apply(cmd_force), r.apply(ft_ctrl.cmd[..., 1:])
-    data = data.replace(states=data.states.replace(force=force, torque=torque))
-    return data
+    return data.replace(states=data.states.replace(force=force, torque=torque))
 
 
 def first_principle_physics(data: SimData) -> SimData:
@@ -589,11 +588,10 @@ def first_principle_physics(data: SimData) -> SimData:
 def analytical_derivative(data: SimData) -> SimData:
     """Compute the derivative of the states."""
     quat, mass, J_inv = data.states.quat, data.params.mass, data.params.J_inv
+    vel, ang_vel = data.states.vel, data.states.ang_vel  # Already given in the states
     acc = collective_force2acceleration(data.states.force, mass)
     ang_vel_deriv = collective_torque2ang_vel_deriv(data.states.torque, quat, J_inv)
-    vel, ang_vel = (data.states.vel, data.states.ang_vel)  # Already given in the states
-    deriv = data.states_deriv
-    deriv = deriv.replace(dpos=vel, drot=ang_vel, dvel=acc, dang_vel=ang_vel_deriv)
+    deriv = data.states_deriv.replace(dpos=vel, drot=ang_vel, dvel=acc, dang_vel=ang_vel_deriv)
     return data.replace(states_deriv=deriv)
 
 
