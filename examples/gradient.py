@@ -19,7 +19,7 @@ def main():
         )
         data = sim_step(data, sim.freq // sim.control_freq)
         # Quadratic cost to reach 1m height
-        return (data.states.pos[0, 0, 2] - 1.0) ** 2 - 1e-3 * jnp.sum(cmd**2)
+        return (data.states.pos[0, 0, 2] - 1.0) ** 2
 
     step_grad = jax.jit(jax.grad(step))
 

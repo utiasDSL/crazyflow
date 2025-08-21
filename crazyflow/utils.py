@@ -68,6 +68,11 @@ def to_device(data: Array, device: str) -> Array:
     return jnp.array(data, device=device)
 
 
+def named_tuple2device(data: T, device: str) -> T:
+    """Turn a named tuple into a jax array on the specified device."""
+    return data._replace(**{f: jnp.asarray(getattr(data, f), device=device) for f in data._fields})
+
+
 def enable_cache(
     cache_path: Path = Path("/tmp/jax_cache"),
     min_entry_size_bytes: int = -1,

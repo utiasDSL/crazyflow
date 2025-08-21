@@ -74,6 +74,7 @@ class Sim:
         self,
         n_worlds: int = 1,
         n_drones: int = 1,
+        drone_model: str = "cf2x_L250",
         physics: Physics = Physics.default,
         control: Control = Control.default,
         integrator: Integrator = Integrator.default,
@@ -93,6 +94,7 @@ class Sim:
             raise ConfigError("Double precision mode is required for high frequency simulations")
         self.physics = physics
         self.control = control
+        self.drone_model = drone_model
         self.integrator = integrator
         self.device = jax.devices(device)[0]
         self.n_worlds = n_worlds
@@ -179,9 +181,7 @@ class Sim:
         controls = to_device(cmd, self.device)
         self.data = self.data.replace(
             controls=self.data.controls.replace(
-                force_torque=self.data.controls.force_torque.replace(
-                    staged_cmd_force=controls[..., [0]], staged_cmd_torque=controls[..., 1:]
-                )
+                force_torque=self.data.controls.force_torque.replace(staged_cmd=controls)
             )
         )
 
@@ -325,7 +325,14 @@ class Sim:
             states=SimState.create(N, D, self.device),
             states_deriv=SimStateDeriv.create(N, D, self.device),
             controls=SimControls.create(
-                N, D, self.control, state_freq, attitude_freq, force_torque_freq, self.device
+                N,
+                D,
+                self.control,
+                self.drone_model,
+                state_freq,
+                attitude_freq,
+                force_torque_freq,
+                self.device,
             ),
             params=SimParams.create(N, D, MASS, J, J_INV, self.device),
             constants=SimConstants.create(
@@ -501,7 +508,7 @@ def step_state_controller(data: SimData) -> SimData:
         **state_ctrl.params._asdict(),
     )
     state_ctrl = leaf_replace(state_ctrl, mask, steps=data.core.steps, pos_err_i=pos_err_i)
-    attitude_ctrl = data.controls.attitude.replace(staged_cmd=rpyt)
+    attitude_ctrl = leaf_replace(data.controls.attitude, mask, staged_cmd=rpyt)
     data = data.replace(controls=data.controls.replace(state=state_ctrl, attitude=attitude_ctrl))
     return data
 
@@ -520,7 +527,6 @@ def step_attitude_controller(data: SimData) -> SimData:
         states.ang_vel,
         attitude_ctrl.cmd,
         ctrl_errors=(attitude_ctrl.r_int_error,),
-        ctrl_info=(attitude_ctrl.last_ang_vel,),
         ctrl_freq=attitude_ctrl.freq,
         **attitude_ctrl.params._asdict(),
     )
@@ -531,16 +537,14 @@ def step_attitude_controller(data: SimData) -> SimData:
         last_ang_vel=states.ang_vel,
         steps=data.core.steps,
     )
-    force_torque_ctrl = data.controls.force_torque.replace(
-        staged_cmd_force=force, staged_cmd_torque=torque
-    )
+    ft_ctrl = data.controls.force_torque.replace(staged_cmd=jnp.concat([force, torque], axis=-1))
     # TODO: Remove. Set the force and torque directly into the physics step.
     r = R.from_quat(states.quat)
     torque = r.apply(torque)
     force = r.apply(jnp.zeros_like(torque).at[..., 2].set(force[..., 0]))
-    data = data.replace(states=data.states.replace(force=force, torque=torque))
+    states = leaf_replace(states, mask, force=force, torque=torque)
     return data.replace(
-        controls=data.controls.replace(attitude=attitude_ctrl, force_torque=force_torque_ctrl)
+        states=states, controls=data.controls.replace(attitude=attitude_ctrl, force_torque=ft_ctrl)
     )
 
 
@@ -550,19 +554,17 @@ def step_force_torque_controller(data: SimData) -> SimData:
     assert ft_ctrl is not None, "Using force torque controller without initialized data"
     ft_ctrl: MellingerForceTorqueData
     mask = controllable(data.core.steps, data.core.freq, ft_ctrl.steps, ft_ctrl.freq)
-    ft_ctrl = leaf_replace(
-        ft_ctrl, mask, cmd_force=ft_ctrl.staged_cmd_force, cmd_torque=ft_ctrl.staged_cmd_torque
-    )
+    ft_ctrl = leaf_replace(ft_ctrl, mask, cmd=ft_ctrl.staged_cmd)
     rotor_vel = force_torque2rotor_vel(
-        ft_ctrl.cmd_force, ft_ctrl.cmd_torque, **ft_ctrl.params._asdict()
+        ft_ctrl.cmd[..., [0]], ft_ctrl.cmd[..., 1:], **ft_ctrl.params._asdict()
     )
     ft_ctrl = leaf_replace(ft_ctrl, mask, steps=data.core.steps)
     data = data.replace(controls=data.controls.replace(rotor_vel=rotor_vel, force_torque=ft_ctrl))
     # TODO: Remove
     r = R.from_quat(data.states.quat)
-    cmd_force = jnp.zeros_like(ft_ctrl.cmd_torque)
-    cmd_force = cmd_force.at[..., 2].set(ft_ctrl.cmd_force[..., 0])
-    force, torque = r.apply(cmd_force), r.apply(ft_ctrl.cmd_torque)
+    cmd_force = jnp.zeros_like(ft_ctrl.cmd[..., 1:])
+    cmd_force = cmd_force.at[..., 2].set(ft_ctrl.cmd[..., 0])
+    force, torque = r.apply(cmd_force), r.apply(ft_ctrl.cmd[..., 1:])
     data = data.replace(states=data.states.replace(force=force, torque=torque))
     return data
 

@@ -20,14 +20,14 @@ def test_randomize_mass():
     sim.state_control(control)
     sim.step(sim.freq // sim.control_freq)
     pos = sim.data.states.pos
-    sim.reset()
 
+    sim.reset()
     randomize_mass(sim, randomized_masses)
 
     sim.state_control(control)
     sim.step(sim.freq // sim.control_freq)
     pos_random = sim.data.states.pos
-    assert not np.all(pos == pos_random), "Inertia randomization has no effect on dynamics"
+    assert not np.all(pos == pos_random), "Mass randomization has no effect on dynamics"
 
 
 @pytest.mark.integration
@@ -42,8 +42,8 @@ def test_randomize_inertia():
     sim.state_control(control)
     sim.step(sim.freq // sim.control_freq)
     pos = sim.data.states.pos
-    sim.reset()
 
+    sim.reset()
     randomize_inertia(sim, randomized_j)
 
     sim.state_control(control)

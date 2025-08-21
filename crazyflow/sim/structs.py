@@ -71,6 +71,7 @@ class SimStateDeriv:
         return SimStateDeriv(dpos=dpos, drot=drot, dvel=dvel, dang_vel=dang_vel)
 
 
+@typing.runtime_checkable
 class ControlData(typing.Protocol):
     staged_cmd: Array  # (N, M, X)
     """Staged control command for the drone.
@@ -106,6 +107,7 @@ class SimControls:
         n_worlds: int,
         n_drones: int,
         control: Control,
+        drone_model: str,
         state_freq: int | None,
         attitude_freq: int | None,
         force_torque_freq: int | None,
@@ -115,29 +117,31 @@ class SimControls:
         rotor_vel = jnp.zeros((n_worlds, n_drones, 4), device=device)
         match control:
             case Control.state:
-                state = MellingerStateData.create(n_worlds, n_drones, state_freq, "", device)
+                state = MellingerStateData.create(
+                    n_worlds, n_drones, state_freq, drone_model, device
+                )
                 attitude = MellingerAttitudeData.create(
-                    n_worlds, n_drones, attitude_freq, "", device
+                    n_worlds, n_drones, attitude_freq, drone_model, device
                 )
                 force_torque = MellingerForceTorqueData.create(
-                    n_worlds, n_drones, force_torque_freq, "", device
+                    n_worlds, n_drones, force_torque_freq, drone_model, device
                 )
                 return SimControls(
                     state=state, attitude=attitude, force_torque=force_torque, rotor_vel=rotor_vel
                 )
             case Control.attitude:
                 attitude = attitude = MellingerAttitudeData.create(
-                    n_worlds, n_drones, attitude_freq, "", device
+                    n_worlds, n_drones, attitude_freq, drone_model, device
                 )
                 force_torque = MellingerForceTorqueData.create(
-                    n_worlds, n_drones, force_torque_freq, "", device
+                    n_worlds, n_drones, force_torque_freq, drone_model, device
                 )
                 return SimControls(
                     state=None, attitude=attitude, force_torque=force_torque, rotor_vel=rotor_vel
                 )
             case Control.force_torque:
                 force_torque = MellingerForceTorqueData.create(
-                    n_worlds, n_drones, force_torque_freq, "", device
+                    n_worlds, n_drones, force_torque_freq, drone_model, device
                 )
                 return SimControls(
                     state=None, attitude=None, force_torque=force_torque, rotor_vel=rotor_vel
@@ -183,9 +187,11 @@ class SimConstants:
         L: float, mixing_matrix: Array, KF: float, KM: float, device: Device
     ) -> SimConstants:
         """Create a default set of constants for the simulation."""
-        return SimConstants(
-            L=L, MIXING_MATRIX=jnp.array(mixing_matrix, device=device), KF=KF, KM=KM
-        )
+        L = jnp.array(L, device=device, dtype=jnp.float32)
+        mixing_matrix = jnp.array(mixing_matrix, device=device, dtype=jnp.float32)
+        KF = jnp.array(KF, device=device, dtype=jnp.float32)
+        KM = jnp.array(KM, device=device, dtype=jnp.float32)
+        return SimConstants(L=L, MIXING_MATRIX=mixing_matrix, KF=KF, KM=KM)
 
 
 @dataclass

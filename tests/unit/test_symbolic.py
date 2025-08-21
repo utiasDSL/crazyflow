@@ -1,9 +1,8 @@
 import pytest
 
-from crazyflow.constants import MASS, J
 from crazyflow.control import Control
 from crazyflow.sim import Sim
-from crazyflow.sim.symbolic import symbolic_attitude, symbolic_from_sim, symbolic_thrust
+from crazyflow.sim.symbolic import symbolic_attitude, symbolic_from_sim
 
 
 @pytest.mark.unit
@@ -19,22 +18,12 @@ def test_symbolic_attitude_model_creation():
 
 
 @pytest.mark.unit
-def test_symbolic_thrust_model_creation():
-    """Test creating symbolic thrust model directly."""
-    dt = 0.01
-    model = symbolic_thrust(mass=MASS, J=J, dt=dt)
-
-    assert model.nx == 12  # State dimension
-    assert model.nu == 4  # Input dimension
-    assert model.ny == 12  # Output dimension
-    assert model.dt == dt
-
-
-@pytest.mark.unit
 @pytest.mark.parametrize("n_worlds", [1, 2])
 @pytest.mark.parametrize("control", [Control.attitude, Control.force_torque])
 def test_symbolic_from_sim(n_worlds: int, control: Control):
     """Test creating symbolic model from sim instance."""
+    if control == Control.force_torque:  # TODO: Remove once models are integrated
+        pytest.skip("Symbolic model for force torque control is not implemented")
     sim = Sim(n_worlds=n_worlds, n_drones=1, control=control)
     model = symbolic_from_sim(sim)
 

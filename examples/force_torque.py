@@ -11,7 +11,7 @@ def main():
     duration = 5.0
     fps = 60
 
-    cmd = np.ones((sim.n_worlds, sim.n_drones, 4))  # [fz, tx, ty, tz]
+    cmd = np.zeros((sim.n_worlds, sim.n_drones, 4))  # [fz, tx, ty, tz]
     cmd[..., 0] = (MASS + 1e-4) * GRAVITY  # Plus a small margin to accelerate slightly
     for i in range(int(duration * sim.control_freq)):
         sim.force_torque_control(cmd)

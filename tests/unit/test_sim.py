@@ -10,6 +10,7 @@ from crazyflow.control import Control
 from crazyflow.exception import ConfigError
 from crazyflow.sim import Physics, Sim
 from crazyflow.sim.sim import sync_sim2mjx
+from crazyflow.sim.structs import ControlData
 
 
 def available_backends() -> list[str]:
@@ -87,9 +88,25 @@ def test_sim_init(physics: Physics, device: str, control: Control, n_worlds: int
     array_meta_assert(sim.data.states.ang_vel, (n_worlds, n_drones, 3), device, "ang_vel")
 
     # Test control buffer shapes
-    array_meta_assert(sim.data.controls.attitude, (n_worlds, n_drones, 4), device)
-    array_meta_assert(sim.data.controls.force_torque, (n_worlds, n_drones, 6), device)
-    array_meta_assert(sim.data.controls.state, (n_worlds, n_drones, 13), device)
+    if control == Control.state:
+        assert isinstance(sim.data.controls.state, ControlData)
+        array_meta_assert(sim.data.controls.state.staged_cmd, (n_worlds, n_drones, 13), device)
+        array_meta_assert(sim.data.controls.state.cmd, (n_worlds, n_drones, 13), device)
+    else:
+        assert sim.data.controls.state is None
+    # Test attitude buffer shapes
+    if control in (Control.attitude, Control.state):
+        assert isinstance(sim.data.controls.attitude, ControlData)
+        array_meta_assert(sim.data.controls.attitude.staged_cmd, (n_worlds, n_drones, 4), device)
+        array_meta_assert(sim.data.controls.attitude.cmd, (n_worlds, n_drones, 4), device)
+    else:
+        assert sim.data.controls.attitude is None
+
+    # Test force torque buffer shapes
+    ft_ctrl = sim.data.controls.force_torque
+    assert isinstance(ft_ctrl, ControlData)
+    array_meta_assert(ft_ctrl.cmd, (n_worlds, n_drones, 4), device)
+    array_meta_assert(ft_ctrl.staged_cmd, (n_worlds, n_drones, 4), device)
 
 
 @pytest.mark.unit
@@ -106,9 +123,10 @@ def test_reset(device: str, physics: Physics, n_worlds: int, n_drones: int):
     data = sim.data
     states, controls, params, core = data.states, data.controls, data.params, data.core
     core = core.replace(steps=core.steps + 100)
-    attitude = controls.attitude.at[:, :, 2].set(1.0)
-    staged_attitude = jnp.ones_like(controls.staged_attitude)
-    controls = controls.replace(staged_attitude=staged_attitude, attitude=attitude)
+    controls = controls.replace(state=None)
+    controls = controls.replace(
+        force_torque=controls.force_torque.replace(cmd=jnp.ones((n_worlds, n_drones, 4)))
+    )
     states = states.replace(pos=states.pos.at[:, :, 2].set(1.0))
     params = params.replace(mass=params.mass.at[:, n_drones - 1].set(1.0))
     sim.data = data.replace(states=states, controls=controls, params=params, core=core)
@@ -124,7 +142,11 @@ def test_reset(device: str, physics: Physics, n_worlds: int, n_drones: int):
             assert value == default_value, f"{path} value mismatch"
 
     assert jnp.all(sim.data.core.steps == 0), "Steps must be reset to 0"
-    assert jnp.all(sim.data.controls.attitude_steps == -1), "Control steps not reset to -1"
+    assert jnp.all(sim.data.controls.force_torque.steps == -1), "Control steps not reset to -1"
+    if sim.control in (Control.state, Control.attitude):
+        assert jnp.all(sim.data.controls.attitude.steps == -1), "Control steps not reset to -1"
+    if sim.control == Control.state:
+        assert jnp.all(sim.data.controls.state.steps == -1), "Control steps not reset to -1"
 
 
 @pytest.mark.unit
@@ -139,9 +161,9 @@ def test_reset_masked(device: str, physics: Physics):
     data = sim.data
     states, controls, params, core = data.states, data.controls, data.params, data.core
     core = core.replace(steps=core.steps + 100)
-    attitude = controls.attitude.at[:, :, 2].set(1.0)
-    staged_attitude = jnp.ones_like(controls.staged_attitude)
-    controls = controls.replace(staged_attitude=staged_attitude, attitude=attitude)
+    controls = controls.replace(state=None)
+    controls = controls.replace(force_torque=controls.force_torque.replace(cmd=jnp.ones((2, 1, 4))))
+    controls = controls.replace(force_torque=controls.force_torque.replace(steps=jnp.ones((2, 1))))
     states = states.replace(pos=states.pos.at[:, :, 2].set(1.0))
     params = params.replace(mass=params.mass.at[:, :, 0].set(1.0))
     sim.data = data.replace(states=states, controls=controls, params=params, core=core)
@@ -166,9 +188,11 @@ def test_reset_masked(device: str, physics: Physics):
 
     # Check world 2 kept modifications
     data = sim.data
-    assert jnp.all(data.states.pos[1, :, 2] == 1.0), "World 2 pos should be unchanged"
-    assert jnp.all(data.controls.attitude[1, :, 2] == 1.0), "World 2 attitude should be unchanged"
-    assert jnp.all(data.params.mass[1, :, 0] == 1.0), "World 2 mass should be unchanged"
+    assert jnp.all(data.states.pos[1, :, 2] == 1.0), "World 2 pos was reset"
+    assert jnp.all(data.controls.force_torque.cmd[1, ...] == 1.0), "World 2 cmd was reset"
+    assert jnp.all(data.params.mass[1, 0] == 1.0), "World 2 mass was reset"
+    assert jnp.all(data.core.steps[1] == 100), "World 2 steps were reset"
+    assert data.controls.force_torque.steps[1] == 1, "World 2 force torque steps were reset"
 
 
 @pytest.mark.unit
@@ -198,12 +222,12 @@ def test_sim_attitude_control(attitude_freq: int):
         assert jnp.all(sim.controllable[1] == can_control_2[i]), f"Controllable 2 mismatch at t={i}"
         sim.attitude_control(cmd)
         sim.step()
-        sim_cmd = sim.data.controls.attitude[0]
+        sim_cmd = sim.data.controls.attitude.cmd[0]
         if can_control_1[i]:
             assert jnp.all(sim_cmd == cmd[0]), f"Controls do not match at t={i}"
         else:
             assert not jnp.all(sim_cmd == cmd[0]), f"Controls shouldn't match at t={i}"
-        sim_cmd = sim.data.controls.attitude[1]
+        sim_cmd = sim.data.controls.attitude.cmd[1]
         if can_control_2[i]:
             assert jnp.all(sim_cmd == cmd[1]), f"Controls do not match at t={i}"
         else:
@@ -219,9 +243,9 @@ def test_sim_attitude_control_device(device: str):
     sim = Sim(n_worlds=2, n_drones=3, control=Control.attitude, device=device)
     cmd = np.random.rand(sim.n_worlds, sim.n_drones, 4)
     sim.attitude_control(cmd)
-    controls = sim.data.controls
-    assert isinstance(controls.staged_attitude, jnp.ndarray), "Buffers must remain JAX arrays"
-    assert jnp.all(controls.staged_attitude == cmd), "Buffers must match command"
+    controls = sim.data.controls.attitude
+    assert isinstance(controls.staged_cmd, jnp.ndarray), "Buffers must remain JAX arrays"
+    assert jnp.all(controls.staged_cmd == cmd), "Buffers must match command"
 
 
 @pytest.mark.unit
@@ -235,9 +259,9 @@ def test_sim_state_control(state_freq: int):
         assert jnp.all(sim.controllable[0] == can_control_1[i]), f"Controllable 1 mismatch at t={i}"
         assert jnp.all(sim.controllable[1] == can_control_2[i]), f"Controllable 2 mismatch at t={i}"
         sim.state_control(cmd)
-        last_attitude = sim.data.controls.staged_attitude
+        last_attitude = sim.data.controls.attitude.staged_cmd
         sim.step()
-        attitude = sim.data.controls.staged_attitude
+        attitude = sim.data.controls.attitude.staged_cmd
         last_att, att = last_attitude[0], attitude[0]
         if can_control_1[i]:
             assert not jnp.all(att == last_att), f"Controls haven't been applied at t={i}"
@@ -259,9 +283,10 @@ def test_sim_state_control_device(device: str):
     sim = Sim(n_worlds=2, n_drones=3, control=Control.state, device=device)
     cmd = np.random.rand(sim.n_worlds, sim.n_drones, 13)
     sim.state_control(cmd)
-    controls = sim.data.controls
-    assert isinstance(controls.state, jnp.ndarray), "Buffers must remain JAX arrays"
-    assert jnp.all(controls.state == cmd), "Buffers must match command"
+    controls = sim.data.controls.state
+    assert isinstance(controls.cmd, jnp.ndarray), "Buffers must remain JAX arrays"
+    assert isinstance(controls.staged_cmd, jnp.ndarray), "Buffers must remain JAX arrays"
+    assert jnp.all(controls.staged_cmd == cmd), "Buffers must match command"
 
 
 @pytest.mark.parametrize("device", ["gpu", "cpu"])
@@ -328,13 +353,24 @@ def test_control_frequency(physics: Physics):
     sim_1000.state_control(cmd)
     sim_1000.step(2)
 
-    # Check that the controls are the same
-    assert np.all(sim_500.data.controls.rpms == sim_1000.data.controls.rpms)
-    assert np.all(sim_500.data.controls.thrust == sim_1000.data.controls.thrust)
-    assert np.all(sim_500.data.controls.attitude == sim_1000.data.controls.attitude)
-    assert np.all(sim_500.data.controls.pos_err_i == sim_1000.data.controls.pos_err_i)
-    assert np.all(sim_500.data.controls.rpy_err_i == sim_1000.data.controls.rpy_err_i)
-
+    # Check that the controls are the same for state
+    state_ctrl_500 = sim_500.data.controls.state
+    state_ctrl_1000 = sim_1000.data.controls.state
+    assert np.all(state_ctrl_500.cmd == state_ctrl_1000.cmd)
+    assert np.all(state_ctrl_500.staged_cmd == state_ctrl_1000.staged_cmd)
+    assert np.all(state_ctrl_500.pos_err_i == state_ctrl_1000.pos_err_i)
+    # attitude
+    att_ctrl_500 = sim_500.data.controls.attitude
+    att_ctrl_1000 = sim_1000.data.controls.attitude
+    assert np.all(att_ctrl_500.cmd == att_ctrl_1000.cmd)
+    assert np.all(att_ctrl_500.staged_cmd == att_ctrl_1000.staged_cmd)
+    assert np.all(att_ctrl_500.r_int_error == att_ctrl_1000.r_int_error)
+    # and force torque
+    ft_ctrl_500 = sim_500.data.controls.force_torque
+    ft_ctrl_1000 = sim_1000.data.controls.force_torque
+    assert np.all(ft_ctrl_500.cmd == ft_ctrl_1000.cmd)
+    assert np.all(ft_ctrl_500.staged_cmd == ft_ctrl_1000.staged_cmd)
+    assert np.all(sim_500.data.controls.rotor_vel == sim_1000.data.controls.rotor_vel)
     sim_500.close()
     sim_1000.close()
 
@@ -407,3 +443,24 @@ def test_compile(physics: Physics):
     sim.step(1)
     sim.step(1)
     assert sim._step._cache_size() == 1, "Step function should not be recompiled"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("physics", Physics)
+def test_scan_results(physics: Physics):
+    sim = Sim(n_worlds=2, n_drones=3, physics=physics, control=Control.state, device="cpu")
+    sim.reset()
+    cmd = np.zeros((sim.n_worlds, sim.n_drones, 13))
+    cmd[..., :3] = sim.data.states.pos + np.array([0.3, 0.3, 0.3])
+    sim.state_control(cmd)
+    n_steps, n_iters = sim.freq // sim.control_freq, 100  # 1 second at 100Hz
+    for _ in range(n_iters):
+        sim.step(n_steps)
+    pos_loop_steps = sim.data.states.pos
+    sim.reset()
+    sim.state_control(cmd)
+    sim.step(n_steps * n_iters)
+    pos_scan_steps = sim.data.states.pos
+    assert np.all(pos_loop_steps[..., 2] > 0.1), "Drones should have moved"
+    assert np.allclose(pos_scan_steps, pos_loop_steps), "Scan results should be identical"
+    sim.close()

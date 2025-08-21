@@ -47,7 +47,8 @@ def test_reset_multi_world(physics: Physics):
     # Run simulation once
     for i in range(n_steps):
         sim.attitude_control(random_cmds[i])
-        assert isinstance(sim.data.controls.attitude, jnp.ndarray)
+        assert isinstance(sim.data.controls.attitude.staged_cmd, jnp.ndarray)
+        assert isinstance(sim.data.controls.attitude.cmd, jnp.ndarray)
         sim.step(sim.freq // sim.control_freq)
     final_pos = sim.data.states.pos.copy()
     final_quat = sim.data.states.quat.copy()
@@ -63,4 +64,3 @@ def test_reset_multi_world(physics: Physics):
         sim.step(sim.freq // sim.control_freq)
     assert jnp.all(sim.data.states.pos == final_pos)
     assert jnp.all(sim.data.states.quat == final_quat)
-    
