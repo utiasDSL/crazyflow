@@ -86,7 +86,10 @@ def collective_force2acceleration(force: Array, mass: Array) -> Array:
 @partial(vectorize, signature="(3),(4),(3,3)->(3)")
 def collective_torque2ang_vel_deriv(torque: Array, quat: Array, J_inv: Array) -> Array:
     """Convert torques to ang_vel_deriv."""
-    return J_inv @ R.from_quat(quat).apply(torque, inverse=True)
+    # Add a minimal epsilon to avoid breaking gradients when the torques are 0.
+    # TODO: Find out why 0 torques break differentiability and remove epsilon.
+    eps = jnp.minimum(jnp.finfo(torque.dtype).eps, 1e-10)
+    return J_inv @ R.from_quat(quat).apply(torque + eps, inverse=True)
 
 
 @partial(vectorize, signature="(4),(4),(3),(3,3)->(3),(3)")

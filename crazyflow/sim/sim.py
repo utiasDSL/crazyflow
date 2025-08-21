@@ -545,7 +545,7 @@ def step_attitude_controller(data: SimData) -> SimData:
     force = r.apply(jnp.zeros_like(torque).at[..., 2].set(force[..., 0]))
     states = leaf_replace(states, mask, force=force, torque=torque)
     return data.replace(
-        controls=data.controls.replace(attitude=attitude_ctrl, force_torque=ft_ctrl)
+        states=states, controls=data.controls.replace(attitude=attitude_ctrl, force_torque=ft_ctrl)
     )
 
 
