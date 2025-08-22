@@ -56,7 +56,7 @@ def symplectic_euler(data: SimData, deriv_fn: Callable[[SimData], SimData]) -> S
         data: The simulation data structure.
         deriv_fn: The function to compute the derivative of the dynamics.
     """
-    return integrate(data, deriv_fn(data), dt=1 / data.core.freq)
+    return integrate_symplectic(data, deriv_fn(data), dt=1 / data.core.freq)
 
 
 def rk4_average(k1: SimData, k2: SimData, k3: SimData, k4: SimData) -> SimData:
@@ -161,5 +161,9 @@ def _integrate_symplectic(
     next_vel = vel + dvel * dt
     next_ang_vel = ang_vel + dang_vel * dt
     next_pos = pos + next_vel * dt
+    # See comment in _integrate.
+    next_ang_vel = jnp.where(
+        jnp.abs(next_ang_vel) < jnp.finfo(pos.dtype).smallest_normal, 0, next_ang_vel
+    )
     next_quat = (R.from_quat(quat) * R.from_rotvec(next_ang_vel * dt)).as_quat()
     return next_pos, next_quat, next_vel, next_ang_vel
