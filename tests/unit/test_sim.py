@@ -13,24 +13,6 @@ from crazyflow.sim.sim import sync_sim2mjx
 from crazyflow.sim.structs import ControlData
 
 
-def available_backends() -> list[str]:
-    """Return list of available JAX backends."""
-    backends = []
-    for backend in ["tpu", "gpu", "cpu"]:
-        try:
-            jax.devices(backend)
-        except RuntimeError:
-            pass
-        else:
-            backends.append(backend)
-    return backends
-
-
-def skip_unavailable_device(device: str):
-    if device not in available_backends():
-        pytest.skip(f"{device} device not available")
-
-
 def skip_headless():
     if os.environ.get("DISPLAY") is None:
         pytest.skip("DISPLAY is not set, skipping test in headless environment")
@@ -64,12 +46,10 @@ def array_compare_assert(x: Array, y: Array, value: bool = True, name: str | Non
 
 @pytest.mark.unit
 @pytest.mark.parametrize("physics", Physics)
-@pytest.mark.parametrize("device", ["gpu", "cpu"])
 @pytest.mark.parametrize("control", Control)
 @pytest.mark.parametrize("n_worlds", [1, 2])
 def test_sim_init(physics: Physics, device: str, control: Control, n_worlds: int):
     n_drones = 1
-    skip_unavailable_device(device)
 
     if physics == Physics.sys_id and control == Control.force_torque:
         with pytest.raises(ConfigError):
@@ -110,13 +90,11 @@ def test_sim_init(physics: Physics, device: str, control: Control, n_worlds: int
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("device", ["gpu", "cpu"])
 @pytest.mark.parametrize("physics", Physics)
 @pytest.mark.parametrize("n_worlds", [1, 2])
 @pytest.mark.parametrize("n_drones", [1, 3])
 def test_reset(device: str, physics: Physics, n_worlds: int, n_drones: int):
     """Test that reset without mask resets all worlds to default state."""
-    skip_unavailable_device(device)
     sim = Sim(n_worlds=n_worlds, n_drones=n_drones, physics=physics, device=device)
 
     # Modify states
@@ -150,11 +128,9 @@ def test_reset(device: str, physics: Physics, n_worlds: int, n_drones: int):
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("device", ["gpu", "cpu"])
 @pytest.mark.parametrize("physics", Physics)
 def test_reset_masked(device: str, physics: Physics):
     """Test that reset with mask only resets specified worlds."""
-    skip_unavailable_device(device)
     sim = Sim(n_worlds=2, n_drones=1, physics=physics, device=device)
 
     # Modify states
@@ -200,9 +176,7 @@ def test_reset_masked(device: str, physics: Physics):
 @pytest.mark.parametrize("n_drones", [1, 3])
 @pytest.mark.parametrize("physics", Physics)
 @pytest.mark.parametrize("control", Control)
-@pytest.mark.parametrize("device", ["gpu", "cpu"])
 def test_sim_step(n_worlds: int, n_drones: int, physics: Physics, control: Control, device: str):
-    skip_unavailable_device(device)
     if physics == Physics.sys_id and control == Control.force_torque:
         pytest.skip("Force-torque control is not supported with sys_id physics")
     sim = Sim(n_worlds=n_worlds, n_drones=n_drones, physics=physics, device=device, control=control)
@@ -237,9 +211,7 @@ def test_sim_attitude_control(attitude_freq: int):
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("device", ["gpu", "cpu"])
 def test_sim_attitude_control_device(device: str):
-    skip_unavailable_device(device)
     sim = Sim(n_worlds=2, n_drones=3, control=Control.attitude, device=device)
     cmd = np.random.rand(sim.n_worlds, sim.n_drones, 4)
     sim.attitude_control(cmd)
@@ -277,9 +249,7 @@ def test_sim_state_control(state_freq: int):
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("device", ["gpu", "cpu"])
 def test_sim_state_control_device(device: str):
-    skip_unavailable_device(device)
     sim = Sim(n_worlds=2, n_drones=3, control=Control.state, device=device)
     cmd = np.random.rand(sim.n_worlds, sim.n_drones, 13)
     sim.state_control(cmd)
@@ -289,19 +259,15 @@ def test_sim_state_control_device(device: str):
     assert jnp.all(controls.staged_cmd == cmd), "Buffers must match command"
 
 
-@pytest.mark.parametrize("device", ["gpu", "cpu"])
 @pytest.mark.render
 def test_render_human(device: str):
-    skip_unavailable_device(device)
     sim = Sim(device=device)
     sim.render()
     sim.viewer.close()
 
 
 # Do not mark as render to ensure it runs by default. This function will not open a viewer.
-@pytest.mark.parametrize("device", ["gpu", "cpu"])
 def test_render_rgb_array(device: str):
-    skip_unavailable_device(device)
     skip_headless()
     sim = Sim(n_worlds=2, device=device)
     img = sim.render(mode="rgb_array", width=1024, height=1024)
@@ -313,20 +279,16 @@ def test_render_rgb_array(device: str):
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("device", ["gpu", "cpu"])
 def test_device(device: str):
-    skip_unavailable_device(device)
     sim = Sim(n_worlds=2, physics=Physics.sys_id, device=device)
     sim.step()
     assert sim.data.states.pos.device == jax.devices(device)[0]
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("device", ["gpu", "cpu"])
 @pytest.mark.parametrize("n_worlds", [1, 2])
 @pytest.mark.parametrize("n_drones", [1, 3])
 def test_sync_shape_consistency(device: str, n_drones: int, n_worlds: int):
-    skip_unavailable_device(device)
     sim = Sim(n_worlds=n_worlds, n_drones=n_drones, physics=Physics.sys_id, device=device)
     qpos_shape, qvel_shape = sim.mjx_data.qpos.shape, sim.mjx_data.qvel.shape
     _, mjx_data = sync_sim2mjx(sim.data, sim.mjx_data, sim.mjx_model)
@@ -376,9 +338,7 @@ def test_control_frequency(physics: Physics):
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("device", ["gpu", "cpu"])
 def test_seed(device: str):
-    skip_unavailable_device(device)
     sim = Sim(rng_key=42, device=device)
     assert (jax.random.key_data(sim.data.core.rng_key)[1] == 42).all(), "rng_key not set correctly"
     assert sim.data.core.rng_key.device == sim.device, "__init__() must set device of rng_key"
@@ -436,9 +396,32 @@ def test_contacts(physics: Physics):
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize("control", Control)
+def test_data_committed(control: Control, device: str):
+    # Check that the data is committed to the device we chose
+    sim = Sim(physics=Physics.analytical, control=control, freq=500, device=device)
+
+    def assert_committed(obj0, path: str = "data"):
+        if isinstance(obj0, jnp.ndarray):
+            assert obj0.committed, f"{path} is not committed"
+        elif hasattr(obj0, "__dict__"):  # Dataclass
+            for attr_name in obj0.__dict__:
+                assert_committed(getattr(obj0, attr_name), f"{path}.{attr_name}")
+        elif isinstance(obj0, (list, tuple)):  # Handle sequences
+            for i, item0 in enumerate(obj0):
+                assert_committed(item0, f"{path}[{i}]")
+        elif isinstance(obj0, (int, float, bool, str, type(None))):
+            pass
+        else:
+            raise TypeError(f"Could not handle type {type(obj0)} at {path}")
+
+    assert_committed(sim.data)
+
+
+@pytest.mark.unit
 @pytest.mark.parametrize("physics", [Physics.sys_id, Physics.analytical])
-def test_compile(physics: Physics):
-    sim = Sim(physics=physics, control=Control.attitude, freq=500, device="cpu")
+def test_compile(physics: Physics, device: str):
+    sim = Sim(physics=physics, control=Control.state, freq=500, device=device)
     # Make sure we don't recompile the step function after the first call
     sim.step(1)
     sim.step(1)

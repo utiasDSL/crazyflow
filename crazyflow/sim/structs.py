@@ -173,13 +173,13 @@ class SimParams:
 
 @dataclass
 class SimConstants:
-    L: float
+    L: Array  # ()
     """Arm length of the drone."""
     MIXING_MATRIX: Array  # (3, 4)
     """Mixing matrix of the drone."""
-    KF: float
+    KF: Array  # ()
     """Force constant of the drone."""
-    KM: float
+    KM: Array  # ()
     """Torque constant of the drone."""
 
     @staticmethod

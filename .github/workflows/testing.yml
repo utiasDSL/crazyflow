@@ -24,4 +24,4 @@ jobs:
       - name: Verify pixi and run tests
         run: |
           pixi --version
-          pixi run -e test pytest
+          pixi run -e tests tests

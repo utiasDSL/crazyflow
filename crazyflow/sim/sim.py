@@ -335,9 +335,7 @@ class Sim:
                 self.device,
             ),
             params=SimParams.create(N, D, MASS, J, J_INV, self.device),
-            constants=SimConstants.create(
-                ARM_LEN / jnp.sqrt(2), SIGN_MIX_MATRIX, KF, KM, self.device
-            ),
+            constants=SimConstants.create(ARM_LEN / 2**0.5, SIGN_MIX_MATRIX, KF, KM, self.device),
             core=SimCore.create(self.freq, N, D, drone_ids, rng_key, self.device),
         )
         if D > 1:  # If multiple drones, arrange them in a grid

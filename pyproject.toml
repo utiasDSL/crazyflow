@@ -34,7 +34,6 @@ dependencies = [
 requires-python = ">=3.10"
 
 [project.optional-dependencies]
-test = ["pytest>=8.0.0", "pytest-cov", "pytest-timeout", "gymnasium[array-api]"]
 gpu = ["jax[cuda12]"]
 benchmark = ["fire", "matplotlib", "pandas"]
 
@@ -117,13 +116,19 @@ platforms = ["linux-64"]
 crazyflow = { path = "./", editable = true }
 drone-models = { path = "./submodules/drone-models", editable = true }
 
+[tool.pixi.feature.tests.dependencies]
+pytest = ">=8.4.1"
+pytest-timeout = ">=2.1.0"
+
+[tool.pixi.feature.tests.tasks]
+tests = { cmd = "pytest -v tests", description = "Run tests" }
+
 [tool.pixi.environments]
 default = { solve-group = "default" }
 benchmark = { features = ["benchmark", "gpu"], solve-group = "default" }
 gpu = { features = ["gpu"], solve-group = "default" }
-test = { features = ["test", "gpu"], solve-group = "default" }
-
-[tool.pixi.tasks]
+tests = { features = ["tests"], solve-group = "default" }
+gpu-tests = { features = ["tests", "gpu"], solve-group = "default" }
 
 [tool.pixi.dependencies]  
 # TODO: Remove compilers once scipy 1.17 is released and drone-models have been updated.
