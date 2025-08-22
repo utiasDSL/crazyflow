@@ -3,6 +3,7 @@ from functools import partial
 from typing import Callable
 
 import jax
+import jax.numpy as jnp
 from jax import Array
 from jax.numpy import vectorize
 from jax.scipy.spatial.transform import Rotation as R
@@ -124,6 +125,10 @@ def _integrate(
         The next position, quaternion, velocity, and roll, pitch, and yaw rates of the drone.
     """
     next_pos = pos + dpos * dt
+    # Prevent NaN gradients by setting extremely small rotations to 0. This should not be necessary
+    # because of the small-angle approximation in from_rotvec, but jax still gives us NaN gradients
+    # otherwise.
+    drot = jnp.where(jnp.abs(drot) < jnp.finfo(pos.dtype).smallest_normal, 0, drot)
     next_quat = (R.from_quat(quat) * R.from_rotvec(drot * dt)).as_quat()
     next_vel = vel + dvel * dt
     next_ang_vel = ang_vel + dang_vel * dt
