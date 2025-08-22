@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import jax.numpy as jnp
-from drone_models.controller.mellinger.params import AttitudeParams, ForceTorqueParams, StateParams
+from drone_controllers.mellinger.params import AttitudeParams, ForceTorqueParams, StateParams
 from flax.struct import dataclass, field
 from jax import Array, Device
 

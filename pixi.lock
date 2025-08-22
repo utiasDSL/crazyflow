@@ -128,6 +128,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/5c/23/c7abc0ca0a1526a0774eca151daeb8de62ec457e77262b66b359c3c7679e/tzdata-2025.2-py2.py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/2e/54/647ade08bf0db230bfea292f893923872fd20be6ac6f53b2b936ba839d75/zipp-3.23.0-py3-none-any.whl
       - pypi: ./
+      - pypi: ./submodules/drone-controllers
       - pypi: ./submodules/drone-models
   default:
     channels:
@@ -230,6 +231,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/89/7d/37f1b50037c1448cacf875b305a3cdfddc113073d1cfbabe1a3b78939bae/trimesh-4.7.4-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/2e/54/647ade08bf0db230bfea292f893923872fd20be6ac6f53b2b936ba839d75/zipp-3.23.0-py3-none-any.whl
       - pypi: ./
+      - pypi: ./submodules/drone-controllers
       - pypi: ./submodules/drone-models
   gpu:
     channels:
@@ -346,6 +348,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/89/7d/37f1b50037c1448cacf875b305a3cdfddc113073d1cfbabe1a3b78939bae/trimesh-4.7.4-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/2e/54/647ade08bf0db230bfea292f893923872fd20be6ac6f53b2b936ba839d75/zipp-3.23.0-py3-none-any.whl
       - pypi: ./
+      - pypi: ./submodules/drone-controllers
       - pypi: ./submodules/drone-models
   gpu-tests:
     channels:
@@ -469,6 +472,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/89/7d/37f1b50037c1448cacf875b305a3cdfddc113073d1cfbabe1a3b78939bae/trimesh-4.7.4-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/2e/54/647ade08bf0db230bfea292f893923872fd20be6ac6f53b2b936ba839d75/zipp-3.23.0-py3-none-any.whl
       - pypi: ./
+      - pypi: ./submodules/drone-controllers
       - pypi: ./submodules/drone-models
   tests:
     channels:
@@ -578,6 +582,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/89/7d/37f1b50037c1448cacf875b305a3cdfddc113073d1cfbabe1a3b78939bae/trimesh-4.7.4-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/2e/54/647ade08bf0db230bfea292f893923872fd20be6ac6f53b2b936ba839d75/zipp-3.23.0-py3-none-any.whl
       - pypi: ./
+      - pypi: ./submodules/drone-controllers
       - pypi: ./submodules/drone-models
 packages:
 - conda: https://conda.anaconda.org/conda-forge/linux-64/_libgcc_mutex-0.1-conda_forge.tar.bz2
@@ -765,7 +770,7 @@ packages:
 - pypi: ./
   name: crazyflow
   version: 0.0.2
-  sha256: e88e3ceb1bbd25a80b724d2dcbf68820d980ff6f453553603ef31cc4bdc3bdbd
+  sha256: 9ddcb49226ab8fde89a125f9fb90b056dedddc72947a877140eb3d7c5706264f
   requires_dist:
   - jax>=0.7.0
   - mujoco>=3.3.0
@@ -808,6 +813,17 @@ packages:
   - pytest-cov ; extra == 'tests'
   - pytest-xdist ; extra == 'tests'
   requires_python: '>=3.8'
+- pypi: ./submodules/drone-controllers
+  name: drone-controllers
+  version: 0.0.1
+  sha256: ea3128a9c73f9f92ed5b2f7abb6dc56a34d3bc9e630551574143759b8f79e89c
+  requires_dist:
+  - numpy>=2.0.0
+  - array-api-compat
+  - array-api-extra
+  - array-api-typing @ git+https://github.com/data-apis/array-api-typing
+  - scipy @ git+https://github.com/amacati/scipy.git@broadcasting
+  editable: true
 - pypi: ./submodules/drone-models
   name: drone-models
   version: 0.0.1

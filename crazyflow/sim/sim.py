@@ -8,12 +8,12 @@ import jax
 import jax.numpy as jnp
 import mujoco
 import mujoco.mjx as mjx
-from drone_models.controller.mellinger import (
+from drone_controllers.mellinger import (
     attitude2force_torque,
     force_torque2rotor_vel,
     state2attitude,
 )
-from drone_models.transform import rotor_vel2body_force, rotor_vel2body_torque
+from drone_controllers.transform import rotor_vel2body_force, rotor_vel2body_torque
 from einops import rearrange
 from gymnasium.envs.mujoco.mujoco_rendering import MujocoRenderer
 from jax import Array, Device
