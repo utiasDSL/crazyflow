@@ -13,6 +13,7 @@ from crazyflow.control.mellinger import (
     MellingerForceTorqueData,
     MellingerStateData,
 )
+from crazyflow.sim.physics import FirstPrinciplesData, Physics, SoRpyData
 
 
 @dataclass
@@ -52,23 +53,25 @@ class SimState:
 
 @dataclass
 class SimStateDeriv:
-    dpos: Array  # (N, M, 3)
+    vel: Array  # (N, M, 3)
     """Derivative of the position of the drone's center of mass."""
-    drot: Array  # (N, M, 3)
+    ang_vel: Array  # (N, M, 3)
     """Derivative of the quaternion of the drone's orientation as angular velocity."""
-    dvel: Array  # (N, M, 3)
+    acc: Array  # (N, M, 3)
     """Derivative of the velocity of the drone's center of mass."""
-    dang_vel: Array  # (N, M, 3)
+    ang_acc: Array  # (N, M, 3)
     """Derivative of the angular velocity of the drone's center of mass."""
+    rotor_acc: Array  # (N, M, 4)
+    """Derivative of the rotor velocity."""
 
     @staticmethod
     def create(n_worlds: int, n_drones: int, device: Device) -> SimStateDeriv:
         """Create a default set of state derivatives for the simulation."""
-        dpos = jnp.zeros((n_worlds, n_drones, 3), device=device)
-        drot = jnp.zeros((n_worlds, n_drones, 3), device=device)
-        dvel = jnp.zeros((n_worlds, n_drones, 3), device=device)
-        dang_vel = jnp.zeros((n_worlds, n_drones, 3), device=device)
-        return SimStateDeriv(dpos=dpos, drot=drot, dvel=dvel, dang_vel=dang_vel)
+        zeros_3d = jnp.zeros((n_worlds, n_drones, 3), device=device)
+        zeros_4d = jnp.zeros((n_worlds, n_drones, 4), device=device)
+        return SimStateDeriv(
+            vel=zeros_3d, ang_vel=zeros_3d, acc=zeros_3d, ang_acc=zeros_3d, rotor_acc=zeros_4d
+        )
 
 
 @typing.runtime_checkable
@@ -150,10 +153,11 @@ class SimControls:
                 raise ValueError(f"Control mode {control} not implemented")
 
 
-@dataclass
-class SimParams:
+class SimParams(typing.Protocol):
     mass: Array  # (N, M, 1)
     """Mass of the drone."""
+    gravity_vec: Array  # (N, M, 3)
+    """Gravity vector of the drone."""
     J: Array  # (N, M, 3, 3)
     """Inertia matrix of the drone."""
     J_inv: Array  # (N, M, 3, 3)
@@ -161,37 +165,16 @@ class SimParams:
 
     @staticmethod
     def create(
-        n_worlds: int, n_drones: int, mass: float, J: Array, J_inv: Array, device: Device
+        n_worlds: int, n_drones: int, physics: Physics, drone_model: str, device: Device
     ) -> SimParams:
         """Create a default set of parameters for the simulation."""
-        mass = jnp.ones((n_worlds, n_drones, 1), device=device) * mass
-        j, j_inv = jnp.array(J, device=device), jnp.array(J_inv, device=device)
-        J = jnp.tile(j[None, None, :, :], (n_worlds, n_drones, 1, 1))
-        J_inv = jnp.tile(j_inv[None, None, :, :], (n_worlds, n_drones, 1, 1))
-        return SimParams(mass=mass, J=J, J_inv=J_inv)
-
-
-@dataclass
-class SimConstants:
-    L: Array  # ()
-    """Arm length of the drone."""
-    MIXING_MATRIX: Array  # (3, 4)
-    """Mixing matrix of the drone."""
-    KF: Array  # ()
-    """Force constant of the drone."""
-    KM: Array  # ()
-    """Torque constant of the drone."""
-
-    @staticmethod
-    def create(
-        L: float, mixing_matrix: Array, KF: float, KM: float, device: Device
-    ) -> SimConstants:
-        """Create a default set of constants for the simulation."""
-        L = jnp.array(L, device=device, dtype=jnp.float32)
-        mixing_matrix = jnp.array(mixing_matrix, device=device, dtype=jnp.float32)
-        KF = jnp.array(KF, device=device, dtype=jnp.float32)
-        KM = jnp.array(KM, device=device, dtype=jnp.float32)
-        return SimConstants(L=L, MIXING_MATRIX=mixing_matrix, KF=KF, KM=KM)
+        match physics:
+            case Physics.first_principles:
+                return FirstPrinciplesData.create(n_worlds, n_drones, drone_model, device)
+            case Physics.so_rpy:
+                return SoRpyData.create(n_worlds, n_drones, drone_model, device)
+            case _:
+                raise ValueError(f"Physics mode {physics} not implemented")
 
 
 @dataclass
@@ -246,7 +229,5 @@ class SimData:
     """Drone controller data."""
     params: SimParams
     """Drone parameters."""
-    constants: SimConstants
-    """Drone constants."""
     core: SimCore
     """Core parameters of the simulation."""

@@ -827,20 +827,13 @@ packages:
 - pypi: ./submodules/drone-models
   name: drone-models
   version: 0.0.1
-  sha256: f5fc8dc0114e6daacb5e20f9c5a68a14c5909d08ad1a8657c848c4469d2df39f
+  sha256: 4319ebe2bde11da52b6785f8ca4bd0c47497453bd3d78d40957c365819b9a2ab
   requires_dist:
   - numpy>=2.0.0
   - array-api-compat
   - scipy @ git+https://github.com/amacati/scipy.git@broadcasting
   - array-api-typing @ git+https://github.com/data-apis/array-api-typing
   - array-api-extra
-  - pytest>=8.0.0 ; extra == 'test'
-  - pytest-cov ; extra == 'test'
-  - pytest-timeout ; extra == 'test'
-  - jax ; extra == 'test'
-  - torch ; extra == 'test'
-  - casadi ; extra == 'test'
-  - array-api-strict ; extra == 'test'
   editable: true
 - pypi: https://files.pythonhosted.org/packages/87/62/9773de14fe6c45c23649e98b83231fffd7b9892b6cf863251dc2afa73643/einops-0.8.1-py3-none-any.whl
   name: einops

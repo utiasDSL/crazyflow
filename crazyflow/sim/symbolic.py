@@ -17,10 +17,9 @@ differentiation and optimization.
 
 import casadi as cs
 from casadi import MX
-from numpy.typing import NDArray
 
-from crazyflow.constants import ARM_LEN, GRAVITY, SIGN_MIX_MATRIX
-from crazyflow.control.control import KF, KM, Control
+from crazyflow.constants import GRAVITY
+from crazyflow.control.control import Control
 from crazyflow.sim import Sim
 
 

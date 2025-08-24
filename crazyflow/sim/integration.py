@@ -72,40 +72,54 @@ def rk4_average(k1: SimData, k2: SimData, k3: SimData, k4: SimData) -> SimData:
 def integrate(data: SimData, deriv: SimData, dt: float) -> SimData:
     """Integrate the dynamics forward in time."""
     states, states_deriv = data.states, deriv.states_deriv
+
     pos, quat, vel, ang_vel = states.pos, states.quat, states.vel, states.ang_vel
-    dpos, drot = states_deriv.dpos, states_deriv.drot
-    dvel, dang_vel = states_deriv.dvel, states_deriv.dang_vel
-    next_pos, next_quat, next_vel, next_ang_vel = _integrate(
-        pos, quat, vel, ang_vel, dpos, drot, dvel, dang_vel, dt
+    rotor_vel = states.rotor_vel
+    dpos, drot = states_deriv.vel, states_deriv.ang_vel
+    dvel, dang_vel, drotor_vel = states_deriv.acc, states_deriv.ang_acc, states_deriv.rotor_acc
+
+    next_pos, next_quat, next_vel, next_ang_vel, next_rotor_vel = _integrate(
+        pos, quat, vel, ang_vel, rotor_vel, dpos, drot, dvel, dang_vel, drotor_vel, dt
     )
-    return data.replace(
-        states=states.replace(pos=next_pos, quat=next_quat, vel=next_vel, ang_vel=next_ang_vel)
+    states = states.replace(
+        pos=next_pos, quat=next_quat, vel=next_vel, ang_vel=next_ang_vel, rotor_vel=next_rotor_vel
     )
+    return data.replace(states=states)
 
 
 def integrate_symplectic(data: SimData, deriv: SimData, dt: float) -> SimData:
     """Integrate the dynamics forward in time."""
     states, states_deriv = data.states, deriv.states_deriv
+
     pos, quat, vel, ang_vel = states.pos, states.quat, states.vel, states.ang_vel
-    dvel, dang_vel = states_deriv.dvel, states_deriv.dang_vel
-    next_pos, next_quat, next_vel, next_ang_vel = _integrate_symplectic(
-        pos, quat, vel, ang_vel, dvel, dang_vel, dt
+    rotor_vel = states.rotor_vel
+    dvel, dang_vel, drotor_vel = states_deriv.vel, states_deriv.ang_vel, states_deriv.rotor_acc
+
+    next_pos, next_quat, next_vel, next_ang_vel, next_rotor_vel = _integrate_symplectic(
+        pos, quat, vel, ang_vel, rotor_vel, dvel, dang_vel, drotor_vel, dt
     )
-    return data.replace(
-        states=states.replace(pos=next_pos, quat=next_quat, vel=next_vel, ang_vel=next_ang_vel)
+    states = states.replace(
+        pos=next_pos, quat=next_quat, vel=next_vel, ang_vel=next_ang_vel, rotor_vel=next_rotor_vel
     )
+    return data.replace(states=states)
 
 
-@partial(vectorize, signature="(3),(4),(3),(3),(3),(3),(3),(3)->(3),(4),(3),(3)", excluded=[8])
+@partial(
+    vectorize,
+    signature="(3),(4),(3),(3),(M),(3),(3),(3),(3),(M)->(3),(4),(3),(3),(M)",
+    excluded=[10],
+)
 def _integrate(
     pos: Array,
     quat: Array,
     vel: Array,
     ang_vel: Array,
+    rotor_vel: Array,
     dpos: Array,
     drot: Array,
     dvel: Array,
     dang_vel: Array,
+    drotor_vel: Array,
     dt: float,
 ) -> tuple[Array, Array, Array, Array]:
     """Integrate the dynamics forward in time.
@@ -115,10 +129,12 @@ def _integrate(
         quat: The orientation of the drone as a quaternion.
         vel: The velocity of the drone.
         ang_vel: The angular velocity of the drone.
+        rotor_vel: The rotor velocity of the drone.
         dpos: The derivative of the position of the drone.
         drot: The derivative of the quaternion of the drone (3D angular velocity).
         dvel: The derivative of the velocity of the drone.
         dang_vel: The derivative of the angular velocity of the drone.
+        drotor_vel: The derivative of the rotor velocity of the drone.
         dt: The time step to integrate over.
 
     Returns:
@@ -132,12 +148,21 @@ def _integrate(
     next_quat = (R.from_quat(quat) * R.from_rotvec(drot * dt)).as_quat()
     next_vel = vel + dvel * dt
     next_ang_vel = ang_vel + dang_vel * dt
-    return next_pos, next_quat, next_vel, next_ang_vel
+    next_rotor_vel = rotor_vel + drotor_vel * dt
+    return next_pos, next_quat, next_vel, next_ang_vel, next_rotor_vel
 
 
-@partial(vectorize, signature="(3),(4),(3),(3),(3),(3)->(3),(4),(3),(3)", excluded=[6])
+@partial(vectorize, signature="(3),(4),(3),(3),(M),(3),(3),(M)->(3),(4),(3),(3),(M)", excluded=[7])
 def _integrate_symplectic(
-    pos: Array, quat: Array, vel: Array, ang_vel: Array, dvel: Array, dang_vel: Array, dt: float
+    pos: Array,
+    quat: Array,
+    vel: Array,
+    ang_vel: Array,
+    rotor_vel: Array,
+    dvel: Array,
+    dang_vel: Array,
+    drotor_vel: Array,
+    dt: float,
 ) -> tuple[Array, Array, Array, Array]:
     """Integrate the dynamics forward in time using symplectic integration.
 
@@ -149,10 +174,12 @@ def _integrate_symplectic(
         quat: The orientation of the drone as a quaternion.
         vel: The velocity of the drone.
         ang_vel: The angular velocity of the drone.
+        rotor_vel: The rotor velocity of the drone.
         dpos: The derivative of the position of the drone.
         drot: The derivative of the quaternion of the drone (3D angular velocity).
         dvel: The derivative of the velocity of the drone.
         dang_vel: The derivative of the angular velocity of the drone.
+        drotor_vel: The derivative of the rotor velocity of the drone.
         dt: The time step to integrate over.
 
     Returns:
@@ -160,10 +187,11 @@ def _integrate_symplectic(
     """
     next_vel = vel + dvel * dt
     next_ang_vel = ang_vel + dang_vel * dt
+    next_rotor_vel = rotor_vel + drotor_vel * dt
     next_pos = pos + next_vel * dt
     # See comment in _integrate.
     next_ang_vel = jnp.where(
         jnp.abs(next_ang_vel) < jnp.finfo(pos.dtype).smallest_normal, 0, next_ang_vel
     )
     next_quat = (R.from_quat(quat) * R.from_rotvec(next_ang_vel * dt)).as_quat()
-    return next_pos, next_quat, next_vel, next_ang_vel
+    return next_pos, next_quat, next_vel, next_ang_vel, next_rotor_vel

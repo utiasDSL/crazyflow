@@ -1,4 +1,9 @@
+"""Unit tests for the simulation."""
+
+from __future__ import annotations
+
 import os
+from typing import TYPE_CHECKING
 
 import jax
 import jax.numpy as jnp
@@ -11,6 +16,9 @@ from crazyflow.exception import ConfigError
 from crazyflow.sim import Physics, Sim
 from crazyflow.sim.sim import sync_sim2mjx
 from crazyflow.sim.structs import ControlData
+
+if TYPE_CHECKING:
+    from typing import Any
 
 
 def skip_headless():
@@ -401,7 +409,7 @@ def test_data_committed(control: Control, device: str):
     # Check that the data is committed to the device we chose
     sim = Sim(physics=Physics.analytical, control=control, freq=500, device=device)
 
-    def assert_committed(obj0, path: str = "data"):
+    def assert_committed(obj0: Array | Any, path: str = "data"):
         if isinstance(obj0, jnp.ndarray):
             assert obj0.committed, f"{path} is not committed"
         elif hasattr(obj0, "__dict__"):  # Dataclass

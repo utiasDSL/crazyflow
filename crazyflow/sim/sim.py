@@ -13,31 +13,16 @@ from drone_controllers.mellinger import (
     force_torque2rotor_vel,
     state2attitude,
 )
-from drone_controllers.transform import rotor_vel2body_force, rotor_vel2body_torque
 from einops import rearrange
 from gymnasium.envs.mujoco.mujoco_rendering import MujocoRenderer
 from jax import Array, Device
 from jax.scipy.spatial.transform import Rotation as R
 
-from crazyflow.constants import ARM_LEN, J_INV, KF, KM, MASS, SIGN_MIX_MATRIX, J
 from crazyflow.control.control import Control, controllable
 from crazyflow.exception import ConfigError, NotInitializedError
 from crazyflow.sim.integration import Integrator, euler, rk4, symplectic_euler
-from crazyflow.sim.physics import (
-    Physics,
-    collective_force2acceleration,
-    collective_torque2ang_vel_deriv,
-    surrogate_identified_collective_wrench,
-)
-from crazyflow.sim.structs import (
-    SimConstants,
-    SimControls,
-    SimCore,
-    SimData,
-    SimParams,
-    SimState,
-    SimStateDeriv,
-)
+from crazyflow.sim.physics import Physics, first_principles_physics, so_rpy_physics
+from crazyflow.sim.structs import SimControls, SimCore, SimData, SimParams, SimState, SimStateDeriv
 from crazyflow.utils import grid_2d, leaf_replace, pytree_replace, to_device
 
 if TYPE_CHECKING:
@@ -88,10 +73,10 @@ class Sim:
     ):
         assert Physics(physics) in Physics, f"Physics mode {physics} not implemented"
         assert Control(control) in Control, f"Control mode {control} not implemented"
-        if physics != Physics.analytical and control == Control.force_torque:
-            raise ConfigError("Force-torque control is only supported with analytical physics")
+        if physics != Physics.first_principles and control == Control.force_torque:
+            raise ConfigError("Force-torque control requires first principles physics")
         if freq > 10_000 and not jax.config.jax_enable_x64:
-            raise ConfigError("Double precision mode is required for high frequency simulations")
+            raise ConfigError("High frequency simulations require double precision mode")
         self.physics = physics
         self.control = control
         self.drone_model = drone_model
@@ -119,8 +104,9 @@ class Sim:
         # functions. They act as factories that produce building blocks for the construction of our
         # simulation pipeline.
         self.step_pipeline += (select_control_fn(self.control),)
-        self.step_pipeline += (select_physics_fn(self.physics),)
-        self.step_pipeline += (select_integrate_fn(self.physics, self.integrator),)
+        physics_fn = select_physics_fn(self.physics)
+        self.step_pipeline += (select_integrate_fn(self.integrator, physics_fn),)
+        self.step_pipeline += (increment_steps,)
         # We never drop below -0.001 (drones can't pass through the floor). We use -0.001 to
         # enable checks for negative z sign
         self.step_pipeline += (clip_floor_pos,)
@@ -334,8 +320,7 @@ class Sim:
                 force_torque_freq,
                 self.device,
             ),
-            params=SimParams.create(N, D, MASS, J, J_INV, self.device),
-            constants=SimConstants.create(ARM_LEN / 2**0.5, SIGN_MIX_MATRIX, KF, KM, self.device),
+            params=SimParams.create(N, D, self.physics, self.drone_model, self.device),
             core=SimCore.create(self.freq, N, D, drone_ids, rng_key, self.device),
         )
         if D > 1:  # If multiple drones, arrange them in a grid
@@ -410,8 +395,11 @@ def select_control_fn(control: Control) -> Callable[[SimData], SimData]:
     """Select the control function for the given control mode."""
     match control:
         case Control.state:
-            # TODO: Add force torque control step
-            return lambda data: step_attitude_controller(step_state_controller(data))
+            # TODO: Depending on the physics mode, we can skip the force torque controller. Running
+            # it does not produce incorrect results, but is unnecessary.
+            return lambda data: step_force_torque_controller(
+                step_attitude_controller(step_state_controller(data))
+            )
         case Control.attitude:
             return lambda data: step_force_torque_controller(step_attitude_controller(data))
         case Control.force_torque:
@@ -423,26 +411,17 @@ def select_control_fn(control: Control) -> Callable[[SimData], SimData]:
 def select_physics_fn(physics: Physics) -> Callable[[SimData], SimData]:
     """Select the physics function for the given physics mode."""
     match physics:
-        case Physics.analytical:
-            return first_principle_physics
-        case Physics.sys_id:
-            return identified_physics
+        case Physics.first_principles:
+            return first_principles_physics
+        case Physics.so_rpy:
+            return so_rpy_physics
         case _:
             raise NotImplementedError(f"Physics mode {physics} not implemented")
 
 
-def select_derivative_fn(physics: Physics) -> Callable[[SimData], SimData]:
-    """Select the derivative function for the given physics mode."""
-    match physics:
-        case Physics.analytical:
-            return analytical_derivative
-        case Physics.sys_id:
-            return identified_derivative
-        case _:
-            raise NotImplementedError(f"Physics mode {physics} not implemented")
-
-
-def select_integrate_fn(physics: Physics, integrator: Integrator) -> Callable[[SimData], SimData]:
+def select_integrate_fn(
+    integrator: Integrator, physics_fn: Callable[[SimData], SimData]
+) -> Callable[[SimData], SimData]:
     """Select the integration function for the given physics and integrator mode."""
     match integrator:
         case Integrator.euler:
@@ -454,13 +433,12 @@ def select_integrate_fn(physics: Physics, integrator: Integrator) -> Callable[[S
         case _:
             raise NotImplementedError(f"Integrator {integrator} not implemented")
 
-    derivative_fn = select_derivative_fn(physics)
+    return partial(integrate_fn, deriv_fn=physics_fn)
 
-    def integrate(data: SimData) -> SimData:
-        data = integrate_fn(data, derivative_fn)
-        return data.replace(core=data.core.replace(steps=data.core.steps + 1))
 
-    return integrate
+def increment_steps(data: SimData) -> SimData:
+    """Increment the simulation steps."""
+    return data.replace(core=data.core.replace(steps=data.core.steps + 1))
 
 
 @jax.jit
@@ -537,11 +515,6 @@ def step_attitude_controller(data: SimData) -> SimData:
     ft_ctrl = leaf_replace(
         data.controls.force_torque, mask, staged_cmd=jnp.concat([force, torque], axis=-1)
     )
-    # TODO: Remove. Set the force and torque directly into the physics step.
-    r = R.from_quat(states.quat)
-    torque = r.apply(torque)
-    force = r.apply(jnp.zeros_like(torque).at[..., 2].set(force[..., 0]))
-    states = leaf_replace(states, mask, force=force, torque=torque)
     return data.replace(
         states=states, controls=data.controls.replace(attitude=attitude_ctrl, force_torque=ft_ctrl)
     )
@@ -557,53 +530,15 @@ def step_force_torque_controller(data: SimData) -> SimData:
         ft_ctrl.cmd[..., [0]], ft_ctrl.cmd[..., 1:], **ft_ctrl.params._asdict()
     )
     ft_ctrl = leaf_replace(ft_ctrl, mask, steps=data.core.steps)
-    data = data.replace(controls=data.controls.replace(rotor_vel=rotor_vel, force_torque=ft_ctrl))
+    # TODO: Enable
+    # data = data.replace(controls=data.controls.replace(rotor_vel=rotor_vel, force_torque=ft_ctrl))
+    # return data
     # TODO: Remove
     r = R.from_quat(data.states.quat)
     cmd_force = jnp.zeros_like(ft_ctrl.cmd[..., 1:])
     cmd_force = cmd_force.at[..., 2].set(ft_ctrl.cmd[..., 0])
     force, torque = r.apply(cmd_force), r.apply(ft_ctrl.cmd[..., 1:])
     return data.replace(states=data.states.replace(force=force, torque=torque))
-
-
-def first_principle_physics(data: SimData) -> SimData:
-    """Compute the wrench from the analytical dynamics model."""
-    return data
-    data = data.replace(states=data.states.replace(rotor_vel=data.controls.rotor_vel))
-    body_force = rotor_vel2body_force(data.states.rotor_vel, data.constants.KF)
-    body_torque = rotor_vel2body_torque(
-        data.states.rotor_vel,
-        data.constants.KF,
-        data.constants.KM,
-        data.constants.L,
-        data.constants.MIXING_MATRIX,
-    )
-    r = R.from_quat(data.states.quat)
-    force, torque = r.apply(body_force), r.apply(body_torque)
-    return data.replace(states=data.states.replace(force=force, torque=torque))
-
-
-def analytical_derivative(data: SimData) -> SimData:
-    """Compute the derivative of the states."""
-    quat, mass, J_inv = data.states.quat, data.params.mass, data.params.J_inv
-    vel, ang_vel = data.states.vel, data.states.ang_vel  # Already given in the states
-    acc = collective_force2acceleration(data.states.force, mass)
-    ang_vel_deriv = collective_torque2ang_vel_deriv(data.states.torque, quat, J_inv)
-    deriv = data.states_deriv.replace(dpos=vel, drot=ang_vel, dvel=acc, dang_vel=ang_vel_deriv)
-    return data.replace(states_deriv=deriv)
-
-
-def identified_physics(data: SimData) -> SimData:
-    """Compute the wrench from the identified dynamics model."""
-    states = data.states
-    mass, J = data.params.mass, data.params.J
-    force, torque = surrogate_identified_collective_wrench(
-        data.controls.attitude.cmd, states.quat, states.ang_vel, mass, J, 1 / data.core.freq
-    )
-    return data.replace(states=data.states.replace(force=force, torque=torque))
-
-
-identified_derivative = analytical_derivative  # We can use the same derivative function for both
 
 
 def clip_floor_pos(data: SimData) -> SimData:

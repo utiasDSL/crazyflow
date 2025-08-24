@@ -26,7 +26,7 @@ class ReachPosEnv(DroneEnv):
         vel_max: float = 1.0,
         num_envs: int = 1,
         max_episode_time: float = 10.0,
-        physics: Literal["sys_id", "analytical"] | Physics = Physics.sys_id,
+        physics: Literal["so_rpy", "first_principles"] | Physics = Physics.so_rpy,
         freq: int = 500,
         device: str = "cpu",
     ):
