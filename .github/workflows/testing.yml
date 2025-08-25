@@ -2,19 +2,23 @@ name: Testing
 on: [push, pull_request]
 
 jobs:
-  test:
+  tests:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install submodules
+        run: |
+          git submodule update --init --recursive
+
       - name: Setup Pixi (installs pixi + caches envs) # https://github.com/marketplace/actions/setup-pixi
         uses: prefix-dev/setup-pixi@v0.9.0            # pin the action version
         with:
-          pixi-version: v0.49.0                       # pin the pixi binary version (optional)
+          pixi-version: v0.53.0                       # pin the pixi binary version (optional)
           cache: true                                 # enable caching of installed envs
           # only write new caches on main pushes (TODO: Enable)
           # cache-write: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
-          # ensure the 'test' environment(s) are installed
+          # ensure the 'tests' environment(s) are installed
           environments: tests
           # don't activate env (we'll call pixi run -e test explicitly)
           activate-environment: false
