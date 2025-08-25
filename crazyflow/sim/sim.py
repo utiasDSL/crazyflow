@@ -20,9 +20,15 @@ from jax.scipy.spatial.transform import Rotation as R
 
 from crazyflow.control.control import Control, controllable
 from crazyflow.exception import ConfigError, NotInitializedError
+from crazyflow.sim.data import SimControls, SimCore, SimData, SimParams, SimState, SimStateDeriv
 from crazyflow.sim.integration import Integrator, euler, rk4, symplectic_euler
-from crazyflow.sim.physics import Physics, first_principles_physics, so_rpy_physics
-from crazyflow.sim.structs import SimControls, SimCore, SimData, SimParams, SimState, SimStateDeriv
+from crazyflow.sim.physics import (
+    Physics,
+    first_principles_physics,
+    so_rpy_physics,
+    so_rpy_rotor_drag_physics,
+    so_rpy_rotor_physics,
+)
 from crazyflow.utils import grid_2d, leaf_replace, pytree_replace, to_device
 
 if TYPE_CHECKING:
@@ -399,9 +405,12 @@ def build_control_fn(control: Control, physics: Physics) -> Callable[[SimData], 
             if physics == Physics.first_principles:
                 control_pipeline = (step_force_torque_controller,) + control_pipeline
         case Control.attitude:
-            control_pipeline = (step_attitude_controller,)
             if physics == Physics.first_principles:
-                control_pipeline = (step_force_torque_controller,) + control_pipeline
+                control_pipeline = (step_force_torque_controller, step_attitude_controller)
+            elif physics in (Physics.so_rpy, Physics.so_rpy_rotor, Physics.so_rpy_rotor_drag):
+                control_pipeline = (commit_attitude_controller,)
+            else:
+                raise NotImplementedError(f"Control mode {control} not implemented for {physics}")
         case Control.force_torque:
             control_pipeline = (step_force_torque_controller,)
         case _:
@@ -422,6 +431,10 @@ def select_physics_fn(physics: Physics) -> Callable[[SimData], SimData]:
             return first_principles_physics
         case Physics.so_rpy:
             return so_rpy_physics
+        case Physics.so_rpy_rotor:
+            return so_rpy_rotor_physics
+        case Physics.so_rpy_rotor_drag:
+            return so_rpy_rotor_drag_physics
         case _:
             raise NotImplementedError(f"Physics mode {physics} not implemented")
 
@@ -525,6 +538,14 @@ def step_attitude_controller(data: SimData) -> SimData:
     return data.replace(
         states=states, controls=data.controls.replace(attitude=attitude_ctrl, force_torque=ft_ctrl)
     )
+
+
+def commit_attitude_controller(data: SimData) -> SimData:
+    """Commit the staged attitude command to the controller setpoint."""
+    attitude_ctrl: MellingerAttitudeData = data.controls.attitude
+    mask = controllable(data.core.steps, data.core.freq, attitude_ctrl.steps, attitude_ctrl.freq)
+    attitude_ctrl = leaf_replace(attitude_ctrl, mask, cmd=attitude_ctrl.staged_cmd)
+    return data.replace(controls=data.controls.replace(attitude=attitude_ctrl))
 
 
 def step_force_torque_controller(data: SimData) -> SimData:

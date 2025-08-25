@@ -3,7 +3,7 @@ import numpy as np
 import pytest
 
 from crazyflow.sim import Physics, Sim
-from crazyflow.sim.structs import SimData
+from crazyflow.sim.data import SimData
 
 
 def disturbance_fn(data: SimData) -> SimData:

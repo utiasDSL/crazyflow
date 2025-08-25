@@ -6,8 +6,8 @@ from drone_models import parametrize
 from drone_models.first_principles import symbolic_dynamics as first_principles_symbolic_dynamics
 from drone_models.so_rpy import symbolic_dynamics as so_rpy_symbolic_dynamics
 
+from crazyflow.sim.data import Control
 from crazyflow.sim.physics import Physics
-from crazyflow.sim.structs import Control
 
 if TYPE_CHECKING:
     import casadi as cs

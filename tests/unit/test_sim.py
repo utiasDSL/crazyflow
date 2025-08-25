@@ -14,8 +14,8 @@ from jax import Array
 from crazyflow.control import Control
 from crazyflow.exception import ConfigError
 from crazyflow.sim import Physics, Sim
+from crazyflow.sim.data import ControlData
 from crazyflow.sim.sim import sync_sim2mjx
-from crazyflow.sim.structs import ControlData
 
 if TYPE_CHECKING:
     from typing import Any

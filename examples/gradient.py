@@ -6,7 +6,7 @@ from numpy.typing import NDArray
 
 from crazyflow.control import Control
 from crazyflow.sim import Physics, Sim
-from crazyflow.sim.structs import SimData
+from crazyflow.sim.data import SimData
 
 
 def main():
@@ -17,9 +17,8 @@ def main():
         data = data.replace(
             controls=data.controls.replace(attitude=data.controls.attitude.replace(staged_cmd=cmd))
         )
-        data = sim_step(data, sim.freq // sim.control_freq)
-        # Quadratic cost to reach 1m height
-        return (data.states.pos[0, 0, 2] - 1.0) ** 2
+        data = sim_step(data, 10)
+        return (data.states.pos[0, 0, 2] - 1.0) ** 2  # Quadratic cost to reach 1m height
 
     step_grad = jax.jit(jax.grad(step))
 

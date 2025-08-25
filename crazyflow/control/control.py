@@ -59,15 +59,3 @@ def controllable(step: Array, freq: int, control_steps: Array, control_freq: int
         updated.
     """
     return ((step - control_steps) >= (freq / control_freq)) | (control_steps == -1)
-
-
-# TODO: Remove these constants
-KF: float = 3.16e-10
-PWM2RPM_SCALE: float = 0.2685
-PWM2RPM_CONST: float = 4070.3
-MIN_PWM: float = 20000
-MAX_PWM: float = 65535
-MIN_RPM: float = PWM2RPM_SCALE * MIN_PWM + PWM2RPM_CONST
-MAX_RPM: float = PWM2RPM_SCALE * MAX_PWM + PWM2RPM_CONST
-MIN_THRUST: float = KF * MIN_RPM**2
-MAX_THRUST: float = KF * MAX_RPM**2

@@ -8,8 +8,8 @@ from gymnasium.vector.utils import batch_space
 from jax import Array
 
 from crazyflow.envs.drone_env import DroneEnv
+from crazyflow.sim.data import SimData
 from crazyflow.sim.physics import Physics
-from crazyflow.sim.structs import SimData
 from crazyflow.sim.visualize import draw_line, draw_points
 from crazyflow.utils import leaf_replace
 

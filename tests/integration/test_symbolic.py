@@ -4,8 +4,8 @@ import pytest
 from numpy.typing import NDArray
 
 from crazyflow.sim import Sim
+from crazyflow.sim.data import SimState
 from crazyflow.sim.physics import Physics
-from crazyflow.sim.structs import SimState
 from crazyflow.sim.symbolic import symbolic_from_sim
 
 

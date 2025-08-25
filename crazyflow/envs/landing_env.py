@@ -9,8 +9,8 @@ from gymnasium.vector.utils import batch_space
 from jax import Array
 
 from crazyflow.envs.drone_env import DroneEnv
+from crazyflow.sim.data import SimState
 from crazyflow.sim.physics import Physics
-from crazyflow.sim.structs import SimState
 
 
 class LandingEnv(DroneEnv):

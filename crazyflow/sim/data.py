@@ -13,7 +13,13 @@ from crazyflow.control.mellinger import (
     MellingerForceTorqueData,
     MellingerStateData,
 )
-from crazyflow.sim.physics import FirstPrinciplesData, Physics, SoRpyData
+from crazyflow.sim.physics import (
+    FirstPrinciplesData,
+    Physics,
+    SoRpyData,
+    SoRpyRotorData,
+    SoRpyRotorDragData,
+)
 
 
 @dataclass
@@ -173,6 +179,10 @@ class SimParams(typing.Protocol):
                 return FirstPrinciplesData.create(n_worlds, n_drones, drone_model, device)
             case Physics.so_rpy:
                 return SoRpyData.create(n_worlds, n_drones, drone_model, device)
+            case Physics.so_rpy_rotor:
+                return SoRpyRotorData.create(n_worlds, n_drones, drone_model, device)
+            case Physics.so_rpy_rotor_drag:
+                return SoRpyRotorDragData.create(n_worlds, n_drones, drone_model, device)
             case _:
                 raise ValueError(f"Physics mode {physics} not implemented")
 

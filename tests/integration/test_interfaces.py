@@ -53,13 +53,11 @@ def test_attitude_interface(physics: Physics):
         rpyt, i_error = jit_state2attitude(pos, quat, vel, None, cmd, (i_error,), ctrl_freq=100)
         sim.attitude_control(rpyt)
         sim.step(sim.freq // sim.control_freq)
-        if np.linalg.norm(sim.data.states.pos[0, 0] - target_pos) < 0.1:
-            break
 
     # Check if drone maintained hover position
     dpos = sim.data.states.pos[0, 0] - target_pos
     distance = np.linalg.norm(dpos)
-    assert distance < 0.1, f"Failed to maintain hover with {physics} ({dpos})"
+    assert distance < 0.025, f"Failed to maintain hover with {physics} ({dpos})"
 
 
 @pytest.mark.integration

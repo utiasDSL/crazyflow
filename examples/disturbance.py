@@ -3,7 +3,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from crazyflow.sim import Sim
-from crazyflow.sim.structs import SimData
+from crazyflow.sim.data import SimData
 
 
 def disturbance_fn(data: SimData) -> SimData:

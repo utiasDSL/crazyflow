@@ -8,7 +8,7 @@ from jax import Array
 from jax.numpy import vectorize
 from jax.scipy.spatial.transform import Rotation as R
 
-from crazyflow.sim.structs import SimData
+from crazyflow.sim.data import SimData
 
 
 class Integrator(str, Enum):
