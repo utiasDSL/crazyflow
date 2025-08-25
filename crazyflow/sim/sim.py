@@ -103,7 +103,7 @@ class Sim:
         # The ``select_xxx_fn`` methods return functions, not the results of calling those
         # functions. They act as factories that produce building blocks for the construction of our
         # simulation pipeline.
-        self.step_pipeline += (select_control_fn(self.control),)
+        self.step_pipeline += (build_control_fn(self.control, self.physics),)
         physics_fn = select_physics_fn(self.physics)
         self.step_pipeline += (select_integrate_fn(self.integrator, physics_fn),)
         self.step_pipeline += (increment_steps,)
@@ -391,21 +391,28 @@ class Sim:
         raise NotInitializedError("_step call before building the simulation pipeline.")
 
 
-def select_control_fn(control: Control) -> Callable[[SimData], SimData]:
+def build_control_fn(control: Control, physics: Physics) -> Callable[[SimData], SimData]:
     """Select the control function for the given control mode."""
     match control:
         case Control.state:
-            # TODO: Depending on the physics mode, we can skip the force torque controller. Running
-            # it does not produce incorrect results, but is unnecessary.
-            return lambda data: step_force_torque_controller(
-                step_attitude_controller(step_state_controller(data))
-            )
+            control_pipeline = (step_attitude_controller, step_state_controller)
+            if physics == Physics.first_principles:
+                control_pipeline = (step_force_torque_controller,) + control_pipeline
         case Control.attitude:
-            return lambda data: step_force_torque_controller(step_attitude_controller(data))
+            control_pipeline = (step_attitude_controller,)
+            if physics == Physics.first_principles:
+                control_pipeline = (step_force_torque_controller,) + control_pipeline
         case Control.force_torque:
-            return step_force_torque_controller
+            control_pipeline = (step_force_torque_controller,)
         case _:
             raise NotImplementedError(f"Control mode {control} not implemented")
+
+    def control(data: SimData) -> SimData:
+        for fn in control_pipeline:
+            data = fn(data)
+        return data
+
+    return control
 
 
 def select_physics_fn(physics: Physics) -> Callable[[SimData], SimData]:
@@ -526,7 +533,7 @@ def step_force_torque_controller(data: SimData) -> SimData:
     assert ft_ctrl is not None, "Using force torque controller without initialized data"
     mask = controllable(data.core.steps, data.core.freq, ft_ctrl.steps, ft_ctrl.freq)
     ft_ctrl = leaf_replace(ft_ctrl, mask, cmd=ft_ctrl.staged_cmd)
-    rotor_vel = force_torque2rotor_vel(
+    _ = force_torque2rotor_vel(
         ft_ctrl.cmd[..., [0]], ft_ctrl.cmd[..., 1:], **ft_ctrl.params._asdict()
     )
     ft_ctrl = leaf_replace(ft_ctrl, mask, steps=data.core.steps)

@@ -5,12 +5,12 @@ import jax.numpy as jnp
 from numpy.typing import NDArray
 
 from crazyflow.control import Control
-from crazyflow.sim import Sim
+from crazyflow.sim import Physics, Sim
 from crazyflow.sim.structs import SimData
 
 
 def main():
-    sim = Sim(control=Control.attitude, physics="analytical", attitude_freq=50)
+    sim = Sim(control=Control.attitude, physics=Physics.first_principles, attitude_freq=50)
     sim_step = sim._step
 
     def step(cmd: NDArray, data: SimData) -> jax.Array:

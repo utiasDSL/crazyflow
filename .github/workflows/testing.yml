@@ -15,7 +15,7 @@ jobs:
           # only write new caches on main pushes (TODO: Enable)
           # cache-write: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
           # ensure the 'test' environment(s) are installed
-          environments: test
+          environments: tests
           # don't activate env (we'll call pixi run -e test explicitly)
           activate-environment: false
           # prefer using existing lockfile if present (faster, deterministic)
