@@ -1,6 +1,6 @@
+import jax
 import numpy as np
 
-from crazyflow.constants import MASS, J
 from crazyflow.control import Control
 from crazyflow.randomize import randomize_inertia, randomize_mass
 from crazyflow.sim import Sim
@@ -16,14 +16,15 @@ def main():
 
     # Randomize the inertia and mass of the drones
     mask = np.array([True, False, False])  # Only randomize the first world
-    mass = np.ones((sim.n_worlds, sim.n_drones)) * MASS
-    randomized_j = J + np.random.uniform(-1.5e-5, 1.5e-5, size=(sim.n_worlds, sim.n_drones, 3, 3))
-    randomized_mass = mass + np.random.uniform(-0.005, 0.005, size=(sim.n_worlds, sim.n_drones))
+    mass = sim.data.params.mass
+    mass_rng = mass + jax.random.normal(jax.random.key(0), (sim.n_worlds, sim.n_drones, 1)) * 1e-4
+    J = sim.data.params.J
+    J_rng = J + jax.random.normal(jax.random.key(0), (sim.n_worlds, sim.n_drones, 3, 3)) * 1e-5
 
-    randomize_mass(sim, randomized_mass, mask)
+    randomize_mass(sim, mass_rng, mask)
     # Note: The mask is optional. We can also randomize all worlds at once
-    randomize_mass(sim, randomized_mass)
-    randomize_inertia(sim, randomized_j, mask)
+    randomize_mass(sim, mass_rng)
+    randomize_inertia(sim, J_rng, mask)
 
     cmd = np.zeros((sim.n_worlds, sim.n_drones, 13))
     cmd[..., 2] = 0.4

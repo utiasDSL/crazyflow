@@ -19,8 +19,6 @@ def randomize_mass(sim: Sim, mass: Array, mask: Array | None = None):
     Warning:
         This currently only works for analytical dynamics.
     """
-    # TODO: Domain randomization when using MuJoCo as dynamics engine
-    # TODO: Parameters randomization for sys_id model
     sim.data = _randomize_mass_params(sim.data, mass, mask)
 
 
