@@ -71,6 +71,8 @@ def draw_points(sim: Sim, points: NDArray, rgba: NDArray | None = None, size: fl
 
 def _rotation_matrix_from_points(p1: NDArray, p2: NDArray) -> R:
     """Generate rotation matrices that align their z-axis to p2-p1."""
+    p1, p2 = p1.copy(), p2.copy()  # Make sure we don't modify the original arrays
+    p2[np.linalg.norm(p2 - p1, axis=-1) < 1e-6] += 1e-6
     z_axis = (v := p2 - p1) / np.linalg.norm(v, axis=-1, keepdims=True)
     random_vector = np.random.rand(*z_axis.shape)
     x_axis = (v := np.cross(random_vector, z_axis)) / np.linalg.norm(v, axis=-1, keepdims=True)

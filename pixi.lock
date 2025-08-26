@@ -623,7 +623,7 @@ packages:
 - pypi: ./
   name: crazyflow
   version: 0.0.2
-  sha256: 0d100752e1efd754bd2441a44d19c7c8b8868cbe91d88494bcc2443d05c1fca9
+  sha256: 2ab49751cf83c8c014a8e1d192df61aa080769a93f9c6f432ea906e956e4a701
   requires_dist:
   - jax>=0.7.0
   - mujoco>=3.3.0
