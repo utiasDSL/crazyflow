@@ -1011,7 +1011,7 @@ packages:
 - pypi: ./
   name: crazyflow
   version: 0.0.2
-  sha256: b0ed917e1eb92718269a853d57f0e82dfb98879b568a543bfd62edf2d7c97c17
+  sha256: 6a249a5ca37c6c0280afdd5a1d05ac94b19b39e8b8cabbb713e02cd57bdf02cb
   requires_dist:
   - jax>=0.7.0
   - mujoco>=3.3.0
@@ -1028,7 +1028,7 @@ packages:
   - fire ; extra == 'benchmark'
   - matplotlib ; extra == 'benchmark'
   - pandas ; extra == 'benchmark'
-  requires_python: '>=3.10'
+  requires_python: '>=3.11'
   editable: true
 - conda: https://conda.anaconda.org/conda-forge/linux-64/cxx-compiler-1.0.0-hf484d3e_0.tar.bz2
   sha256: 72a84140fccc64e7941aa19affb86d49734c1f2729f13dedeadd588e4a0a68b4
@@ -1057,7 +1057,7 @@ packages:
 - pypi: ./submodules/drone-controllers
   name: drone-controllers
   version: 0.0.1
-  sha256: ea3128a9c73f9f92ed5b2f7abb6dc56a34d3bc9e630551574143759b8f79e89c
+  sha256: 5017f2d5da1f52ca3308b5506710a55ef07a77637b951f39aff22c02e876b39a
   requires_dist:
   - numpy>=2.0.0
   - array-api-compat
@@ -1068,7 +1068,7 @@ packages:
 - pypi: ./submodules/drone-models
   name: drone-models
   version: 0.0.1
-  sha256: 4319ebe2bde11da52b6785f8ca4bd0c47497453bd3d78d40957c365819b9a2ab
+  sha256: 05a4d3302ec766c4639b7803e1a254df8e8fa6db87bd729e5ae9639d3861bb9c
   requires_dist:
   - numpy>=2.0.0
   - array-api-compat
