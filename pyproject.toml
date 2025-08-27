@@ -31,7 +31,7 @@ dependencies = [
     "scipy @ git+https://github.com/amacati/scipy.git@broadcasting",  # TODO: Replace with scipy 1.17 once released
     # "drone-models @ git+https://github.com/utiasDSL/drone-models.git@08ffb18",
 ]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 
 [project.optional-dependencies]
 gpu = ["jax[cuda12]"]
@@ -124,12 +124,29 @@ pytest-timeout = ">=2.1.0"
 [tool.pixi.feature.tests.tasks]
 tests = { cmd = "pytest -v tests", description = "Run tests" }
 
+[tool.pixi.feature.docs.dependencies]
+mkdocs = ">=1.5.0"
+mkdocs-material = ">=9.0.0"
+python = ">=3.10"
+
+[tool.pixi.feature.docs.pypi-dependencies]
+mkdocs-autorefs = ">=1.2.0"
+mkdocstrings = { extras = ["python"], version = ">=0.26.0" }
+mkdocs-gen-files = ">=0.5.0"
+mkdocs-literate-nav = ">=0.6.0"
+mkdocs-section-index = ">=0.3.0"
+
+[tool.pixi.feature.docs.tasks]
+docs-serve = { cmd = "mkdocs serve", description = "Serve docs locally" }
+docs-build = { cmd = "mkdocs build", description = "Build docs" }
+
 [tool.pixi.environments]
 default = { solve-group = "default" }
 benchmark = { features = ["benchmark", "gpu"], solve-group = "default" }
 gpu = { features = ["gpu"], solve-group = "default" }
 tests = { features = ["tests"], solve-group = "default" }
 gpu-tests = { features = ["tests", "gpu"], solve-group = "default" }
+docs = { features = ["docs"], solve-group = "default" }
 
 [tool.pixi.dependencies]  
 # TODO: Remove compilers once scipy 1.17 is released and drone-models have been updated.
