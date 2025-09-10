@@ -183,8 +183,8 @@ class Sim:
         mode: str | None = "human",
         world: int = 0,
         default_cam_config: dict | None = None,
-        width: int = 640,
-        height: int = 480,
+        width: int = 1920,
+        height: int = 1080,
     ) -> NDArray | None:
         if self.viewer is None:
             self.mj_model.vis.global_.offwidth = width
@@ -401,12 +401,12 @@ def build_control_fn(control: Control, physics: Physics) -> Callable[[SimData], 
     """Select the control function for the given control mode."""
     match control:
         case Control.state:
-            control_pipeline = (step_attitude_controller, step_state_controller)
+            control_pipeline = (step_state_controller, step_attitude_controller)
             if physics == Physics.first_principles:
-                control_pipeline = (step_force_torque_controller,) + control_pipeline
+                control_pipeline = control_pipeline + (step_force_torque_controller,)
         case Control.attitude:
             if physics == Physics.first_principles:
-                control_pipeline = (step_force_torque_controller, step_attitude_controller)
+                control_pipeline = (step_attitude_controller, step_force_torque_controller)
             elif physics in (Physics.so_rpy, Physics.so_rpy_rotor, Physics.so_rpy_rotor_drag):
                 control_pipeline = (commit_attitude_controller,)
             else:
@@ -554,19 +554,11 @@ def step_force_torque_controller(data: SimData) -> SimData:
     assert ft_ctrl is not None, "Using force torque controller without initialized data"
     mask = controllable(data.core.steps, data.core.freq, ft_ctrl.steps, ft_ctrl.freq)
     ft_ctrl = leaf_replace(ft_ctrl, mask, cmd=ft_ctrl.staged_cmd)
-    _ = force_torque2rotor_vel(
+    rotor_vel = force_torque2rotor_vel(
         ft_ctrl.cmd[..., [0]], ft_ctrl.cmd[..., 1:], **ft_ctrl.params._asdict()
     )
     ft_ctrl = leaf_replace(ft_ctrl, mask, steps=data.core.steps)
-    # TODO: Enable
-    # data = data.replace(controls=data.controls.replace(rotor_vel=rotor_vel, force_torque=ft_ctrl))
-    # return data
-    # TODO: Remove
-    r = R.from_quat(data.states.quat)
-    cmd_force = jnp.zeros_like(ft_ctrl.cmd[..., 1:])
-    cmd_force = cmd_force.at[..., 2].set(ft_ctrl.cmd[..., 0])
-    force, torque = r.apply(cmd_force), r.apply(ft_ctrl.cmd[..., 1:])
-    return data.replace(states=data.states.replace(force=force, torque=torque))
+    return data.replace(controls=data.controls.replace(rotor_vel=rotor_vel, force_torque=ft_ctrl))
 
 
 def clip_floor_pos(data: SimData) -> SimData:

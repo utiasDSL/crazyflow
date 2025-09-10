@@ -28,7 +28,7 @@ dependencies = [
     "ml_collections",
     "casadi",
     "numpy",
-    "scipy @ git+https://github.com/amacati/scipy.git@broadcasting",  # TODO: Replace with scipy 1.17 once released
+    "scipy @ git+https://github.com/scipy/scipy.git@4cb83b6",  # TODO: Replace with scipy 1.17 once released
     # "drone-models @ git+https://github.com/utiasDSL/drone-models.git@08ffb18",
 ]
 requires-python = ">=3.11"
