@@ -109,7 +109,7 @@ class Sim:
         # The ``select_xxx_fn`` methods return functions, not the results of calling those
         # functions. They act as factories that produce building blocks for the construction of our
         # simulation pipeline.
-        self.step_pipeline += (build_control_fn(self.control, self.physics),)
+        self.step_pipeline += build_control_fns(self.control, self.physics)
         physics_fn = select_physics_fn(self.physics)
         self.step_pipeline += (select_integrate_fn(self.integrator, physics_fn),)
         self.step_pipeline += (increment_steps,)
@@ -397,8 +397,15 @@ class Sim:
         raise NotInitializedError("_step call before building the simulation pipeline.")
 
 
-def build_control_fn(control: Control, physics: Physics) -> Callable[[SimData], SimData]:
-    """Select the control function for the given control mode."""
+def build_control_fns(
+    control: Control, physics: Physics
+) -> tuple[Callable[[SimData], SimData], ...]:
+    """Select the control functions for the given control mode.
+
+    Note:
+        This function returns a tuple of functions, not a single function. The returned functions
+        are called in succession in the simulation pipeline.
+    """
     match control:
         case Control.state:
             control_pipeline = (step_state_controller, step_attitude_controller)
@@ -416,12 +423,7 @@ def build_control_fn(control: Control, physics: Physics) -> Callable[[SimData], 
         case _:
             raise NotImplementedError(f"Control mode {control} not implemented")
 
-    def control(data: SimData) -> SimData:
-        for fn in control_pipeline:
-            data = fn(data)
-        return data
-
-    return control
+    return control_pipeline
 
 
 def select_physics_fn(physics: Physics) -> Callable[[SimData], SimData]:
