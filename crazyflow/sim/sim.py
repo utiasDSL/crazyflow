@@ -16,7 +16,6 @@ from drone_controllers.mellinger import (
 from einops import rearrange
 from gymnasium.envs.mujoco.mujoco_rendering import MujocoRenderer
 from jax import Array, Device
-from jax.scipy.spatial.transform import Rotation as R
 
 from crazyflow.control.control import Control, controllable
 from crazyflow.exception import ConfigError, NotInitializedError

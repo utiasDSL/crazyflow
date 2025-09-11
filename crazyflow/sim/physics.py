@@ -263,7 +263,7 @@ class SoRpyRotorDragData:
     """Force constant of the drone."""
     KM: Array  # (N, M, 1)
     """Torque constant of the drone."""
-    rotor_coef: Array  # (N, M, 1)
+    thrust_time_coef: Array  # (N, M, 1)
     """Rotor coefficient of the drone."""
     acc_coef: Array  # (N, M, 1)
     """Acceleration coefficient of the drone."""
@@ -277,8 +277,8 @@ class SoRpyRotorDragData:
     """Roll pitch yaw command coefficient of the drone."""
     drag_linear_coef: Array  # (N, M, 1)
     """Linear drag coefficient of the drone."""
-    drag_abs_linear_coef: Array  # (N, M, 1)
-    """Absolute linear drag coefficient of the drone."""
+    drag_square_coef: Array  # (N, M, 1)
+    """Square drag coefficient of the drone."""
 
     def create(
         n_worlds: int, n_drones: int, drone_model: str, device: Device
@@ -293,27 +293,27 @@ class SoRpyRotorDragData:
             J_inv=jnp.linalg.inv(J),
             KF=jnp.asarray(p.KF, device=device),
             KM=jnp.asarray(p.KM, device=device),
-            rotor_coef=jnp.asarray(p.rotor_coef, device=device),
+            thrust_time_coef=jnp.asarray(p.thrust_time_coef, device=device),
             acc_coef=jnp.asarray(p.acc_coef, device=device),
             cmd_f_coef=jnp.asarray(p.cmd_f_coef, device=device),
             rpy_coef=jnp.asarray(p.rpy_coef, device=device),
             rpy_rates_coef=jnp.asarray(p.rpy_rates_coef, device=device),
             cmd_rpy_coef=jnp.asarray(p.cmd_rpy_coef, device=device),
             drag_linear_coef=jnp.asarray(p.drag_linear_coef, device=device),
-            drag_abs_linear_coef=jnp.asarray(p.drag_abs_linear_coef, device=device),
+            drag_square_coef=jnp.asarray(p.drag_square_coef, device=device),
         )
 
 
 def so_rpy_rotor_drag_physics(data: SimData) -> SimData:
     """Compute the forces and torques from the so_rpy_rotor_drag physics model."""
     params: SoRpyRotorDragData = data.params
-    vel, _, acc, ang_acc, _ = so_rpy_rotor_drag_dynamics(
+    vel, _, acc, ang_acc, rotor_acc = so_rpy_rotor_drag_dynamics(
         pos=data.states.pos,
         quat=data.states.quat,
         vel=data.states.vel,
         ang_vel=data.states.ang_vel,
         cmd=data.controls.attitude.cmd,
-        rotor_vel=None,  # TODO: Add rotor_vel once the parameters are available
+        rotor_vel=data.states.rotor_vel,
         dist_f=data.states.force,
         dist_t=data.states.torque,
         mass=params.mass,
@@ -322,17 +322,16 @@ def so_rpy_rotor_drag_physics(data: SimData) -> SimData:
         J_inv=params.J_inv,
         KF=params.KF,
         KM=params.KM,
-        rotor_coef=params.rotor_coef,
+        thrust_time_coef=params.thrust_time_coef,
         acc_coef=params.acc_coef,
         cmd_f_coef=params.cmd_f_coef,
         rpy_coef=params.rpy_coef,
         rpy_rates_coef=params.rpy_rates_coef,
         cmd_rpy_coef=params.cmd_rpy_coef,
         drag_linear_coef=params.drag_linear_coef,
-        drag_abs_linear_coef=params.drag_abs_linear_coef,
+        drag_square_coef=params.drag_square_coef,
     )
-    # TODO: Add rotor_vel to the states_deriv
     states_deriv = data.states_deriv.replace(
-        vel=vel, ang_vel=data.states.ang_vel, acc=acc, ang_acc=ang_acc
+        vel=vel, ang_vel=data.states.ang_vel, acc=acc, ang_acc=ang_acc, rotor_acc=rotor_acc
     )
     return data.replace(states_deriv=states_deriv)

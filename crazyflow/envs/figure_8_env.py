@@ -31,6 +31,7 @@ class FigureEightEnv(DroneEnv):
         num_envs: int = 1,
         max_episode_time: float = 10.0,
         physics: Literal["so_rpy", "first_principles"] | Physics = Physics.so_rpy,
+        drone_model: str = "cf2x_L250",
         freq: int = 500,
         device: str = "cpu",
     ):
@@ -43,6 +44,7 @@ class FigureEightEnv(DroneEnv):
             num_envs: Number of environments to run in parallel.
             max_episode_time: Maximum episode time in seconds.
             physics: Physics backend to use.
+            drone_model: Drone model of the environment.
             freq: Frequency of the simulation.
             device: Device to use for the simulation.
         """
@@ -50,6 +52,7 @@ class FigureEightEnv(DroneEnv):
             num_envs=num_envs,
             max_episode_time=max_episode_time,
             physics=physics,
+            drone_model=drone_model,
             freq=freq,
             device=device,
         )
@@ -60,9 +63,9 @@ class FigureEightEnv(DroneEnv):
         n_steps = int(np.ceil(trajectory_time * self.freq))
         t = np.linspace(0, 2 * np.pi, n_steps)
         radius = 1  # Radius for the circles
-        y = np.zeros_like(t)  # x is 0 everywhere
         x = radius * np.sin(t)  # Scale amplitude for 1-meter diameter
-        z = radius * np.sin(2 * t) + 1.2  # Scale amplitude for 1-meter diameter
+        y = np.zeros_like(t)  # x is 0 everywhere
+        z = radius / 2 * np.sin(2 * t) + 1  # Scale amplitude for 1-meter diameter
         self.trajectory = np.array([x, y, z]).T
 
         # Define trajectory sampling parameters

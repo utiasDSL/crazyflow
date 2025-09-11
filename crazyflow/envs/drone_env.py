@@ -63,6 +63,7 @@ class DroneEnv(VectorEnv):
         num_envs: int = 1,
         max_episode_time: float = 10.0,
         physics: Literal["so_rpy", "first_principles"] | Physics = Physics.so_rpy,
+        drone_model: str = "cf2x_L250",
         freq: int = 500,
         device: str = "cpu",
         reset_randomization: Callable[[SimData, Array], SimData] | None = None,
@@ -85,7 +86,9 @@ class DroneEnv(VectorEnv):
         assert Physics(physics) in Physics, f"Invalid physics type {physics}"
 
         # Initialize the simulation
-        self.sim = Sim(n_worlds=num_envs, n_drones=1, device=device, physics=physics)
+        self.sim = Sim(
+            n_worlds=num_envs, n_drones=1, drone_model=drone_model, device=device, physics=physics
+        )
         assert self.sim.freq >= self.sim.control_freq, "Sim freq must be higher than control freq"
         if not self.sim.freq % self.freq == 0:
             # We can handle other cases, but it's not recommended
