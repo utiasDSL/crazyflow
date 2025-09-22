@@ -74,6 +74,7 @@ class DroneEnv(VectorEnv):
             num_envs: The number of environments to run in parallel.
             max_episode_time: The time horizon after which episodes are truncated (s).
             physics: The crazyflow physics simulation model.
+            drone_model: Drone model of the environment.
             freq: The frequency at which the environment is run.
             device: The device of the environment and the simulation.
             reset_randomization: A function that randomizes the initial state of the simulation. If
