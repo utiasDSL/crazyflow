@@ -18,7 +18,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "jax>=0.7.0", # 0.5.3 and 0.6.0 have a bug that causes resets to not work properly.
+    "jax>=0.7.0",                                             # 0.5.3 and 0.6.0 have a bug that causes resets to not work properly.
     "mujoco>=3.3.0",
     "mujoco-mjx>=3.3.0",
     "gymnasium[mujoco]>=1.2.0",
@@ -28,7 +28,7 @@ dependencies = [
     "ml_collections",
     "casadi",
     "numpy",
-    "scipy @ git+https://github.com/scipy/scipy.git@4cb83b6",  # TODO: Replace with scipy 1.17 once released
+    "scipy @ git+https://github.com/scipy/scipy.git@4cb83b6", # TODO: Replace with scipy 1.17 once released
     # "drone-models @ git+https://github.com/utiasDSL/drone-models.git@08ffb18",
 ]
 requires-python = ">=3.11"
@@ -42,7 +42,7 @@ Homepage = "https://github.com/utiasDSL/crazyflow"
 Repository = "https://github.com/utiasDSL/crazyflow"
 
 [tool.setuptools.packages]
-find = {include = ["crazyflow", "drone-models", "drone-controllers"]}
+find = { include = ["crazyflow", "drone-models", "drone-controllers"] }
 
 [tool.setuptools.dynamic]
 version = { attr = "crazyflow.__version__" }
@@ -120,6 +120,7 @@ drone-controllers = { path = "./submodules/drone-controllers", editable = true }
 [tool.pixi.feature.tests.dependencies]
 pytest = ">=8.4.1"
 pytest-timeout = ">=2.1.0"
+array-api-strict = ">=2.4.1"
 
 [tool.pixi.feature.tests.tasks]
 tests = { cmd = "pytest -v tests", description = "Run tests" }
@@ -148,7 +149,7 @@ tests = { features = ["tests"], solve-group = "default" }
 gpu-tests = { features = ["tests", "gpu"], solve-group = "default" }
 docs = { features = ["docs"], solve-group = "default" }
 
-[tool.pixi.dependencies]  
+[tool.pixi.dependencies]
 # TODO: Remove compilers once scipy 1.17 is released and drone-models have been updated.
 gcc = ">=15.1.0,<15.2"
 cxx-compiler = ">=1.0.0,<2"
