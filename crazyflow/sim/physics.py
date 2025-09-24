@@ -7,14 +7,11 @@ from typing import TYPE_CHECKING
 
 import jax
 import jax.numpy as jnp
+from drone_models.core import load_params
 from drone_models.first_principles import dynamics as first_principles_dynamics
-from drone_models.first_principles.params import FirstPrinciplesParams
 from drone_models.so_rpy import dynamics as so_rpy_dynamics
-from drone_models.so_rpy.params import SoRpyParams
 from drone_models.so_rpy_rotor import dynamics as so_rpy_rotor_dynamics
-from drone_models.so_rpy_rotor.params import SoRpyRotorParams
 from drone_models.so_rpy_rotor_drag import dynamics as so_rpy_rotor_drag_dynamics
-from drone_models.so_rpy_rotor_drag.params import SoRpyRotorDragParams
 from flax.struct import dataclass
 from jax import Array
 
@@ -60,18 +57,18 @@ class FirstPrinciplesData:
         n_worlds: int, n_drones: int, drone_model: str, device: Device
     ) -> FirstPrinciplesData:
         """Create a default set of parameters for the simulation."""
-        p = FirstPrinciplesParams.load(drone_model)
-        J = jax.device_put(jnp.tile(p.J[None, None, :, :], (n_worlds, n_drones, 1, 1)), device)
+        p = load_params("first_principles", drone_model)
+        J = jax.device_put(jnp.tile(p["J"][None, None, :, :], (n_worlds, n_drones, 1, 1)), device)
         return FirstPrinciplesData(
-            mass=jnp.full((n_worlds, n_drones, 1), p.mass, device=device),
-            gravity_vec=jnp.asarray(p.gravity_vec, device=device),
+            mass=jnp.full((n_worlds, n_drones, 1), p["mass"], device=device),
+            gravity_vec=jnp.asarray(p["gravity_vec"], device=device),
             J=J,
             J_inv=jnp.linalg.inv(J),
-            KF=jnp.asarray(p.KF, device=device),
-            KM=jnp.asarray(p.KM, device=device),
-            L=jnp.asarray(p.L, device=device),
-            mixing_matrix=jnp.asarray(p.mixing_matrix, device=device),
-            thrust_tau=jnp.asarray(p.thrust_tau, device=device),
+            KF=jnp.asarray(p["KF"], device=device),
+            KM=jnp.asarray(p["KM"], device=device),
+            L=jnp.asarray(p["L"], device=device),
+            mixing_matrix=jnp.asarray(p["mixing_matrix"], device=device),
+            thrust_tau=jnp.asarray(p["thrust_tau"], device=device),
         )
 
 
@@ -127,18 +124,18 @@ class SoRpyData:
     @staticmethod
     def create(n_worlds: int, n_drones: int, drone_model: str, device: Device) -> SoRpyData:
         """Create a default set of parameters for the simulation."""
-        p = SoRpyParams.load(drone_model)
-        J = jax.device_put(jnp.tile(p.J[None, None, :, :], (n_worlds, n_drones, 1, 1)), device)
+        p = load_params("so_rpy", drone_model)
+        J = jax.device_put(jnp.tile(p["J"][None, None, :, :], (n_worlds, n_drones, 1, 1)), device)
         return SoRpyData(
-            mass=jnp.full((n_worlds, n_drones, 1), p.mass, device=device),
-            gravity_vec=jnp.asarray(p.gravity_vec, device=device),
+            mass=jnp.full((n_worlds, n_drones, 1), p["mass"], device=device),
+            gravity_vec=jnp.asarray(p["gravity_vec"], device=device),
             J=J,
             J_inv=jnp.linalg.inv(J),
-            acc_coef=jnp.asarray(p.acc_coef, device=device),
-            cmd_f_coef=jnp.asarray(p.cmd_f_coef, device=device),
-            rpy_coef=jnp.asarray(p.rpy_coef, device=device),
-            rpy_rates_coef=jnp.asarray(p.rpy_rates_coef, device=device),
-            cmd_rpy_coef=jnp.asarray(p.cmd_rpy_coef, device=device),
+            acc_coef=jnp.asarray(p["acc_coef"], device=device),
+            cmd_f_coef=jnp.asarray(p["cmd_f_coef"], device=device),
+            rpy_coef=jnp.asarray(p["rpy_coef"], device=device),
+            rpy_rates_coef=jnp.asarray(p["rpy_rates_coef"], device=device),
+            cmd_rpy_coef=jnp.asarray(p["cmd_rpy_coef"], device=device),
         )
 
 
@@ -199,21 +196,21 @@ class SoRpyRotorData:
     @staticmethod
     def create(n_worlds: int, n_drones: int, drone_model: str, device: Device) -> SoRpyRotorData:
         """Create a default set of parameters for the simulation."""
-        p = SoRpyRotorParams.load(drone_model)
-        J = jax.device_put(jnp.tile(p.J[None, None, :, :], (n_worlds, n_drones, 1, 1)), device)
+        p = load_params("so_rpy_rotor", drone_model)
+        J = jax.device_put(jnp.tile(p["J"][None, None, :, :], (n_worlds, n_drones, 1, 1)), device)
         return SoRpyRotorData(
-            mass=jnp.full((n_worlds, n_drones, 1), p.mass, device=device),
-            gravity_vec=jnp.asarray(p.gravity_vec, device=device),
+            mass=jnp.full((n_worlds, n_drones, 1), p["mass"], device=device),
+            gravity_vec=jnp.asarray(p["gravity_vec"], device=device),
             J=J,
             J_inv=jnp.linalg.inv(J),
-            KF=jnp.asarray(p.KF, device=device),
-            KM=jnp.asarray(p.KM, device=device),
-            rotor_coef=jnp.asarray(p.rotor_coef, device=device),
-            acc_coef=jnp.asarray(p.acc_coef, device=device),
-            cmd_f_coef=jnp.asarray(p.cmd_f_coef, device=device),
-            rpy_coef=jnp.asarray(p.rpy_coef, device=device),
-            rpy_rates_coef=jnp.asarray(p.rpy_rates_coef, device=device),
-            cmd_rpy_coef=jnp.asarray(p.cmd_rpy_coef, device=device),
+            KF=jnp.asarray(p["KF"], device=device),
+            KM=jnp.asarray(p["KM"], device=device),
+            rotor_coef=jnp.asarray(p["rotor_coef"], device=device),
+            acc_coef=jnp.asarray(p["acc_coef"], device=device),
+            cmd_f_coef=jnp.asarray(p["cmd_f_coef"], device=device),
+            rpy_coef=jnp.asarray(p["rpy_coef"], device=device),
+            rpy_rates_coef=jnp.asarray(p["rpy_rates_coef"], device=device),
+            cmd_rpy_coef=jnp.asarray(p["cmd_rpy_coef"], device=device),
         )
 
 
@@ -280,27 +277,28 @@ class SoRpyRotorDragData:
     drag_square_coef: Array  # (N, M, 1)
     """Square drag coefficient of the drone."""
 
+    @staticmethod
     def create(
         n_worlds: int, n_drones: int, drone_model: str, device: Device
     ) -> SoRpyRotorDragData:
         """Create a default set of parameters for the simulation."""
-        p = SoRpyRotorDragParams.load(drone_model)
-        J = jax.device_put(jnp.tile(p.J[None, None, :, :], (n_worlds, n_drones, 1, 1)), device)
+        p = load_params("so_rpy_rotor_drag", drone_model)
+        J = jax.device_put(jnp.tile(p["J"][None, None, :, :], (n_worlds, n_drones, 1, 1)), device)
         return SoRpyRotorDragData(
-            mass=jnp.full((n_worlds, n_drones, 1), p.mass, device=device),
-            gravity_vec=jnp.asarray(p.gravity_vec, device=device),
+            mass=jnp.full((n_worlds, n_drones, 1), p["mass"], device=device),
+            gravity_vec=jnp.asarray(p["gravity_vec"], device=device),
             J=J,
             J_inv=jnp.linalg.inv(J),
-            KF=jnp.asarray(p.KF, device=device),
-            KM=jnp.asarray(p.KM, device=device),
-            thrust_time_coef=jnp.asarray(p.thrust_time_coef, device=device),
-            acc_coef=jnp.asarray(p.acc_coef, device=device),
-            cmd_f_coef=jnp.asarray(p.cmd_f_coef, device=device),
-            rpy_coef=jnp.asarray(p.rpy_coef, device=device),
-            rpy_rates_coef=jnp.asarray(p.rpy_rates_coef, device=device),
-            cmd_rpy_coef=jnp.asarray(p.cmd_rpy_coef, device=device),
-            drag_linear_coef=jnp.asarray(p.drag_linear_coef, device=device),
-            drag_square_coef=jnp.asarray(p.drag_square_coef, device=device),
+            KF=jnp.asarray(p["KF"], device=device),
+            KM=jnp.asarray(p["KM"], device=device),
+            thrust_time_coef=jnp.asarray(p["thrust_time_coef"], device=device),
+            acc_coef=jnp.asarray(p["acc_coef"], device=device),
+            cmd_f_coef=jnp.asarray(p["cmd_f_coef"], device=device),
+            rpy_coef=jnp.asarray(p["rpy_coef"], device=device),
+            rpy_rates_coef=jnp.asarray(p["rpy_rates_coef"], device=device),
+            cmd_rpy_coef=jnp.asarray(p["cmd_rpy_coef"], device=device),
+            drag_linear_coef=jnp.asarray(p["drag_linear_coef"], device=device),
+            drag_square_coef=jnp.asarray(p["drag_square_coef"], device=device),
         )
 
 
