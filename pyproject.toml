@@ -48,7 +48,7 @@ find = { include = ["crazyflow", "drone-models", "drone-controllers"] }
 version = { attr = "crazyflow.__version__" }
 
 [tool.setuptools.package-data]
-crazyflow = ["models/cf2/*.xml", "models/cf2/assets/*.obj"]
+crazyflow = ["scene.xml"]
 
 [tool.pytest.ini_options]
 markers = ["unit", "integration", "render"]

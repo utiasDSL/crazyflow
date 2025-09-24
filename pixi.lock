@@ -1044,7 +1044,7 @@ packages:
 - pypi: ./
   name: crazyflow
   version: 0.0.2
-  sha256: 28ece642c2a75c948f2c931d03209e1c2337083438505dc6e4b6ccb27519decd
+  sha256: 4c90e8b1b3384a317c93bac8873b6e32a8526ebadd0ef7eb7873d1dc60fa74e4
   requires_dist:
   - jax>=0.7.0
   - mujoco>=3.3.0
@@ -1101,7 +1101,7 @@ packages:
 - pypi: ./submodules/drone-models
   name: drone-models
   version: 0.0.1
-  sha256: feacfd6e485e024040eefc1a9a70b0e381aa8fc0c55ea920b0784524f3f194f7
+  sha256: a82ecc964783d4b80f7a896d1815a1e972c345c5d79f24487dc0568ea2252530
   requires_dist:
   - numpy>=2.0.0
   - casadi>=3.7.0

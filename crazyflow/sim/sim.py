@@ -57,9 +57,6 @@ def requires_mujoco_sync(fn: Callable[Params, Return]) -> Callable[Params, Retur
 
 
 class Sim:
-    default_path = Path(__file__).parents[1] / "models/cf2/scene.xml"
-    drone_path = Path(__file__).parents[1] / "models/cf2/cf2.xml"
-
     def __init__(
         self,
         n_worlds: int = 1,
@@ -93,7 +90,11 @@ class Sim:
         self.max_visual_geom = 1000
 
         # Initialize MuJoCo world and data
-        self._xml_path = xml_path or self.default_path
+        self._xml_path = xml_path or Path(__file__).parents[1] / "scene.xml"
+        self.drone_path = (
+            Path(__file__).parents[2]
+            / f"submodules/drone-models/drone_models/data/{drone_model}.xml"
+        )
         self.spec = self.build_mjx_spec()
         self.mj_model, self.mj_data, self.mjx_model, self.mjx_data = self.build_mjx_model(self.spec)
         self.viewer: MujocoRenderer | None = None
