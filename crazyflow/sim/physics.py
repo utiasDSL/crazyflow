@@ -41,9 +41,9 @@ class FirstPrinciplesData:
     """Inertia matrix of the drone."""
     J_inv: Array  # (N, M, 3, 3)
     """Inverse of the inertia matrix of the drone."""
-    KF: Array  # (N, M, 1)
+    rpm2thrust: Array  # (N, M, 1)
     """Force constant of the drone."""
-    KM: Array  # (N, M, 1)
+    rpm2torque: Array  # (N, M, 1)
     """Torque constant of the drone."""
     L: Array  # (N, M, 1)
     """Arm length of the drone."""
@@ -64,8 +64,8 @@ class FirstPrinciplesData:
             gravity_vec=jnp.asarray(p["gravity_vec"], device=device),
             J=J,
             J_inv=jnp.linalg.inv(J),
-            KF=jnp.asarray(p["KF"], device=device),
-            KM=jnp.asarray(p["KM"], device=device),
+            rpm2thrust=jnp.asarray(p["rpm2thrust"], device=device),
+            rpm2torque=jnp.asarray(p["rpm2torque"], device=device),
             L=jnp.asarray(p["L"], device=device),
             mixing_matrix=jnp.asarray(p["mixing_matrix"], device=device),
             thrust_tau=jnp.asarray(p["thrust_tau"], device=device),
@@ -88,8 +88,8 @@ def first_principles_physics(data: SimData) -> SimData:
         gravity_vec=params.gravity_vec,
         J=params.J,
         J_inv=params.J_inv,
-        KF=params.KF,
-        KM=params.KM,
+        rpm2thrust=params.rpm2thrust,
+        rpm2torque=params.rpm2torque,
         L=params.L,
         mixing_matrix=params.mixing_matrix,
         thrust_tau=params.thrust_tau,
@@ -176,11 +176,7 @@ class SoRpyRotorData:
     """Inertia matrix of the drone."""
     J_inv: Array  # (N, M, 3, 3)
     """Inverse of the inertia matrix of the drone."""
-    KF: Array  # (N, M, 1)
-    """Force constant of the drone."""
-    KM: Array  # (N, M, 1)
-    """Torque constant of the drone."""
-    rotor_coef: Array  # (N, M, 1)
+    thrust_time_coef: Array  # (N, M, 1)
     """Rotor coefficient of the drone."""
     acc_coef: Array  # (N, M, 1)
     """Acceleration coefficient of the drone."""
@@ -203,9 +199,7 @@ class SoRpyRotorData:
             gravity_vec=jnp.asarray(p["gravity_vec"], device=device),
             J=J,
             J_inv=jnp.linalg.inv(J),
-            KF=jnp.asarray(p["KF"], device=device),
-            KM=jnp.asarray(p["KM"], device=device),
-            rotor_coef=jnp.asarray(p["rotor_coef"], device=device),
+            thrust_time_coef=jnp.asarray(p["thrust_time_coef"], device=device),
             acc_coef=jnp.asarray(p["acc_coef"], device=device),
             cmd_f_coef=jnp.asarray(p["cmd_f_coef"], device=device),
             rpy_coef=jnp.asarray(p["rpy_coef"], device=device),
@@ -230,9 +224,7 @@ def so_rpy_rotor_physics(data: SimData) -> SimData:
         gravity_vec=params.gravity_vec,
         J=params.J,
         J_inv=params.J_inv,
-        KF=params.KF,
-        KM=params.KM,
-        rotor_coef=params.rotor_coef,
+        thrust_time_coef=params.thrust_time_coef,
         acc_coef=params.acc_coef,
         cmd_f_coef=params.cmd_f_coef,
         rpy_coef=params.rpy_coef,
@@ -256,10 +248,6 @@ class SoRpyRotorDragData:
     """Inertia matrix of the drone."""
     J_inv: Array  # (N, M, 3, 3)
     """Inverse of the inertia matrix of the drone."""
-    KF: Array  # (N, M, 1)
-    """Force constant of the drone."""
-    KM: Array  # (N, M, 1)
-    """Torque constant of the drone."""
     thrust_time_coef: Array  # (N, M, 1)
     """Rotor coefficient of the drone."""
     acc_coef: Array  # (N, M, 1)
@@ -289,8 +277,6 @@ class SoRpyRotorDragData:
             gravity_vec=jnp.asarray(p["gravity_vec"], device=device),
             J=J,
             J_inv=jnp.linalg.inv(J),
-            KF=jnp.asarray(p["KF"], device=device),
-            KM=jnp.asarray(p["KM"], device=device),
             thrust_time_coef=jnp.asarray(p["thrust_time_coef"], device=device),
             acc_coef=jnp.asarray(p["acc_coef"], device=device),
             cmd_f_coef=jnp.asarray(p["cmd_f_coef"], device=device),
@@ -318,8 +304,6 @@ def so_rpy_rotor_drag_physics(data: SimData) -> SimData:
         gravity_vec=params.gravity_vec,
         J=params.J,
         J_inv=params.J_inv,
-        KF=params.KF,
-        KM=params.KM,
         thrust_time_coef=params.thrust_time_coef,
         acc_coef=params.acc_coef,
         cmd_f_coef=params.cmd_f_coef,
