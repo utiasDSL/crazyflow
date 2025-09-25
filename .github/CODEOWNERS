@@ -1,0 +1,15 @@
+# The purpose of this file is to trigger review requests when PRs touch
+# particular files.
+#
+# Note that only GitHub handles (whether individuals or teams) with commit
+# rights should be added to this file.
+# See https://docs.github.com/en/github/creating-cloning-and-archiving-repositories/about-code-owners
+# for more details about how CODEOWNERS works.
+
+# Each line is a file pattern followed by one or more owners.
+
+.github/CODEOWNERS  @amacati
+
+# Build related files
+pyproject.toml  @amacati
+crazyflow @amacati
