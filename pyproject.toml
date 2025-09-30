@@ -42,7 +42,7 @@ Homepage = "https://github.com/utiasDSL/crazyflow"
 Repository = "https://github.com/utiasDSL/crazyflow"
 
 [tool.setuptools.packages]
-find = { include = ["crazyflow", "drone-models", "drone-controllers"] }
+find = {}
 
 [tool.setuptools.dynamic]
 version = { attr = "crazyflow.__version__" }
