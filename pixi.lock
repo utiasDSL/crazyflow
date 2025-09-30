@@ -1044,7 +1044,7 @@ packages:
 - pypi: ./
   name: crazyflow
   version: 0.0.2
-  sha256: 4c90e8b1b3384a317c93bac8873b6e32a8526ebadd0ef7eb7873d1dc60fa74e4
+  sha256: c8e9b1743444886bf906ecba7dde524a53acbeab84370607388b4e32c46cfc28
   requires_dist:
   - jax>=0.7.0
   - mujoco>=3.3.0
@@ -1090,7 +1090,7 @@ packages:
 - pypi: ./submodules/drone-controllers
   name: drone-controllers
   version: 0.0.1
-  sha256: ee5ca7aead3c831e1eae3bf887c553336bacd8eae8d8c73971f91858a7f61b2d
+  sha256: f64afbde928034286326be26473230dafabe9d7a56b46d8187083736fcc9e035
   requires_dist:
   - numpy>=2.0.0
   - array-api-compat
