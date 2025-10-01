@@ -64,10 +64,11 @@ RUN pip install --no-cache-dir ruff
 WORKDIR /tmp/install
 
 # Copy pyproject.toml with correct ownership
-COPY --chown=$USERNAME:$USERNAME pyproject.toml .
+COPY --chown=$USERNAME:$USERNAME . .
 
 # Install dependencies as non-root user
-RUN pip install --no-cache-dir -e ".[test,gpu]"
+# add ".[test,gpu]"" if required
+RUN pip install --no-cache-dir -e "." 
 
 # Set final working directory
 WORKDIR /workspace
