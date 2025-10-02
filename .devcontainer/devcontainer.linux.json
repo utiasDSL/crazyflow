@@ -19,6 +19,7 @@
                 "ms-toolsai.jupyter-keymap"
             ],
             "settings": {
+                "terminal.integrated.shell.linux": "/bin/bash",
                 "python.defaultInterpreterPath": "/home/vscode/venv/bin/python",
                 "jupyter.kernels.excludePythonEnvironments": [
                     "/usr/bin/python",

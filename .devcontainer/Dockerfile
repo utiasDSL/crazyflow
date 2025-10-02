@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ssh \
     mesa-utils \
+    bash \
     && rm -rf /var/lib/apt/lists/* && apt-get clean
 
 # Create symbolic links for python
@@ -63,7 +64,7 @@ RUN pip install --no-cache-dir ruff
 # Create a temporary directory for installation with proper permissions
 WORKDIR /tmp/install
 
-# Copy pyproject.toml with correct ownership
+# Copy project with correct ownership
 COPY --chown=$USERNAME:$USERNAME . .
 
 # Install dependencies as non-root user
