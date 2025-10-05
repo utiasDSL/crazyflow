@@ -8,6 +8,7 @@ import jax
 import jax.numpy as jnp
 import mujoco
 import mujoco.mjx as mjx
+import drone_models
 from drone_controllers.mellinger import (
     attitude2force_torque,
     force_torque2rotor_vel,
@@ -91,10 +92,7 @@ class Sim:
 
         # Initialize MuJoCo world and data
         self._xml_path = xml_path or Path(__file__).parents[1] / "scene.xml"
-        self.drone_path = (
-            Path(__file__).parents[2]
-            / f"submodules/drone-models/drone_models/data/{drone_model}.xml"
-        )
+        self.drone_path = Path(drone_models.__file__).parent / "data" / f"{drone_model}.xml"
         self.spec = self.build_mjx_spec()
         self.mj_model, self.mj_data, self.mjx_model, self.mjx_data = self.build_mjx_model(self.spec)
         self.viewer: MujocoRenderer | None = None
