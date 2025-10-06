@@ -237,7 +237,7 @@ class Sim:
         mj_data = mujoco.MjData(mj_model)
         mjx_model = mjx.put_model(mj_model, device=self.device)
         mjx_data = mjx.put_data(mj_model, mj_data, device=self.device)
-        mjx_data = jax.vmap(lambda _: mjx_data)(range(self.n_worlds))
+        mjx_data = jax.vmap(lambda _: mjx_data)(jnp.arange(self.n_worlds))
         return mj_model, mj_data, mjx_model, mjx_data
 
     def build_step_fn(self):
