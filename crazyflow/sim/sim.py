@@ -4,11 +4,11 @@ from functools import partial, wraps
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, ParamSpec, TypeVar
 
+import drone_models
 import jax
 import jax.numpy as jnp
 import mujoco
 import mujoco.mjx as mjx
-import drone_models
 from drone_controllers.mellinger import (
     attitude2force_torque,
     force_torque2rotor_vel,
