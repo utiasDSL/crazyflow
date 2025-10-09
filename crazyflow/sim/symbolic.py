@@ -188,12 +188,12 @@ def symbolic_attitude(dt: float, params: dict | None = None) -> SymbolicModel:
     b = params.get("b", 3.653687545690674)
     ra, rb, rc = params.get("ra", -130.3), params.get("rb", -16.33), params.get("rc", 119.3)
     pa, pb, pc = params.get("pa", -99.94), params.get("pb", -13.3), params.get("pc", 84.73)
-    # The identified model sets params_yaw_rate to [0, 0, 0], because the training data did not
-    # contain any data with yaw != 0. Therefore, it cannot infer the impact of setting the yaw
-    # attitude to a non-zero value on the dynamics. However, using a zero vector will make the
-    # system matrix ill-conditioned for control methods like LQR. Therefore, we introduce a small
-    # spring-like term to the yaw dynamics that leads to a non-singular system matrix.
-    # TODO: identify proper parameters for yaw_rate from real data.
+    # The identified model does not identify yaw and leaves the parameters zero, because the
+    # training data did not contain any data with yaw != 0. Therefore, it cannot infer the impact
+    # of setting the yaw attitude to a non-zero value on the dynamics. However, using a zero
+    # vector will make the system matrix ill-conditioned for control methods like LQR. Therefore,
+    # we choose parameters that stabilize the yaw dynamics. There are not identified! See
+    # https://github.com/utiasDSL/crazyflow/pull/41
     ya, yb, yc = params.get("ya", -60.0), params.get("yb", -10.0), params.get("yc", 140.0)
 
     # Define dynamics equations.
