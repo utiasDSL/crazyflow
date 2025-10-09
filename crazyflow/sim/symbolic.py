@@ -194,7 +194,7 @@ def symbolic_attitude(dt: float, params: dict | None = None) -> SymbolicModel:
     # system matrix ill-conditioned for control methods like LQR. Therefore, we introduce a small
     # spring-like term to the yaw dynamics that leads to a non-singular system matrix.
     # TODO: identify proper parameters for yaw_rate from real data.
-    ya, yb, yc = params.get("ya", -0.01), params.get("yb", 0), params.get("yc", 0)
+    ya, yb, yc = params.get("ya", -60.0), params.get("yb", -10.0), params.get("yc", 140.0)
 
     # Define dynamics equations.
     X_dot = cs.vertcat(
