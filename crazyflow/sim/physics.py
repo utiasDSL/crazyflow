@@ -15,6 +15,8 @@ SYS_ID_PARAMS = {
     "acc": np.array([20.907574256269616, 3.653687545690674]),
     "roll_acc": np.array([-130.3, -16.33, 119.3]),
     "pitch_acc": np.array([-99.94, -13.3, 84.73]),
+    # Yaw dynamics are not identified, parameters were chosen to stabilize yaw dynamics. See
+    # https://github.com/utiasDSL/crazyflow/pull/41
     "yaw_acc": np.array([-60.0, -10.0, 140.0]),
 }
 
