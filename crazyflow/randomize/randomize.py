@@ -15,9 +15,6 @@ def randomize_mass(sim: Sim, mass: Array, mask: Array | None = None):
         mass: The new masses. The shape always needs to be (n_worlds, n_drones).
         mask: Boolean array of shape (n_worlds, ) that indicates which worlds to reset. If None,
             all worlds are reset.
-
-    Warning:
-        This currently only works for analytical dynamics.
     """
     sim.data = _randomize_mass_params(sim.data, mass, mask)
 
@@ -32,7 +29,7 @@ def randomize_inertia(sim: Sim, J: Array, mask: Array | None = None):
             all worlds are reset.
 
     Warning:
-        This currently only works for analytical dynamics.
+        This only works for first_principles dynamics.
     """
     if not J.shape == (sim.n_worlds, sim.n_drones, 3, 3):
         raise ValueError(f"Inertia tensor must have shape (n_worlds, n_drones, 3, 3), is {J.shape}")

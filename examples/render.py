@@ -12,7 +12,7 @@ def main():
     sim = Sim(n_worlds=n_worlds, n_drones=n_drones, physics=Physics.so_rpy, device="cpu")
     fps = 60
     cmd = np.zeros((sim.n_worlds, sim.n_drones, 4))
-    cmd[..., 3] = sim.data.params.mass[0, 0, 0] * 9.81 * 0.5
+    cmd[..., 3] = sim.data.params.mass[0, 0, 0] * 9.81
     rgbas = np.random.default_rng(0).uniform(0, 1, (n_drones, 4))
     rgbas[..., 3] = 1.0
 

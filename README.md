@@ -30,8 +30,10 @@ The simulation is built as a pipeline of functions that are composed at initiali
 
 #### Physics Backends
 Multiple physics models are supported:
-- analytical: A first-principles model based on physical equations
-- sys_id: A system-identified model trained on real drone data
+- first_principles: A first-principles model based on physical equations
+- so_rpy: A system-identified model trained on real drone data
+- so_rpy_rotor: An enhanced system-identified model that includes thrust dynamics
+- so_rpy_rotor_drag: A system-identified model that includes thrust dynamics and drag effects
 
 #### Control Modes
 Different control interfaces are available:
