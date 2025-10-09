@@ -156,8 +156,8 @@ class Sim:
         mode: str | None = "human",
         world: int = 0,
         default_cam_config: dict | None = None,
-        width: int = 640,
-        height: int = 480,
+        width: int = 1920,
+        height: int = 1080,
     ) -> NDArray | None:
         if self.viewer is None:
             self.mj_model.vis.global_.offwidth = width
