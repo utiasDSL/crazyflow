@@ -576,3 +576,40 @@ def seed_sim(data: SimData, seed: int, device: Device) -> SimData:
     """JIT-compiled seeding function."""
     rng_key = jax.device_put(jax.random.key(seed), device)
     return data.replace(core=data.core.replace(rng_key=rng_key))
+
+
+def use_box_collision(sim: Sim, enable: bool = True):
+    """Changes the collision geometry to use boxes or spheres (default).
+
+    Args:
+        sim: The simulation instance.
+        enable: If True, use box collision geometry. If False, use sphere collision geometry.
+
+    Warning:
+        Using box collision geometry is more computationally expensive than sphere collision
+        geometry, especially for larger swarms. It is recommended to only enable box collision
+        geometry for small swarms or when high accuracy is required.
+    """
+
+    def find_geom_ids_by_prefix(model: mujoco.MjModel, prefix: str) -> Array[int]:
+        geom_ids = []
+        for i in range(model.ngeom):
+            name: str | None = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, i)
+            if name is not None and name.startswith(prefix):
+                geom_ids.append(i)
+        return jnp.asarray(geom_ids)
+
+    # Get geom ids
+    sphere_ids = find_geom_ids_by_prefix(sim.mj_model, "col_sphere")
+    box_ids = find_geom_ids_by_prefix(sim.mj_model, "col_box")
+    assert len(sphere_ids) == len(box_ids) and len(sphere_ids) > 0, (
+        "Number of sphere and box collision geometries must be the same, check xml files"
+    )
+
+    # Enable/disable geoms
+    sim.mj_model.geom_contype[sphere_ids] = 1 * (not enable)
+    sim.mj_model.geom_conaffinity[sphere_ids] = 1 * (not enable)
+    sim.mj_model.geom_rgba[sphere_ids, 3] = 1 * (not enable)
+    sim.mj_model.geom_contype[box_ids] = 1 * enable
+    sim.mj_model.geom_conaffinity[box_ids] = 1 * enable
+    sim.mj_model.geom_rgba[box_ids, 3] = 1 * enable
