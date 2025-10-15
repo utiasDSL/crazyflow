@@ -590,26 +590,14 @@ def use_box_collision(sim: Sim, enable: bool = True):
         geometry, especially for larger swarms. It is recommended to only enable box collision
         geometry for small swarms or when high accuracy is required.
     """
+    for geom in sim.spec.geoms:
+        if geom.name.startswith("col_sphere"):
+            geom.contype = 1 * (not enable)
+            geom.conaffinity = 1 * (not enable)
+            geom.rgba[3] = 1 * (not enable)
+        if geom.name.startswith("col_box"):
+            geom.contype = 1 * enable
+            geom.conaffinity = 1 * enable
+            geom.rgba[3] = 1 * enable
 
-    def find_geom_ids_by_prefix(model: mujoco.MjModel, prefix: str) -> Array[int]:
-        geom_ids = []
-        for i in range(model.ngeom):
-            name: str | None = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, i)
-            if name is not None and name.startswith(prefix):
-                geom_ids.append(i)
-        return jnp.asarray(geom_ids)
-
-    # Get geom ids
-    sphere_ids = find_geom_ids_by_prefix(sim.mj_model, "col_sphere")
-    box_ids = find_geom_ids_by_prefix(sim.mj_model, "col_box")
-    assert len(sphere_ids) == len(box_ids) and len(sphere_ids) > 0, (
-        "Number of sphere and box collision geometries must be the same, check xml files"
-    )
-
-    # Enable/disable geoms
-    sim.mj_model.geom_contype[sphere_ids] = 1 * (not enable)
-    sim.mj_model.geom_conaffinity[sphere_ids] = 1 * (not enable)
-    sim.mj_model.geom_rgba[sphere_ids, 3] = 1 * (not enable)
-    sim.mj_model.geom_contype[box_ids] = 1 * enable
-    sim.mj_model.geom_conaffinity[box_ids] = 1 * enable
-    sim.mj_model.geom_rgba[box_ids, 3] = 1 * enable
+    sim.build_mjx()
