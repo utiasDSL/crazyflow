@@ -49,7 +49,7 @@ class FirstPrinciplesData:
     """Arm length of the drone."""
     mixing_matrix: Array  # (N, M, 3, 4)
     """Mixing matrix of the drone."""
-    thrust_tau: Array  # (N, M, 1)
+    rotor_tau: Array  # (N, M, 1)
     """Rotor speed dynamics time constant of the drone."""
 
     @staticmethod
@@ -68,7 +68,7 @@ class FirstPrinciplesData:
             rpm2torque=jnp.asarray(p["rpm2torque"], device=device),
             L=jnp.asarray(p["L"], device=device),
             mixing_matrix=jnp.asarray(p["mixing_matrix"], device=device),
-            thrust_tau=jnp.asarray(p["thrust_tau"], device=device),
+            rotor_tau=jnp.asarray(p["rotor_tau"], device=device),
         )
 
 
@@ -92,7 +92,7 @@ def first_principles_physics(data: SimData) -> SimData:
         rpm2torque=params.rpm2torque,
         L=params.L,
         mixing_matrix=params.mixing_matrix,
-        thrust_tau=params.thrust_tau,
+        rotor_tau=params.rotor_tau,
     )
     states_deriv = data.states_deriv.replace(
         vel=vel, ang_vel=data.states.ang_vel, acc=acc, ang_acc=ang_acc, rotor_acc=rotor_acc
