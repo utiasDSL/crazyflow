@@ -113,6 +113,13 @@ class FigureEightEnv(DroneEnv):
         return reward
 
     @staticmethod
+    @jax.jit
+    def _terminated(pos: Array) -> Array:
+        hit_floor = pos[:, 0, 2] < 0.0  # Terminate if the drone has crashed into the ground
+        bounding_box = jnp.any(jnp.abs(pos[:, 0, :3]) > jnp.array([2.0, 2.0, 2.0]), axis=-1)
+        return hit_floor | bounding_box
+
+    @staticmethod
     def _reset_randomization(data: SimData, mask: Array) -> SimData:
         """Randomize the initial position and velocity of the drones.
 
