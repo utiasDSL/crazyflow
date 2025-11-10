@@ -211,13 +211,13 @@ class SoRpyRotorData:
 def so_rpy_rotor_physics(data: SimData) -> SimData:
     """Compute the forces and torques from the so_rpy_rotor physics model."""
     params: SoRpyRotorData = data.params
-    vel, _, acc, ang_acc, _ = so_rpy_rotor_dynamics(
+    vel, _, acc, ang_acc, rotor_acc = so_rpy_rotor_dynamics(
         pos=data.states.pos,
         quat=data.states.quat,
         vel=data.states.vel,
         ang_vel=data.states.ang_vel,
+        rotor_vel=data.states.rotor_vel,
         cmd=data.controls.attitude.cmd,
-        rotor_vel=None,  # TODO: Add rotor_vel once the parameters are available
         dist_f=data.states.force,
         dist_t=data.states.torque,
         mass=params.mass,
@@ -231,9 +231,8 @@ def so_rpy_rotor_physics(data: SimData) -> SimData:
         rpy_rates_coef=params.rpy_rates_coef,
         cmd_rpy_coef=params.cmd_rpy_coef,
     )
-    # TODO: Add rotor_vel to the states_deriv
     states_deriv = data.states_deriv.replace(
-        vel=vel, ang_vel=data.states.ang_vel, acc=acc, ang_acc=ang_acc
+        vel=vel, ang_vel=data.states.ang_vel, acc=acc, ang_acc=ang_acc, rotor_acc=rotor_acc
     )
     return data.replace(states_deriv=states_deriv)
 
