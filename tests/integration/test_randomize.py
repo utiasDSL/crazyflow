@@ -31,13 +31,14 @@ def test_randomize_mass():
 @pytest.mark.integration
 def test_randomize_inertia():
     sim = Sim(n_worlds=2, n_drones=4, control=Control.state, physics=Physics.first_principles)
+    steps = 100  # around 0.2s at 500Hz
 
     control = np.zeros((sim.n_worlds, sim.n_drones, 13))
     control[:, :, :2] = 0.1  # Sideways motion to force tilt for inertia to have an effect
     control[:, :, 2] = 0.5
 
     sim.state_control(control)
-    sim.step(50)
+    sim.step(steps)
     pos = sim.data.states.pos
 
     sim.reset()
@@ -45,6 +46,6 @@ def test_randomize_inertia():
     randomize_inertia(sim, J)
 
     sim.state_control(control)
-    sim.step(50)
+    sim.step(steps)
     pos_random = sim.data.states.pos
     assert not np.all(pos == pos_random), "Inertia randomization has no effect on dynamics"
