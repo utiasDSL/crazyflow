@@ -259,10 +259,8 @@ class SoRpyRotorDragData:
     """Roll pitch yaw rates coefficient of the drone."""
     cmd_rpy_coef: Array  # (N, M, 1)
     """Roll pitch yaw command coefficient of the drone."""
-    drag_linear_coef: Array  # (N, M, 1)
-    """Linear drag coefficient of the drone."""
-    drag_square_coef: Array  # (N, M, 1)
-    """Square drag coefficient of the drone."""
+    drag_matrix: Array  # (N, M, 3, 3)
+    """Linear drag coefficient matrix of the drone."""
 
     @staticmethod
     def create(
@@ -282,8 +280,7 @@ class SoRpyRotorDragData:
             rpy_coef=jnp.asarray(p["rpy_coef"], device=device),
             rpy_rates_coef=jnp.asarray(p["rpy_rates_coef"], device=device),
             cmd_rpy_coef=jnp.asarray(p["cmd_rpy_coef"], device=device),
-            drag_linear_coef=jnp.asarray(p["drag_linear_coef"], device=device),
-            drag_square_coef=jnp.asarray(p["drag_square_coef"], device=device),
+            drag_matrix=jnp.asarray(p["drag_matrix"], device=device),
         )
 
 
@@ -309,8 +306,7 @@ def so_rpy_rotor_drag_physics(data: SimData) -> SimData:
         rpy_coef=params.rpy_coef,
         rpy_rates_coef=params.rpy_rates_coef,
         cmd_rpy_coef=params.cmd_rpy_coef,
-        drag_linear_coef=params.drag_linear_coef,
-        drag_square_coef=params.drag_square_coef,
+        drag_matrix=params.drag_matrix,
     )
     states_deriv = data.states_deriv.replace(
         vel=vel, ang_vel=data.states.ang_vel, acc=acc, ang_acc=ang_acc, rotor_acc=rotor_acc
