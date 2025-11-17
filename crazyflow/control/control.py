@@ -30,7 +30,7 @@ class Control(str, Enum):
         This is subject to change in the future.
     """
     attitude = "attitude"
-    """Attitude control takes [collective thrust, roll, pitch, yaw].
+    """Attitude control takes [roll, pitch, yaw, collective thrust].
 
     Note:
         Recommended frequency is >=100 Hz.
