@@ -1,5 +1,4 @@
 import pytest
-
 from drone_models.drones import available_drones
 
 from crazyflow.sim import Sim
