@@ -180,20 +180,31 @@ class Sim:
         self,
         mode: str | None = "human",
         world: int = 0,
-        default_cam_config: dict | None = None,
+        camera: int | str = -1,
+        cam_config: dict | None = None,
         width: int = 1920,
         height: int = 1080,
     ) -> NDArray | None:
         if self.viewer is None:
+            if isinstance(camera, str):
+                cam_id, cam_name = None, camera
+            elif isinstance(camera, int):
+                cam_id, cam_name = camera, None
+                if cam_id < -1:
+                    raise ValueError(f"camera id must be >=-1, was {cam_id}")
+            else:
+                raise TypeError("camera argument must be integer or string")
             self.mj_model.vis.global_.offwidth = width
             self.mj_model.vis.global_.offheight = height
             self.viewer = MujocoRenderer(
                 self.mj_model,
                 self.mj_data,
                 max_geom=self.max_visual_geom,
-                default_cam_config=default_cam_config,
+                default_cam_config=cam_config,
                 height=height,
                 width=width,
+                camera_id=cam_id,
+                camera_name=cam_name,
             )
         self.mj_data.qpos[:] = self.mjx_data.qpos[world, :]
         self.mj_data.mocap_pos[:] = self.mjx_data.mocap_pos[world, :]

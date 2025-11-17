@@ -121,6 +121,7 @@ drone-controllers = { path = "./submodules/drone-controllers", editable = true }
 pytest = ">=8.4.1"
 pytest-timeout = ">=2.1.0"
 array-api-strict = ">=2.4.1"
+matplotlib = "*"
 
 [tool.pixi.feature.tests.tasks]
 tests = { cmd = "pytest -v tests", description = "Run tests" }
