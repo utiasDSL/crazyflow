@@ -68,7 +68,14 @@ def draw_points(sim: Sim, points: NDArray, rgba: NDArray | None = None, size: fl
             rgba=rgba,
         )
 
-def change_material(sim: Sim, mat_name: str, drone_ids: NDArray, rgba: NDArray | None = None, emission: NDArray | None = None):
+
+def change_material(
+    sim: Sim,
+    mat_name: str,
+    drone_ids: NDArray,
+    rgba: NDArray | None = None,
+    emission: NDArray | None = None,
+):
     """Change the material of all drones matching the mask.
 
     Args:
@@ -82,16 +89,14 @@ def change_material(sim: Sim, mat_name: str, drone_ids: NDArray, rgba: NDArray |
         raise ValueError(f"drone_ids must be 1D array, got shape {drone_ids.shape}")
     if np.any(drone_ids < 0) or np.any(drone_ids >= sim.n_drones):
         raise ValueError(f"drone_ids must be in range [0, {sim.n_drones - 1}], got {drone_ids}")
-    
+
     if rgba is not None:
         rgba = np.asarray(rgba, dtype=float)
         try:
             # this returns itself if rgba is already the right shape
             rgba = np.broadcast_to(rgba, (len(drone_ids), 4)).copy()
         except Exception:
-            raise ValueError(
-                f"rgba must be shape (4,) or ({len(drone_ids)}, 4), got {rgba.shape}"
-            )
+            raise ValueError(f"rgba must be shape (4,) or ({len(drone_ids)}, 4), got {rgba.shape}")
         rgba = np.clip(rgba, 0.0, 1.0)
 
     if emission is not None:
@@ -108,11 +113,7 @@ def change_material(sim: Sim, mat_name: str, drone_ids: NDArray, rgba: NDArray |
 
     for i, id in enumerate(drone_ids):
         full_mat_name = f"{mat_name}:{id}"
-        mat_id = mujoco.mj_name2id(
-            mj_model,
-            mujoco.mjtObj.mjOBJ_MATERIAL,
-            full_mat_name,
-        )
+        mat_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_MATERIAL, full_mat_name)
         if mat_id < 0:
             raise ValueError(f"Material '{full_mat_name}' not found in MuJoCo model.")
 
@@ -121,6 +122,7 @@ def change_material(sim: Sim, mat_name: str, drone_ids: NDArray, rgba: NDArray |
 
         if emission is not None:
             mj_model.mat_emission[mat_id] = emission[i]
+
 
 def _rotation_matrix_from_points(p1: NDArray, p2: NDArray) -> R:
     """Generate rotation matrices that align their z-axis to p2-p1."""
