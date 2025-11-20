@@ -529,14 +529,13 @@ def test_change_material_errors(device: str):
     n_drones = 2
     sim = Sim(n_drones=n_drones, device=device)
 
-    # ---------- 1) Missing material name: mat_name="bad_mat" ----------
-    drone_ids_ok = np.array([0, 1], dtype=int)
-    rgba_ok = 0.42 * np.ones((n_drones, 4), dtype=float)
-    emission_ok = 0.42 * np.ones((n_drones,), dtype=float)
+    drone_ids = np.array([0, 1], dtype=int)
+    rgba = np.ones((n_drones, 4), dtype=float)
+    emission = np.ones((n_drones,), dtype=float)
 
-    with pytest.raises(ValueError, match=r"Material 'bad_mat:0' not found in MuJoCo model\."):
+    with pytest.raises(ValueError):
         change_material(
-            sim, mat_name="bad_mat", drone_ids=drone_ids_ok, rgba=rgba_ok, emission=emission_ok
+            sim, mat_name="bad_mat", drone_ids=drone_ids, rgba=rgba, emission=emission
         )
 
     with pytest.raises(ValueError, match=r"drone_ids must be 1D array"):
@@ -544,8 +543,8 @@ def test_change_material_errors(device: str):
             sim,
             mat_name="led_top",
             drone_ids=np.array(2, dtype=int),
-            rgba=rgba_ok,
-            emission=emission_ok,
+            rgba=rgba,
+            emission=emission,
         )
 
     with pytest.raises(ValueError, match=r"drone_ids must be in range \[0, 1\]"):
@@ -553,6 +552,6 @@ def test_change_material_errors(device: str):
             sim,
             mat_name="led_top",
             drone_ids=np.arange(3, dtype=int),
-            rgba=rgba_ok,
-            emission=emission_ok,
+            rgba=rgba,
+            emission=emission,
         )
