@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 import jax
 import jax.numpy as jnp
+import mujoco
 import numpy as np
 import pytest
 from jax import Array
@@ -16,6 +17,7 @@ from crazyflow.exception import ConfigError
 from crazyflow.sim import Physics, Sim
 from crazyflow.sim.data import ControlData
 from crazyflow.sim.sim import sync_sim2mjx
+from crazyflow.sim.visualize import change_material
 
 if TYPE_CHECKING:
     from typing import Any
@@ -493,3 +495,64 @@ def test_scan_results(physics: Physics):
     assert np.all(pos_loop_steps[..., 2] > 0.1), "Drones should have moved"
     assert np.allclose(pos_scan_steps, pos_loop_steps), "Scan results should be identical"
     sim.close()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("drone_model", ["cf2x_L250", "cf2x_P250", "cf2x_T350", "cf21B_500"])
+@pytest.mark.parametrize("mat_name", ["led_top", "led_bot"])
+def test_change_material(device: str, drone_model: str, mat_name: str):
+    """change_material should broadcast RGBA/emission and update MuJoCo materials appropriately."""
+    n_drones = 2
+
+    sim = Sim(n_drones=n_drones, drone_model=drone_model, device=device)
+
+    drone_ids = np.array([0, 1], dtype=int)
+    rgba = 0.42 * np.ones((n_drones, 4), dtype=float)
+    emission = 0.42 * np.ones((n_drones,), dtype=float)
+
+    change_material(sim, mat_name=mat_name, drone_ids=drone_ids, rgba=rgba, emission=emission)
+
+    mj_model = sim.mj_model
+    mat0 = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_MATERIAL, f"{mat_name}:0")
+    mat1 = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_MATERIAL, f"{mat_name}:1")
+    expected_rgba = 0.42 * np.ones((4,), dtype=float)
+    expected_emission = 0.42
+    np.testing.assert_allclose(mj_model.mat_rgba[mat0], expected_rgba)
+    np.testing.assert_allclose(mj_model.mat_rgba[mat1], expected_rgba)
+    assert mj_model.mat_emission[mat0] == pytest.approx(expected_emission)
+    assert mj_model.mat_emission[mat1] == pytest.approx(expected_emission)
+
+
+@pytest.mark.unit
+def test_change_material_errors(device: str):
+    """Test that change_material raises the expected errors for bad inputs."""
+    n_drones = 2
+    sim = Sim(n_drones=n_drones, device=device)
+
+    # ---------- 1) Missing material name: mat_name="bad_mat" ----------
+    drone_ids_ok = np.array([0, 1], dtype=int)
+    rgba_ok = 0.42 * np.ones((n_drones, 4), dtype=float)
+    emission_ok = 0.42 * np.ones((n_drones,), dtype=float)
+
+    with pytest.raises(ValueError, match=r"Material 'bad_mat:0' not found in MuJoCo model\."):
+        change_material(
+            sim, mat_name="bad_mat", drone_ids=drone_ids_ok, rgba=rgba_ok, emission=emission_ok
+        )
+
+    with pytest.raises(ValueError, match=r"drone_ids must be 1D array"):
+        change_material(
+            sim,
+            mat_name="led_top",
+            drone_ids=np.array(2, dtype=int),
+            rgba=rgba_ok,
+            emission=emission_ok,
+        )
+
+    with pytest.raises(ValueError, match=r"drone_ids must be in range \[0, 1\]"):
+        change_material(
+            sim,
+            mat_name="led_top",
+            drone_ids=np.arange(3, dtype=int),
+            rgba=rgba_ok,
+            emission=emission_ok,
+        )
