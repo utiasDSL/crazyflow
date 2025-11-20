@@ -76,7 +76,7 @@ def change_material(
     rgba: NDArray | None = None,
     emission: NDArray | None = None,
 ):
-    """Change the material of all drones matching the mask.
+    """Change the material of specified drones.
 
     Args:
         sim: The simulation.
@@ -91,37 +91,26 @@ def change_material(
         raise ValueError(f"drone_ids must be in range [0, {sim.n_drones - 1}], got {drone_ids}")
 
     if rgba is not None:
-        rgba = np.asarray(rgba, dtype=float)
-        try:
-            # this returns itself if rgba is already the right shape
-            rgba = np.broadcast_to(rgba, (len(drone_ids), 4)).copy()
-        except Exception:
-            raise ValueError(f"rgba must be shape (4,) or ({len(drone_ids)}, 4), got {rgba.shape}")
-        rgba = np.clip(rgba, 0.0, 1.0)
+        # this returns itself if rgba is already the right shape
+        rgba = np.broadcast_to(rgba, (len(drone_ids), 4))
 
     if emission is not None:
-        emission = np.asarray(emission, dtype=float)
-        try:
-            emission = np.broadcast_to(emission, (len(drone_ids),)).copy()
-        except Exception:
-            raise ValueError(
-                f"emission must be scalar or shape ({len(drone_ids)},), got {emission.shape}"
-            )
-        emission = np.maximum(emission, 0.0)
+        emission = np.broadcast_to(emission, (len(drone_ids),))
 
     mj_model = sim.mj_model
-
-    for i, id in enumerate(drone_ids):
-        full_mat_name = f"{mat_name}:{id}"
+    mat_ids = []
+    for i, drone_id in enumerate(drone_ids):
+        full_mat_name = f"{mat_name}:{drone_id}"
         mat_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_MATERIAL, full_mat_name)
         if mat_id < 0:
             raise ValueError(f"Material '{full_mat_name}' not found in MuJoCo model.")
+        mat_ids.append(mat_id)
 
-        if rgba is not None:
-            mj_model.mat_rgba[mat_id, :] = rgba[i]
+    if rgba is not None:
+        mj_model.mat_rgba[mat_ids, :] = rgba
 
-        if emission is not None:
-            mj_model.mat_emission[mat_id] = emission[i]
+    if emission is not None:
+        mj_model.mat_emission[mat_ids] = emission
 
 
 def _rotation_matrix_from_points(p1: NDArray, p2: NDArray) -> R:
