@@ -7,7 +7,7 @@ from crazyflow.sim.visualize import change_material
 
 def main():
     """Spawn 25 drones in one world and activate led decks."""
-    sim = Sim(n_drones=25, drone_model="cf21B_500", control=Control.state)
+    sim = Sim(n_drones=25, control=Control.state)
     fps = 60
     cmd = np.zeros((sim.n_worlds, sim.n_drones, 4))
     cmd[..., 3] = sim.data.params.mass[0, 0, 0] * 9.81
