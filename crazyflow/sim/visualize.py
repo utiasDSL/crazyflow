@@ -91,7 +91,6 @@ def change_material(
         raise ValueError(f"drone_ids must be in range [0, {sim.n_drones - 1}], got {drone_ids}")
 
     if rgba is not None:
-        # this returns itself if rgba is already the right shape
         rgba = np.broadcast_to(rgba, (len(drone_ids), 4))
 
     if emission is not None:
@@ -107,7 +106,7 @@ def change_material(
         mat_ids.append(mat_id)
 
     if rgba is not None:
-        mj_model.mat_rgba[mat_ids, :] = rgba
+        mj_model.mat_rgba[mat_ids] = rgba
 
     if emission is not None:
         mj_model.mat_emission[mat_ids] = emission

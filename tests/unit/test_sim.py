@@ -538,7 +538,7 @@ def test_change_material_errors(device: str):
             sim, mat_name="bad_mat", drone_ids=drone_ids, rgba=rgba, emission=emission
         )
 
-    with pytest.raises(ValueError, match=r"drone_ids must be 1D array"):
+    with pytest.raises(ValueError, match="drone_ids must be 1D array"):
         change_material(
             sim,
             mat_name="led_top",
