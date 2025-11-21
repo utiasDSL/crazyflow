@@ -69,6 +69,49 @@ def draw_points(sim: Sim, points: NDArray, rgba: NDArray | None = None, size: fl
         )
 
 
+def change_material(
+    sim: Sim,
+    mat_name: str,
+    drone_ids: NDArray,
+    rgba: NDArray | None = None,
+    emission: NDArray | None = None,
+):
+    """Change the material of specified drones.
+
+    Args:
+        sim: The simulation.
+        mat_name: The name of the material to change.
+        drone_ids: Array of drone indices to modify, shape (n,), dtype=int.
+        rgba: The RGBA color to set, should be of shape (n, 4) or (4,) to be auto-broadcasted.
+        emission: The emission value of material, should be of shape (n,) or scalar.
+    """
+    if drone_ids.ndim != 1:
+        raise ValueError(f"drone_ids must be 1D array, got shape {drone_ids.shape}")
+    if np.any(drone_ids < 0) or np.any(drone_ids >= sim.n_drones):
+        raise ValueError(f"drone_ids must be in range [0, {sim.n_drones - 1}], got {drone_ids}")
+
+    if rgba is not None:
+        rgba = np.broadcast_to(rgba, (len(drone_ids), 4))
+
+    if emission is not None:
+        emission = np.broadcast_to(emission, (len(drone_ids),))
+
+    mj_model = sim.mj_model
+    mat_ids = []
+    for i, drone_id in enumerate(drone_ids):
+        full_mat_name = f"{mat_name}:{drone_id}"
+        mat_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_MATERIAL, full_mat_name)
+        if mat_id < 0:
+            raise ValueError(f"Material '{full_mat_name}' not found in MuJoCo model.")
+        mat_ids.append(mat_id)
+
+    if rgba is not None:
+        mj_model.mat_rgba[mat_ids] = rgba
+
+    if emission is not None:
+        mj_model.mat_emission[mat_ids] = emission
+
+
 def _rotation_matrix_from_points(p1: NDArray, p2: NDArray) -> R:
     """Generate rotation matrices that align their z-axis to p2-p1."""
     p1, p2 = p1.copy(), p2.copy()  # Make sure we don't modify the original arrays
