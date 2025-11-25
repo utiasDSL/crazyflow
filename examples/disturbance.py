@@ -9,12 +9,12 @@ from crazyflow.sim.data import SimData
 def disturbance_fn(data: SimData) -> SimData:
     key, subkey = jax.random.split(data.core.rng_key)
     states = data.states
-    disturbance_force = jax.random.normal(subkey, states.force.shape) * 2e-1  # In world frame
-    states = states.replace(force=states.force + disturbance_force)
+    disturbance_force = jax.random.normal(subkey, states.force.shape) * 0.2  # N, world frame
+    states = states.replace(force=disturbance_force)
 
     key, subkey = jax.random.split(key)
-    disturbance_torque = jax.random.normal(subkey, states.torque.shape) * 2e-4
-    states = states.replace(torque=states.torque + disturbance_torque)
+    disturbance_torque = jax.random.normal(subkey, states.torque.shape) * 0.0002  # Nm, world frame
+    states = states.replace(torque=disturbance_torque)
 
     return data.replace(states=states, core=data.core.replace(rng_key=key))
 
