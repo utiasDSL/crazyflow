@@ -56,7 +56,7 @@ def add_smiley(sim: Sim):
     sim.build_reset_fn()
 
 
-def main():
+def main(show_plot: bool = False, save_plot: bool = False):
     """Example showing the rendering feature and saving a gif via FuncAnimation."""
     # Setup sim
     sim = Sim(
@@ -109,8 +109,10 @@ def main():
         return im1, im2
 
     anim = animation.FuncAnimation(fig, update_frame, frames=int(duration * fps), blit=True)
-    # plt.show()  # this is slow
-    anim.save("cameras.gif", writer="pillow", fps=fps)
+    if show_plot:
+        plt.show()  # this is slow
+    if save_plot:
+        anim.save("cameras.gif", writer="pillow", fps=fps)
 
     sim.close()
 
@@ -119,4 +121,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main(show_plot=True, save_plot=False)
