@@ -2,6 +2,7 @@ import numpy as np
 
 from crazyflow.control import Control
 from crazyflow.sim import Sim
+from crazyflow.sim.sim import use_box_collision
 
 
 def main():
@@ -9,6 +10,7 @@ def main():
     sim = Sim(control=Control.state, freq=500, attitude_freq=500, state_freq=100)
     sim.reset()
     fps = 60
+    use_box_collision(sim, enable=False)
 
     print("Phase 1: Hovering at [0, 0, 0.5] for 3 seconds")
     hover_duration = 3.0
@@ -20,6 +22,7 @@ def main():
         sim.step(sim.freq // sim.control_freq)
         if ((i * fps) % sim.control_freq) < fps:
             sim.render()
+            print(f"Crash detected: {sim.contacts().any()}")
 
     print("Phase 2: Dropping to [-5, 0, -0.5] for 3 seconds")
     drop_duration = 3.0
@@ -31,6 +34,7 @@ def main():
         sim.step(sim.freq // sim.control_freq)
         if ((i * fps) % sim.control_freq) < fps:
             sim.render()
+            print(f"Crash detected: {sim.contacts().any()}")
 
 
 if __name__ == "__main__":
