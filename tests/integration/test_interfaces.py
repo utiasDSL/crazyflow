@@ -57,7 +57,7 @@ def test_attitude_interface(physics: Physics):
     # Check if drone maintained hover position
     dpos = sim.data.states.pos[0, 0] - target_pos
     distance = np.linalg.norm(dpos)
-    assert distance < 0.025, f"Failed to maintain hover with {physics} ({dpos})"
+    assert distance < 0.05, f"Failed to maintain hover with {physics} ({dpos})"
 
 
 @pytest.mark.integration

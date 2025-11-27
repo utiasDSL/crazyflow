@@ -31,11 +31,10 @@ def test_randomize_mass():
 @pytest.mark.integration
 def test_randomize_inertia():
     sim = Sim(n_worlds=2, n_drones=4, control=Control.state, physics=Physics.first_principles)
-    steps = 100  # around 0.2s at 500Hz
+    steps = 50  # around 0.1s at 500Hz, not too long to still be in transient state
 
     control = np.zeros((sim.n_worlds, sim.n_drones, 13))
-    control[:, :, :2] = 0.1  # Sideways motion to force tilt for inertia to have an effect
-    control[:, :, 2] = 0.5
+    control[:, :, :2] = 0.2  # Sideways motion to force tilt for inertia to have an effect
 
     sim.state_control(control)
     sim.step(steps)

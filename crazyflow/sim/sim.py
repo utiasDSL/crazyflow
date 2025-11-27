@@ -534,6 +534,7 @@ def step_attitude_controller(data: SimData) -> SimData:
         attitude_ctrl.cmd,
         ctrl_errors=(attitude_ctrl.r_int_error,),
         ctrl_freq=attitude_ctrl.freq,
+        prev_ang_vel=attitude_ctrl.last_ang_vel,
         **attitude_ctrl.params._asdict(),
     )
     attitude_ctrl = leaf_replace(

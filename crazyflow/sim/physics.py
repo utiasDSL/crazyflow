@@ -35,6 +35,10 @@ class Physics(str, Enum):
 class FirstPrinciplesData:
     mass: Array  # (N, M, 1)
     """Mass of the drone."""
+    L: Array  # (N, M, 1)
+    """Arm length of the drone."""
+    prop_inertia: Array  # (N, M, 1)
+    """Inertia of the propeller."""
     gravity_vec: Array  # (N, M, 3)
     """Gravity vector of the drone."""
     J: Array  # (N, M, 3, 3)
@@ -45,11 +49,11 @@ class FirstPrinciplesData:
     """Force constant of the drone."""
     rpm2torque: Array  # (N, M, 1)
     """Torque constant of the drone."""
-    L: Array  # (N, M, 1)
-    """Arm length of the drone."""
     mixing_matrix: Array  # (N, M, 3, 4)
     """Mixing matrix of the drone."""
-    rotor_tau: Array  # (N, M, 1)
+    drag_matrix: Array  # (N, M, 3, 3)
+    """Drag matrix of the drone."""
+    rotor_dyn_coef: Array  # (N, M, 4)
     """Rotor speed dynamics time constant of the drone."""
 
     @staticmethod
@@ -61,14 +65,16 @@ class FirstPrinciplesData:
         J = jax.device_put(jnp.tile(p["J"][None, None, :, :], (n_worlds, n_drones, 1, 1)), device)
         return FirstPrinciplesData(
             mass=jnp.full((n_worlds, n_drones, 1), p["mass"], device=device),
+            L=jnp.asarray(p["L"], device=device),
+            prop_inertia=jnp.asarray(p["prop_inertia"], device=device),
             gravity_vec=jnp.asarray(p["gravity_vec"], device=device),
             J=J,
             J_inv=jnp.linalg.inv(J),
             rpm2thrust=jnp.asarray(p["rpm2thrust"], device=device),
             rpm2torque=jnp.asarray(p["rpm2torque"], device=device),
-            L=jnp.asarray(p["L"], device=device),
             mixing_matrix=jnp.asarray(p["mixing_matrix"], device=device),
-            rotor_tau=jnp.asarray(p["rotor_tau"], device=device),
+            drag_matrix=jnp.asarray(p["drag_matrix"], device=device),
+            rotor_dyn_coef=jnp.asarray(p["rotor_dyn_coef"], device=device),
         )
 
 
@@ -85,14 +91,16 @@ def first_principles_physics(data: SimData) -> SimData:
         dist_f=data.states.force,
         dist_t=data.states.torque,
         mass=params.mass,
+        L=params.L,
+        prop_inertia=params.prop_inertia,
         gravity_vec=params.gravity_vec,
         J=params.J,
         J_inv=params.J_inv,
         rpm2thrust=params.rpm2thrust,
         rpm2torque=params.rpm2torque,
-        L=params.L,
         mixing_matrix=params.mixing_matrix,
-        rotor_tau=params.rotor_tau,
+        drag_matrix=params.drag_matrix,
+        rotor_dyn_coef=params.rotor_dyn_coef,
     )
     states_deriv = data.states_deriv.replace(
         vel=vel, ang_vel=data.states.ang_vel, acc=acc, ang_acc=ang_acc, rotor_acc=rotor_acc
