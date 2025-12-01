@@ -108,6 +108,11 @@ line-ending = "auto"
 docstring-code-format = true
 docstring-code-line-length = "dynamic"
 
+[tool.uv.sources]
+crazyflow = { path = "./", editable = true }
+drone-models = { path = "./submodules/drone-models", editable = true }
+drone-controllers = { path = "./submodules/drone-controllers", editable = true }
+
 [tool.pixi.workspace]
 channels = ["conda-forge"]
 platforms = ["linux-64"]
