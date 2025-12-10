@@ -12,9 +12,9 @@ jobs:
           git submodule update --init --recursive
 
       - name: Setup Pixi (installs pixi + caches envs) # https://github.com/marketplace/actions/setup-pixi
-        uses: prefix-dev/setup-pixi@v0.9.0            # pin the action version
+        uses: prefix-dev/setup-pixi@v0.9.3            # pin the action version
         with:
-          pixi-version: v0.53.0                       # pin the pixi binary version (optional)
+          pixi-version: v0.61.0                       # pin the pixi binary version (optional)
           cache: true                                 # enable caching of installed envs
           # only write new caches on main pushes (TODO: Enable)
           # cache-write: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
@@ -22,6 +22,8 @@ jobs:
           environments: tests
           # don't activate env (we'll call pixi run -e test explicitly)
           activate-environment: false
+          frozen: true
+          locked: false  # TODO: Re-enable once we have figured out the lock file not up to date issues in CI
 
       - name: Verify pixi and run tests
         run: |
