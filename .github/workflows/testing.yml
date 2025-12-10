@@ -22,8 +22,6 @@ jobs:
           environments: tests
           # don't activate env (we'll call pixi run -e test explicitly)
           activate-environment: false
-          # prefer using existing lockfile if present (faster, deterministic)
-          locked: true
 
       - name: Verify pixi and run tests
         run: |
