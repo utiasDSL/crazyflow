@@ -15,7 +15,7 @@ from jax import Array
 from crazyflow.control import Control
 from crazyflow.exception import ConfigError
 from crazyflow.sim import Physics, Sim
-from crazyflow.sim.data import ControlData
+from crazyflow.sim.data import ControlData, SimData
 from crazyflow.sim.sim import sync_sim2mjx
 from crazyflow.sim.visualize import change_material
 
@@ -534,24 +534,43 @@ def test_change_material_errors(device: str):
     emission = np.ones((n_drones,), dtype=float)
 
     with pytest.raises(ValueError):
-        change_material(
-            sim, mat_name="bad_mat", drone_ids=drone_ids, rgba=rgba, emission=emission
-        )
+        change_material(sim, mat_name="bad_mat", drone_ids=drone_ids, rgba=rgba, emission=emission)
 
     with pytest.raises(ValueError, match="drone_ids must be 1D array"):
         change_material(
-            sim,
-            mat_name="led_top",
-            drone_ids=np.array(2, dtype=int),
-            rgba=rgba,
-            emission=emission,
+            sim, mat_name="led_top", drone_ids=np.array(2, dtype=int), rgba=rgba, emission=emission
         )
 
     with pytest.raises(ValueError, match=r"drone_ids must be in range \[0, 1\]"):
         change_material(
-            sim,
-            mat_name="led_top",
-            drone_ids=np.arange(3, dtype=int),
-            rgba=rgba,
-            emission=emission,
+            sim, mat_name="led_top", drone_ids=np.arange(3, dtype=int), rgba=rgba, emission=emission
         )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("control", Control)
+def test_build_data(control: Control):
+    sim = Sim(control=control)
+    data = sim.build_data()
+    assert isinstance(data, SimData), "build_data() must return a SimData instance"
+    default_data = sim.build_default_data()
+    assert isinstance(default_data, SimData), "build_default_data() must return a SimData instance"
+
+
+@pytest.mark.unit
+def test_functional_api():
+    """Test that the functional API works as expected."""
+    sim = Sim()
+    reset_fn = sim.build_reset_fn()
+    step_fn = sim.build_step_fn()
+    # Test types
+    assert callable(reset_fn), "reset_fn must be a pure function"
+    assert not hasattr(reset_fn, "__self__"), "reset_fn must not be a bound method"
+    assert callable(step_fn), "step_fn must be a pure function"
+    assert not hasattr(step_fn, "__self__"), "step_fn must not be a bound method"
+    # Test the functions run as expected
+    data, default_data = sim.build_data(), sim.build_default_data()
+    data = reset_fn(data, default_data, None)
+    data = reset_fn(data, default_data, jnp.array([True] * sim.n_worlds))
+    data = step_fn(data, 1)
+    data = step_fn(data, 2)

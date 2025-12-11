@@ -1243,7 +1243,7 @@ packages:
 - pypi: ./
   name: crazyflow
   version: 0.0.2
-  sha256: 9aa167a1110aa333659490d9c18d8b6d10f189ccc92e2e79ba8d9a6d2a2c7d29
+  sha256: 1886d88d56fc8bcaff3243a319bd5e12ebd012c5cfc11b39aa4696fe9d67a973
   requires_dist:
   - numpy>=2.0.0
   - scipy>=1.17.0rc1

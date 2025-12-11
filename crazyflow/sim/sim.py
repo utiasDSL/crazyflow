@@ -98,8 +98,7 @@ class Sim:
         self.viewer: MujocoRenderer | None = None
 
         self.data = self.init_data(state_freq, attitude_freq, force_torque_freq, rng_key)
-        self.default_data: SimData
-        self.build_default_data()
+        self.default_data: SimData = self.build_default_data()
 
         # Build the simulation pipeline and overwrite the default _step implementation with it
         self.reset_pipeline: tuple[Callable[[SimData, Array[bool] | None], SimData], ...] = tuple()
@@ -115,8 +114,8 @@ class Sim:
         # enable checks for negative z sign
         self.step_pipeline += (clip_floor_pos,)
 
-        self.build_reset_fn()
-        self.build_step_fn()
+        self._reset = self.build_reset_fn()
+        self._step = self.build_step_fn()
 
     def reset(self, mask: Array | None = None):
         """Reset the simulation to the initial state.
@@ -251,15 +250,23 @@ class Sim:
         mjx_data = jax.vmap(lambda _: mjx_data)(jnp.arange(self.n_worlds))
         return mj_model, mj_data, mjx_model, mjx_data
 
-    def build_step_fn(self):
+    def build_step_fn(self) -> Callable[[SimData, int], SimData]:
         """Setup the chain of functions that are called in Sim.step().
 
         We know all the functions that are called in succession since the simulation is configured
         at initialization time. Instead of branching through options at runtime, we construct a step
         function at initialization that selects the correct functions based on the settings.
 
+        Note:
+            This function both changes the underlying implementation of Sim.step() in-place to the
+            current pipeline and returns the function for pure functional style programming.
+
         Warning:
             If any settings change, the pipeline of functions needs to be reconstructed.
+
+        Returns:
+            The pure JAX function that steps through the simulation. It takes the current SimData
+            and the number of steps to simulate, and returns the updated SimData.
         """
         pipeline = self.step_pipeline
 
@@ -271,9 +278,9 @@ class Sim:
 
         # ``scan`` allows us control over loop unrolling for single steps from a single WhileOp to
         # complete unrolling, reducing either compilation times or fusing the loops to give XLA
-        # maximum freedom to reorder operations and jointly optimize the pipeline. This is especially
-        # relevant for the common use case of running multiple sim steps in an outer loop, e.g. in
-        # gym environments.
+        # maximum freedom to reorder operations and jointly optimize the pipeline. This is
+        # especially relevant for the common use case of running multiple sim steps in an outer
+        # loop, e.g. in gym environments.
         # Having n_steps as a static argument is fine, since patterns with n_steps > 1 will almost
         # always use the same n_steps value for successive calls.
         @partial(jax.jit, static_argnames="n_steps")
@@ -283,9 +290,19 @@ class Sim:
             return data
 
         self._step = step
+        return step
 
-    def build_reset_fn(self):
-        """Build the reset function for the current simulation configuration."""
+    def build_reset_fn(self) -> Callable[[SimData, SimData, Array | None], SimData]:
+        """Build the reset function for the current simulation configuration.
+
+        Note:
+            This function both changes the underlying implementation of Sim.reset() in-place to the
+            current pipeline and returns the function for pure functional style programming.
+
+        Returns:
+            The pure JAX function that resets simulation data. It takes the current SimData, default
+            SimData, and an optional mask for worlds to reset, returning the updated SimData.
+        """
         pipeline = self.reset_pipeline
 
         @jax.jit
@@ -297,18 +314,43 @@ class Sim:
             return data
 
         self._reset = reset
+        return reset
 
-    def build_data(self):
-        self.data = self.init_data(
-            self.data.controls.state_freq,
-            self.data.controls.attitude_freq,
-            self.data.controls.force_torque_freq,
-            self.data.core.rng_key,
+    def build_data(self) -> SimData:
+        """Build the simulation data for the current configuration.
+
+        Note:
+            This function re-initializes the simulation data according to the current configuration.
+            It also returns the constructed data for use with pure functions.
+
+        Returns:
+            The simulation data as a single PyTree that can be passed to the pure simulation
+            functions for stepping and resetting.
+        """
+        state_freq = self.data.controls.state.freq if self.data.controls.state is not None else 0
+        attitude_freq = (
+            self.data.controls.attitude.freq if self.data.controls.attitude is not None else 0
         )
+        force_torque_freq = self.data.controls.force_torque.freq
+        self.data = self.init_data(
+            state_freq, attitude_freq, force_torque_freq, self.data.core.rng_key
+        )
+        return self.data
 
-    def build_default_data(self):
-        """Initialize the default data for the simulation."""
+    def build_default_data(self) -> SimData:
+        """Initialize the default data for the simulation.
+
+        Note:
+            This function initializes the default data used as a reference in the reset function to
+            reset the simulation to. It also returns the constructed data for use with pure
+            functions.
+
+        Returns:
+            The default simulation data used as a reference in the reset function to reset the
+            simulation to.
+        """
         self.default_data = self.data.replace()
+        return self.default_data
 
     def build_mjx(self):
         if self.viewer is not None:
