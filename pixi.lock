@@ -1231,7 +1231,7 @@ packages:
 - pypi: ./
   name: crazyflow
   version: 0.0.2
-  sha256: 45709a32344fb66c1b61cd601df4159600306bedbcc8bbb4592476df1f4d5220
+  sha256: 384585f28f5d8292d4fe9226f3f31b17c1911896e9477f42f61976b77d99d36d
   requires_dist:
   - numpy>=2.0.0
   - scipy>=1.17.0rc1
@@ -1244,8 +1244,6 @@ packages:
   - flax
   - ml-collections
   - casadi
-  - drone-models @ file:///home/rather/repos/crazyflow/submodules/drone-models
-  - drone-controllers @ file:///home/rather/repos/crazyflow/submodules/drone-controllers
   - jax[cuda12] ; extra == 'gpu'
   - fire ; extra == 'benchmark'
   - matplotlib ; extra == 'benchmark'

@@ -30,8 +30,8 @@ dependencies = [
     "flax",
     "ml_collections",
     "casadi",
-    "drone-models",             # from submodules folder, defined below
-    "drone-controllers",        # from submodules folder, defined below
+    # "drone-models",             # from submodules folder, defined below, TODO: needs to be here to work proplery for PyPI release
+    # "drone-controllers",        # from submodules folder, defined below, TODO: needs to be here to work proplery for PyPI release
 ]
 requires-python = ">=3.11,<3.14" # MuJoCo has no wheels for python 14
 
