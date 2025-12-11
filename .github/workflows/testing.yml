@@ -22,8 +22,6 @@ jobs:
           environments: tests
           # don't activate env (we'll call pixi run -e test explicitly)
           activate-environment: false
-          frozen: true
-          locked: false  # TODO: Re-enable once we have figured out the lock file not up to date issues in CI
 
       - name: Verify pixi and run tests
         run: |

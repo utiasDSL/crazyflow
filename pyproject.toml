@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "crazyflow"
 dynamic = ["version"]
 description = "Fast, parallelizable simulations of Crazyflies with JAX and MuJoCo."
+authors = [{ name = "Martin Schuck" }, { name = "Marcel Rath" }]
 readme = "README.md"
 license = { file = "LICENSE" }
 classifiers = [

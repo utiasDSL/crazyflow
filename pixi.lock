@@ -1231,7 +1231,7 @@ packages:
 - pypi: ./
   name: crazyflow
   version: 0.0.2
-  sha256: 1886d88d56fc8bcaff3243a319bd5e12ebd012c5cfc11b39aa4696fe9d67a973
+  sha256: 45709a32344fb66c1b61cd601df4159600306bedbcc8bbb4592476df1f4d5220
   requires_dist:
   - numpy>=2.0.0
   - scipy>=1.17.0rc1
@@ -1244,8 +1244,8 @@ packages:
   - flax
   - ml-collections
   - casadi
-  - drone-models @ file:///home/amacati/repos/crazyflow/submodules/drone-models
-  - drone-controllers @ file:///home/amacati/repos/crazyflow/submodules/drone-controllers
+  - drone-models @ file:///home/rather/repos/crazyflow/submodules/drone-models
+  - drone-controllers @ file:///home/rather/repos/crazyflow/submodules/drone-controllers
   - jax[cuda12] ; extra == 'gpu'
   - fire ; extra == 'benchmark'
   - matplotlib ; extra == 'benchmark'
@@ -1309,7 +1309,7 @@ packages:
 - pypi: ./submodules/drone-controllers
   name: drone-controllers
   version: 0.1.0b0
-  sha256: 87fbfba3a2e793888f7412ed9fde120af3fe33bff6c8481a8b5b4f8b948345ea
+  sha256: 12ea0340d69f702ff398f4b95fff4bf832f04ef1cdcafb11ee9c7b17bf021594
   requires_dist:
   - numpy>=2.0.0
   - scipy>=1.17.0rc1
@@ -1319,7 +1319,7 @@ packages:
 - pypi: ./submodules/drone-models
   name: drone-models
   version: 0.1.0b0
-  sha256: e8787c0c329c5bcfb309d1a260c9c1f24442658e6baff15689f17dc475ffa5e8
+  sha256: a976cda0cea621991de512507c614f3d97b307049b47e1a50213f5f1b4f2775e
   requires_dist:
   - numpy>=2.0.0
   - scipy>=1.17.0rc1
