@@ -21,6 +21,7 @@ The cache persists between Python sessions, so compilation only needs to happen 
 or when the cache directory is deleted.
 """
 
+import shutil
 import time
 from pathlib import Path
 
@@ -32,7 +33,7 @@ def main():
     cache_dir = Path("/tmp/jax_cache_test")
     if use_cache := cache_dir.exists():
         print("Cache directory exists. This run will be fast.")
-        print(f"\nTo run without cache, delete the directory {cache_dir}.")
+        print("\nTo run without cache, run this script again.")
     else:
         print("Cache directory does not exist. This run will be slow.")
         print("\nTo run with cache, run this script again.")
@@ -44,6 +45,9 @@ def main():
     t2 = time.perf_counter()
     prefix = "Using cache: " if use_cache else "Not using cache: "
     print(f"{prefix}\n Init: {t1 - t0:.3f}s\n Step: {t2 - t1:.3f}s")
+    if use_cache:
+        shutil.rmtree(cache_dir)  # Clean up cache so that the next run is slow again
+    sim.close()
 
 
 if __name__ == "__main__":

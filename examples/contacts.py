@@ -9,7 +9,8 @@ def main():
     sim = Sim(n_worlds=n_worlds, n_drones=n_drones, physics=Physics.so_rpy, device="cpu")
     fps = 60
 
-    cmd = np.array([[[0.3, 0, 0, 0] for _ in range(n_drones)] for _ in range(n_worlds)])
+    cmd = np.zeros((sim.n_worlds, sim.n_drones, 4))
+    cmd[..., 3] = sim.data.params.mass[0, 0, 0] * 9.81 * 1.04
     for i in range(int(2 * sim.control_freq)):
         sim.attitude_control(cmd)
         sim.step(sim.freq // sim.control_freq)

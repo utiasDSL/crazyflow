@@ -35,6 +35,7 @@ def main():
         if ((i * fps) % sim.control_freq) < fps:
             sim.render()
             print(f"Crash detected: {sim.contacts().any()}")
+    sim.close()
 
 
 if __name__ == "__main__":

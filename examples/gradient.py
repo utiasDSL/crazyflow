@@ -11,7 +11,9 @@ from crazyflow.sim.data import SimData
 
 def main():
     sim = Sim(control=Control.attitude, physics=Physics.first_principles, attitude_freq=50)
-    sim_step = sim._step
+    # Remove clipping floor function which kills gradients
+    sim.step_pipeline = sim.step_pipeline[:-1]
+    sim_step = sim.build_step_fn()
 
     def step(cmd: NDArray, data: SimData) -> jax.Array:
         data = data.replace(
@@ -23,7 +25,7 @@ def main():
     step_grad = jax.jit(jax.grad(step))
 
     cmd = jnp.zeros((1, 1, 4), dtype=jnp.float32)
-    cmd = cmd.at[..., 3].set(0.3)
+    cmd = cmd.at[..., 3].set(sim.data.params.mass[0, 0, 0] * 9.81 * 1.05)
 
     # Trigger jax's jit to compile the gradient function. This is not necessary, but it ensures that
     # the timings are not affected by the compilation time.

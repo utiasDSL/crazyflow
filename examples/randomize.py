@@ -17,9 +17,9 @@ def main():
     # Randomize the inertia and mass of the drones
     mask = np.array([True, False, False])  # Only randomize the first world
     mass = sim.data.params.mass
-    mass_rng = mass + jax.random.normal(jax.random.key(0), (sim.n_worlds, sim.n_drones, 1)) * 1e-4
+    mass_rng = mass + jax.random.normal(jax.random.key(0), (sim.n_worlds, sim.n_drones, 1)) * 5e-3
     J = sim.data.params.J
-    J_rng = J + jax.random.normal(jax.random.key(0), (sim.n_worlds, sim.n_drones, 3, 3)) * 1e-5
+    J_rng = J + jax.random.normal(jax.random.key(0), (sim.n_worlds, sim.n_drones, 3, 3)) * 1e-6
 
     randomize_mass(sim, mass_rng, mask)
     # Note: The mask is optional. We can also randomize all worlds at once
