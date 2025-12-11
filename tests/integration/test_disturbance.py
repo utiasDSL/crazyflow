@@ -3,7 +3,7 @@ import numpy as np
 import pytest
 
 from crazyflow.sim import Physics, Sim
-from crazyflow.sim.structs import SimData
+from crazyflow.sim.data import SimData
 
 
 def disturbance_fn(data: SimData) -> SimData:
@@ -17,6 +17,10 @@ def disturbance_fn(data: SimData) -> SimData:
 @pytest.mark.parametrize("physics", Physics)
 @pytest.mark.integration
 def test_disturbance(physics: Physics):
+    # TODO: Skip unimplemented physics modes until they are implemented in crazyflow
+    if physics in (Physics.so_rpy_rotor, Physics.so_rpy_rotor_drag):
+        pytest.skip(f"Physics mode {physics} not yet implemented")
+
     sim = Sim(n_worlds=2, n_drones=3, control="state", physics=physics)
     control = np.zeros((sim.n_worlds, sim.n_drones, 13))
     control[..., :3] = 1.0
@@ -29,7 +33,7 @@ def test_disturbance(physics: Physics):
         pos.append(sim.data.states.pos[0, 0])
 
     sim.reset()
-    sim.step_pipeline = sim.step_pipeline[:2] + (disturbance_fn,) + sim.step_pipeline[2:]
+    sim.step_pipeline = sim.step_pipeline[:1] + (disturbance_fn,) + sim.step_pipeline[1:]
     sim.build_step_fn()
     for _ in range(n_steps):
         sim.state_control(control)

@@ -20,3 +20,9 @@ benchmark/data
 # pixi environments
 .pixi
 *.egg-info
+
+# MkDocs build output
+site/
+# Temporary files
+.DS_Store
+Thumbs.db

@@ -151,7 +151,7 @@ def main(device: str = "cpu", n_worlds_exp: int = 6):
     sim_config = config_dict.ConfigDict()
     sim_config.n_worlds = 1
     sim_config.n_drones = 1
-    sim_config.physics = "analytical"
+    sim_config.physics = "first_principles"
     sim_config.control = "attitude"
     sim_config.attitude_freq = 500
     sim_config.device = device

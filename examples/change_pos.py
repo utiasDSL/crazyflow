@@ -13,7 +13,10 @@ def main():
     # information on changing JAX arrays, see:
     # https://jax.readthedocs.io/en/latest/notebooks/Common_Gotchas_in_JAX.html#in-place-updates
     sim.data = sim.data.replace(
-        states=sim.data.states.replace(pos=sim.data.states.pos.at[0, 0].set(np.array([1, 1, 0.2])))
+        states=sim.data.states.replace(
+            pos=sim.data.states.pos.at[0, 0].set(np.array([0.5, 0.5, 0.2])),
+            rotor_vel=sim.data.states.rotor_vel.at[0, 0].set(np.ones(4) * 20000),
+        )
     )
     control = np.zeros((sim.n_worlds, sim.n_drones, 13))
     control[..., :3] = np.array([[0.0, 0.0, 0.3]])

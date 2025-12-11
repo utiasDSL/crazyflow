@@ -5,36 +5,40 @@ from typing import Callable, Literal
 import jax
 import jax.numpy as jnp
 import numpy as np
+from drone_controllers.mellinger.params import ForceTorqueParams
 from gymnasium import spaces
 from gymnasium.vector import AutoresetMode, VectorEnv
 from gymnasium.vector.utils import batch_space
 from jax import Array
 from numpy.typing import NDArray
 
-from crazyflow.control.control import MAX_THRUST, MIN_THRUST, Control
+from crazyflow.control.control import Control
 from crazyflow.sim import Sim
+from crazyflow.sim.data import SimData
 from crazyflow.sim.physics import Physics
-from crazyflow.sim.structs import SimData
 from crazyflow.utils import leaf_replace
 
 
-def action_space(control_type: Control) -> spaces.Box:
+def action_space(control_type: Control, drone_model: str) -> spaces.Box:
     """Select the appropriate action space for a given control type.
 
     Args:
         control_type: The desired control mode.
+        drone_model: Drone model of the environment.
 
     Returns:
         The action space.
     """
     match control_type:
         case Control.attitude:
+            params = ForceTorqueParams.load(drone_model)
+            thrust_min, thrust_max = params.thrust_min * 4, params.thrust_max * 4
             return spaces.Box(
-                np.array([4 * MIN_THRUST, -np.pi / 2, -np.pi / 2, -np.pi / 2], dtype=np.float32),
-                np.array([4 * MAX_THRUST, np.pi / 2, np.pi / 2, np.pi / 2], dtype=np.float32),
+                np.array([-np.pi / 2, -np.pi / 2, -np.pi / 2, thrust_min], dtype=np.float32),
+                np.array([np.pi / 2, np.pi / 2, np.pi / 2, thrust_max], dtype=np.float32),
             )
-        case Control.thrust:
-            return spaces.Box(MIN_THRUST, MAX_THRUST, shape=(4,))
+        case Control.force_torque:
+            return spaces.Box(-1.0, 1.0, shape=(6,))
         case _:
             raise ValueError(f"Invalid control type {control_type}")
 
@@ -58,7 +62,8 @@ class DroneEnv(VectorEnv):
         *,
         num_envs: int = 1,
         max_episode_time: float = 10.0,
-        physics: Literal["sys_id", "analytical"] | Physics = Physics.sys_id,
+        physics: Literal["so_rpy", "first_principles"] | Physics = Physics.so_rpy,
+        drone_model: str = "cf2x_L250",
         freq: int = 500,
         device: str = "cpu",
         reset_randomization: Callable[[SimData, Array], SimData] | None = None,
@@ -69,6 +74,7 @@ class DroneEnv(VectorEnv):
             num_envs: The number of environments to run in parallel.
             max_episode_time: The time horizon after which episodes are truncated (s).
             physics: The crazyflow physics simulation model.
+            drone_model: Drone model of the environment.
             freq: The frequency at which the environment is run.
             device: The device of the environment and the simulation.
             reset_randomization: A function that randomizes the initial state of the simulation. If
@@ -81,7 +87,9 @@ class DroneEnv(VectorEnv):
         assert Physics(physics) in Physics, f"Invalid physics type {physics}"
 
         # Initialize the simulation
-        self.sim = Sim(n_worlds=num_envs, n_drones=1, device=device, physics=physics)
+        self.sim = Sim(
+            n_worlds=num_envs, n_drones=1, drone_model=drone_model, device=device, physics=physics
+        )
         assert self.sim.freq >= self.sim.control_freq, "Sim freq must be higher than control freq"
         if not self.sim.freq % self.freq == 0:
             # We can handle other cases, but it's not recommended
@@ -99,7 +107,7 @@ class DroneEnv(VectorEnv):
         self._marked_for_reset = jnp.zeros((self.sim.n_worlds), dtype=jnp.bool_, device=self.device)
 
         # Define action and observation spaces
-        self.single_action_space = action_space(self.sim.control)
+        self.single_action_space = action_space(self.sim.control, self.sim.drone_model)
         self.action_space = batch_space(self.single_action_space, self.sim.n_worlds)
         self.single_observation_space = spaces.Dict(
             {
@@ -128,8 +136,8 @@ class DroneEnv(VectorEnv):
                 raise NotImplementedError("State control currently not supported")
             case Control.attitude:
                 self.sim.attitude_control(action)
-            case Control.thrust:
-                self.sim.thrust_control(action)
+            case Control.force_torque:
+                self.sim.force_torque_control(action)
             case _:
                 raise ValueError(f"Invalid control type {self.sim.control}")
 

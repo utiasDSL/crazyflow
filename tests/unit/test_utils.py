@@ -27,16 +27,16 @@ def test_enable_cache(enable_xla: bool):
         )
 
         assert cache_path == jax.config.jax_compilation_cache_dir, "Cache path not set correctly"
-        assert (
-            min_size == jax.config.jax_persistent_cache_min_entry_size_bytes
-        ), "Min size not set correctly"
-        assert (
-            min_time == jax.config.jax_persistent_cache_min_compile_time_secs
-        ), "Min time not set correctly"
+        assert min_size == jax.config.jax_persistent_cache_min_entry_size_bytes, (
+            "Min size not set correctly"
+        )
+        assert min_time == jax.config.jax_persistent_cache_min_compile_time_secs, (
+            "Min time not set correctly"
+        )
         expected_xla = "all" if enable_xla else orig_xla
-        assert (
-            expected_xla == jax.config.jax_persistent_cache_enable_xla_caches
-        ), "XLA caches not set correctly"
+        assert expected_xla == jax.config.jax_persistent_cache_enable_xla_caches, (
+            "XLA caches not set correctly"
+        )
 
     finally:
         if orig_cache_dir is not None:

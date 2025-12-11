@@ -4,7 +4,7 @@ from crazyflow.sim import Sim
 
 def main():
     """Main entry point for profiling."""
-    sim = Sim(n_worlds=1, n_drones=1, physics="analytical", control="attitude")
+    sim = Sim(n_worlds=1, n_drones=1, physics="first_principles", control="attitude")
 
     compiled_reset = sim._reset.lower(sim.data, sim.default_data, None).compile()
     compiled_step = sim._step.lower(sim.data, 1).compile()

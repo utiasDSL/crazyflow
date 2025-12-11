@@ -1,15 +1,21 @@
 import jax
 import numpy as np
 import pytest
+from drone_controllers import parametrize
+from drone_controllers.mellinger import state2attitude
 from scipy.spatial.transform import Rotation as R
 
-from crazyflow.control.control import Control, state2attitude
+from crazyflow.control.control import Control
 from crazyflow.sim import Physics, Sim
 
 
 @pytest.mark.integration
 @pytest.mark.parametrize("physics", Physics)
 def test_state_interface(physics: Physics):
+    # TODO: Skip unimplemented physics modes until they are implemented in crazyflow
+    if physics in (Physics.so_rpy_rotor, Physics.so_rpy_rotor_drag):
+        pytest.skip(f"Physics mode {physics} not yet implemented")
+
     sim = Sim(physics=physics, control=Control.state)
 
     # Simple P controller for attitude to reach target height
@@ -30,46 +36,45 @@ def test_state_interface(physics: Physics):
 @pytest.mark.integration
 @pytest.mark.parametrize("physics", Physics)
 def test_attitude_interface(physics: Physics):
+    # TODO: Skip unimplemented physics modes until they are implemented in crazyflow
+    if physics in (Physics.so_rpy_rotor, Physics.so_rpy_rotor_drag):
+        pytest.skip(f"Physics mode {physics} not yet implemented")
+
     sim = Sim(physics=physics, control=Control.attitude)
     target_pos = np.array([0.0, 0.0, 1.0])
-    jit_state2attitude = jax.jit(state2attitude)
+    jit_state2attitude = jax.jit(parametrize(state2attitude, drone_model="cf2x_L250"))
 
     i_error = np.zeros((1, 1, 3))
+    cmd = np.zeros((1, 1, 13))
+    cmd[0, 0, 2] = 1.0  # Set z position target to 1.0
 
     for _ in range(int(2 * sim.control_freq)):  # Run simulation for 2 seconds
         pos, vel, quat = sim.data.states.pos, sim.data.states.vel, sim.data.states.quat
-        des_pos = np.array([[[0, 0, 1.0]]])
-        dt = 1 / sim.data.controls.attitude_freq
-        cmd, i_error = jit_state2attitude(
-            pos, vel, quat, des_pos, np.zeros((1, 1, 3)), np.zeros((1, 1, 1)), i_error, dt
-        )
-        sim.attitude_control(cmd)
+        rpyt, i_error = jit_state2attitude(pos, quat, vel, None, cmd, (i_error,), ctrl_freq=100)
+        sim.attitude_control(rpyt)
         sim.step(sim.freq // sim.control_freq)
-        if np.linalg.norm(sim.data.states.pos[0, 0] - target_pos) < 0.1:
-            break
 
     # Check if drone maintained hover position
     dpos = sim.data.states.pos[0, 0] - target_pos
     distance = np.linalg.norm(dpos)
-    assert distance < 0.1, f"Failed to maintain hover with {physics} ({dpos})"
+    assert distance < 0.05, f"Failed to maintain hover with {physics} ({dpos})"
 
 
 @pytest.mark.integration
 @pytest.mark.parametrize("physics", Physics)
 def test_swarm_control(physics: Physics):
+    # TODO: Skip unimplemented physics modes until they are implemented in crazyflow
+    if physics in (Physics.so_rpy_rotor, Physics.so_rpy_rotor_drag):
+        pytest.skip(f"Physics mode {physics} not yet implemented")
+
     n_worlds, n_drones = 2, 3
     sim = Sim(n_worlds=n_worlds, n_drones=n_drones, physics=physics, control=Control.state)
-    target_pos = sim.data.states.pos + np.array([0.2, 0.2, 0.2])
+    target_pos = sim.data.states.pos + np.array([0.3, 0.3, 0.3])
 
     cmd = np.zeros((n_worlds, n_drones, 13))
     cmd[..., :3] = target_pos
-
-    for _ in range(int(3 * sim.control_freq)):  # Run simulation for 2 seconds
-        sim.state_control(cmd)
-        sim.step(sim.freq // sim.control_freq)
-        if np.linalg.norm(sim.data.states.pos[0, 0] - target_pos) < 0.1:
-            break
-
+    sim.state_control(cmd)
+    sim.step(3 * sim.freq)
     # Check if drone maintained hover position
     max_dist = np.max(np.linalg.norm(sim.data.states.pos - target_pos, axis=-1))
     assert max_dist < 0.05, f"Failed to reach target, max dist: {max_dist}"
@@ -78,10 +83,11 @@ def test_swarm_control(physics: Physics):
 @pytest.mark.integration
 @pytest.mark.parametrize("physics", Physics)
 def test_yaw_rotation(physics: Physics):
-    if physics == Physics.sys_id:  # TODO: Remove once yaw is supported for sys_id
-        pytest.skip("Yaw != 0 currently not supported for sys_id")
+    # TODO: Enable yaw rotations once the models are better calibrated
+    if physics != Physics.first_principles:
+        pytest.skip(f"Physics mode {physics} currently does not support yaw rotation")
 
-    sim = Sim(physics=physics, control=Control.state)
+    sim = Sim(physics=physics, control=Control.state, state_freq=100)
     sim.reset()
 
     cmd = np.zeros((sim.n_worlds, sim.n_drones, 13))
@@ -89,7 +95,7 @@ def test_yaw_rotation(physics: Physics):
     cmd[..., 9] = np.pi / 2  # Test if the drone can rotate in yaw
 
     sim.state_control(cmd)
-    sim.step(sim.freq * 2)
+    sim.step(200 * sim.freq // sim.control_freq)  # Run simulation for 2 seconds
     pos = sim.data.states.pos[0, 0]
     rot = R.from_quat(sim.data.states.quat[0, 0])
     distance = np.linalg.norm(pos - np.array([0.2, 0.2, 0.2]))

@@ -1,21 +1,27 @@
-from crazyflow.constants import MASS, J
+import casadi as cs
+import numpy as np
+
 from crazyflow.sim import Sim
-from crazyflow.sim.symbolic import symbolic_attitude, symbolic_from_sim, symbolic_thrust
+from crazyflow.sim.symbolic import symbolic_from_sim
 
 
 def main():
-    # We can create a symbolic attitude control model without the simulation
-    dt = 1 / 500
-    symbolic_model = symbolic_attitude(dt)
-    # We can also create a symbolic thrust control model
-    symbolic_model = symbolic_thrust(MASS, J, dt)
-
-    # Or we can create a symbolic model directly from the simulation. Note that this will use the
+    # We can create a symbolic model directly from the simulation. Note that this will use the
     # nominal parameters of the simulation and choose the control type based on the simulation.
-    sim = Sim()
-    symbolic_model = symbolic_from_sim(sim)
-    assert symbolic_model.nx == 12  # 3 for pos, 3 for orient, 3 for vel, 3 for ang vel
-    assert symbolic_model.nu == 4  # collective thrust + 3-dim attitude
+    sim = Sim(physics="so_rpy", freq=500)
+    X_dot, X, U, Y = symbolic_from_sim(sim)
+    assert X_dot.shape == (13, 1)
+    assert X.shape == (13, 1)
+    assert U.shape == (4, 1)  # Attitude control
+    assert Y.shape == (7, 1)  # 3 for pos and 4 for quat
+
+    # To create a discrete-time model that you can integrate, you can use the integrator function
+    # from CasADi.
+    fd = cs.integrator("fd", "cvodes", {"x": X, "p": U, "ode": X_dot}, 0, 1 / sim.freq)
+    x0 = np.ones((13, 1))
+    u = np.ones((4, 1))
+    res = fd(x0=x0, p=u)
+    assert res["xf"].shape == (13, 1)
 
 
 if __name__ == "__main__":

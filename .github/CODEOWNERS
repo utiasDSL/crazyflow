@@ -11,5 +11,5 @@
 .github/CODEOWNERS  @amacati
 
 # Build related files
-pyproject.toml  @amacati
-crazyflow @amacati
+pyproject.toml  @amacati @Rather1337
+crazyflow @amacati @Rather1337

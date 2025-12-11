@@ -4,32 +4,42 @@ from functools import partial, wraps
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, ParamSpec, TypeVar
 
+import drone_models
 import jax
 import jax.numpy as jnp
 import mujoco
 import mujoco.mjx as mjx
+from drone_controllers.mellinger import (
+    attitude2force_torque,
+    force_torque2rotor_vel,
+    state2attitude,
+)
 from einops import rearrange
 from gymnasium.envs.mujoco.mujoco_rendering import MujocoRenderer
 from jax import Array, Device
-from jax.scipy.spatial.transform import Rotation as R
 
-from crazyflow.constants import J_INV, MASS, J
-from crazyflow.control.control import Control, attitude2rpm, pwm2rpm, state2attitude, thrust2pwm
+from crazyflow.control.control import Control, controllable
 from crazyflow.exception import ConfigError, NotInitializedError
+from crazyflow.sim.data import SimControls, SimCore, SimData, SimParams, SimState, SimStateDeriv
 from crazyflow.sim.integration import Integrator, euler, rk4, symplectic_euler
 from crazyflow.sim.physics import (
     Physics,
-    collective_force2acceleration,
-    collective_torque2ang_vel_deriv,
-    rpms2collective_wrench,
-    surrogate_identified_collective_wrench,
+    first_principles_physics,
+    so_rpy_physics,
+    so_rpy_rotor_drag_physics,
+    so_rpy_rotor_physics,
 )
-from crazyflow.sim.structs import SimControls, SimCore, SimData, SimParams, SimState, SimStateDeriv
 from crazyflow.utils import grid_2d, leaf_replace, pytree_replace, to_device
 
 if TYPE_CHECKING:
     from mujoco.mjx import Data, Model
     from numpy.typing import NDArray
+
+    from crazyflow.control.mellinger import (
+        MellingerAttitudeData,
+        MellingerForceTorqueData,
+        MellingerStateData,
+    )
 
 Params = ParamSpec("Params")  # Represents arbitrary parameters
 Return = TypeVar("Return")  # Represents the return type
@@ -48,32 +58,31 @@ def requires_mujoco_sync(fn: Callable[Params, Return]) -> Callable[Params, Retur
 
 
 class Sim:
-    default_path = Path(__file__).parents[1] / "models/cf2/scene.xml"
-    drone_path = Path(__file__).parents[1] / "models/cf2/cf2.xml"
-
     def __init__(
         self,
         n_worlds: int = 1,
         n_drones: int = 1,
+        drone_model: str = "cf2x_L250",
         physics: Physics = Physics.default,
         control: Control = Control.default,
         integrator: Integrator = Integrator.default,
         freq: int = 500,
         state_freq: int = 100,
         attitude_freq: int = 500,
-        thrust_freq: int = 500,
+        force_torque_freq: int = 500,
         device: str = "cpu",
         xml_path: Path | None = None,
         rng_key: int = 0,
     ):
         assert Physics(physics) in Physics, f"Physics mode {physics} not implemented"
         assert Control(control) in Control, f"Control mode {control} not implemented"
-        if physics == Physics.sys_id and control == Control.thrust:
-            raise ConfigError("Thrust control is not supported with sys_id physics")
+        if physics != Physics.first_principles and control == Control.force_torque:
+            raise ConfigError("Force-torque control requires first principles physics")
         if freq > 10_000 and not jax.config.jax_enable_x64:
-            raise ConfigError("Double precision mode is required for high frequency simulations")
+            raise ConfigError("High frequency simulations require double precision mode")
         self.physics = physics
         self.control = control
+        self.drone_model = drone_model
         self.integrator = integrator
         self.device = jax.devices(device)[0]
         self.n_worlds = n_worlds
@@ -82,14 +91,14 @@ class Sim:
         self.max_visual_geom = 1000
 
         # Initialize MuJoCo world and data
-        self._xml_path = xml_path or self.default_path
+        self._xml_path = xml_path or Path(__file__).parents[1] / "scene.xml"
+        self.drone_path = Path(drone_models.__file__).parent / "data" / f"{drone_model}.xml"
         self.spec = self.build_mjx_spec()
         self.mj_model, self.mj_data, self.mjx_model, self.mjx_data = self.build_mjx_model(self.spec)
         self.viewer: MujocoRenderer | None = None
 
-        self.data = self.init_data(state_freq, attitude_freq, thrust_freq, rng_key)
-        self.default_data: SimData
-        self.build_default_data()
+        self.data = self.init_data(state_freq, attitude_freq, force_torque_freq, rng_key)
+        self.default_data: SimData = self.build_default_data()
 
         # Build the simulation pipeline and overwrite the default _step implementation with it
         self.reset_pipeline: tuple[Callable[[SimData, Array[bool] | None], SimData], ...] = tuple()
@@ -97,15 +106,16 @@ class Sim:
         # The ``select_xxx_fn`` methods return functions, not the results of calling those
         # functions. They act as factories that produce building blocks for the construction of our
         # simulation pipeline.
-        self.step_pipeline += (select_control_fn(self.control),)
-        self.step_pipeline += (select_wrench_fn(self.physics),)
-        self.step_pipeline += (select_integrate_fn(self.physics, self.integrator),)
+        self.step_pipeline += build_control_fns(self.control, self.physics)
+        physics_fn = select_physics_fn(self.physics)
+        self.step_pipeline += (select_integrate_fn(self.integrator, physics_fn),)
+        self.step_pipeline += (increment_steps,)
         # We never drop below -0.001 (drones can't pass through the floor). We use -0.001 to
         # enable checks for negative z sign
         self.step_pipeline += (clip_floor_pos,)
 
-        self.build_reset_fn()
-        self.build_step_fn()
+        self._reset = self.build_reset_fn()
+        self._step = self.build_step_fn()
 
     def reset(self, mask: Array | None = None):
         """Reset the simulation to the initial state.
@@ -122,6 +132,17 @@ class Sim:
         assert n_steps > 0, "Number of steps must be positive"
         self.data = self._step(self.data, n_steps=n_steps)
 
+    def state_control(self, controls: Array):
+        """Set the desired state for all drones in all worlds."""
+        assert controls.shape == (self.n_worlds, self.n_drones, 13), "controls shape mismatch"
+        assert self.control == Control.state, "State control is not enabled by the sim config"
+        controls = to_device(controls, self.device)
+        self.data = self.data.replace(
+            controls=self.data.controls.replace(
+                state=self.data.controls.state.replace(staged_cmd=controls)
+            )
+        )
+
     def attitude_control(self, controls: Array):
         """Set the desired attitude for all drones in all worlds.
 
@@ -134,41 +155,55 @@ class Sim:
         assert controls.shape == (self.n_worlds, self.n_drones, 4), "controls shape mismatch"
         assert self.control == Control.attitude, "Attitude control is not enabled by the sim config"
         controls = to_device(controls, self.device)
-        self.data = self.data.replace(controls=self.data.controls.replace(staged_attitude=controls))
+        self.data = self.data.replace(
+            controls=self.data.controls.replace(
+                attitude=self.data.controls.attitude.replace(staged_cmd=controls)
+            )
+        )
 
-    def state_control(self, controls: Array):
-        """Set the desired state for all drones in all worlds."""
-        assert controls.shape == (self.n_worlds, self.n_drones, 13), "controls shape mismatch"
-        assert self.control == Control.state, "State control is not enabled by the sim config"
-        controls = to_device(controls, self.device)
-        self.data = self.data.replace(controls=self.data.controls.replace(state=controls))
-
-    def thrust_control(self, cmd: Array):
-        """Set the desired thrust for all drones in all worlds."""
+    def force_torque_control(self, cmd: Array):
+        """Set the desired force and torque for all drones in all worlds."""
         assert cmd.shape == (self.n_worlds, self.n_drones, 4), "Command shape mismatch"
-        assert self.control == Control.thrust, "Thrust control is not enabled by the sim config"
+        assert self.control == Control.force_torque, (
+            "Force-torque control is not enabled by the sim config"
+        )
         controls = to_device(cmd, self.device)
-        self.data = self.data.replace(controls=self.data.controls.replace(thrust=controls))
+        self.data = self.data.replace(
+            controls=self.data.controls.replace(
+                force_torque=self.data.controls.force_torque.replace(staged_cmd=controls)
+            )
+        )
 
     @requires_mujoco_sync
     def render(
         self,
         mode: str | None = "human",
         world: int = 0,
-        default_cam_config: dict | None = None,
+        camera: int | str = -1,
+        cam_config: dict | None = None,
         width: int = 1920,
         height: int = 1080,
     ) -> NDArray | None:
         if self.viewer is None:
+            if isinstance(camera, str):
+                cam_id, cam_name = None, camera
+            elif isinstance(camera, int):
+                cam_id, cam_name = camera, None
+                if cam_id < -1:
+                    raise ValueError(f"camera id must be >=-1, was {cam_id}")
+            else:
+                raise TypeError("camera argument must be integer or string")
             self.mj_model.vis.global_.offwidth = width
             self.mj_model.vis.global_.offheight = height
             self.viewer = MujocoRenderer(
                 self.mj_model,
                 self.mj_data,
                 max_geom=self.max_visual_geom,
-                default_cam_config=default_cam_config,
+                default_cam_config=cam_config,
                 height=height,
                 width=width,
+                camera_id=cam_id,
+                camera_name=cam_name,
             )
         self.mj_data.qpos[:] = self.mjx_data.qpos[world, :]
         self.mj_data.mocap_pos[:] = self.mjx_data.mocap_pos[world, :]
@@ -182,7 +217,7 @@ class Sim:
         Args:
             seed: The seed for the JAX rng.
         """
-        self.data = seed_sim(self.data, seed, self.device)
+        self.data: SimData = seed_sim(self.data, seed, self.device)
 
     def close(self):
         if self.viewer is not None:
@@ -212,18 +247,26 @@ class Sim:
         mj_data = mujoco.MjData(mj_model)
         mjx_model = mjx.put_model(mj_model, device=self.device)
         mjx_data = mjx.put_data(mj_model, mj_data, device=self.device)
-        mjx_data = jax.vmap(lambda _: mjx_data)(jnp.ones(self.n_worlds))
+        mjx_data = jax.vmap(lambda _: mjx_data)(jnp.arange(self.n_worlds))
         return mj_model, mj_data, mjx_model, mjx_data
 
-    def build_step_fn(self):
+    def build_step_fn(self) -> Callable[[SimData, int], SimData]:
         """Setup the chain of functions that are called in Sim.step().
 
         We know all the functions that are called in succession since the simulation is configured
         at initialization time. Instead of branching through options at runtime, we construct a step
         function at initialization that selects the correct functions based on the settings.
 
+        Note:
+            This function both changes the underlying implementation of Sim.step() in-place to the
+            current pipeline and returns the function for pure functional style programming.
+
         Warning:
             If any settings change, the pipeline of functions needs to be reconstructed.
+
+        Returns:
+            The pure JAX function that steps through the simulation. It takes the current SimData
+            and the number of steps to simulate, and returns the updated SimData.
         """
         pipeline = self.step_pipeline
 
@@ -235,9 +278,9 @@ class Sim:
 
         # ``scan`` allows us control over loop unrolling for single steps from a single WhileOp to
         # complete unrolling, reducing either compilation times or fusing the loops to give XLA
-        # maximum freedom to reorder operations and jointly optimize the pipeline. This is especially
-        # relevant for the common use case of running multiple sim steps in an outer loop, e.g. in
-        # gym environments.
+        # maximum freedom to reorder operations and jointly optimize the pipeline. This is
+        # especially relevant for the common use case of running multiple sim steps in an outer
+        # loop, e.g. in gym environments.
         # Having n_steps as a static argument is fine, since patterns with n_steps > 1 will almost
         # always use the same n_steps value for successive calls.
         @partial(jax.jit, static_argnames="n_steps")
@@ -247,9 +290,19 @@ class Sim:
             return data
 
         self._step = step
+        return step
 
-    def build_reset_fn(self):
-        """Build the reset function for the current simulation configuration."""
+    def build_reset_fn(self) -> Callable[[SimData, SimData, Array | None], SimData]:
+        """Build the reset function for the current simulation configuration.
+
+        Note:
+            This function both changes the underlying implementation of Sim.reset() in-place to the
+            current pipeline and returns the function for pure functional style programming.
+
+        Returns:
+            The pure JAX function that resets simulation data. It takes the current SimData, default
+            SimData, and an optional mask for worlds to reset, returning the updated SimData.
+        """
         pipeline = self.reset_pipeline
 
         @jax.jit
@@ -261,18 +314,43 @@ class Sim:
             return data
 
         self._reset = reset
+        return reset
 
-    def build_data(self):
-        self.data = self.init_data(
-            self.data.controls.state_freq,
-            self.data.controls.attitude_freq,
-            self.data.controls.thrust_freq,
-            self.data.core.rng_key,
+    def build_data(self) -> SimData:
+        """Build the simulation data for the current configuration.
+
+        Note:
+            This function re-initializes the simulation data according to the current configuration.
+            It also returns the constructed data for use with pure functions.
+
+        Returns:
+            The simulation data as a single PyTree that can be passed to the pure simulation
+            functions for stepping and resetting.
+        """
+        state_freq = self.data.controls.state.freq if self.data.controls.state is not None else 0
+        attitude_freq = (
+            self.data.controls.attitude.freq if self.data.controls.attitude is not None else 0
         )
+        force_torque_freq = self.data.controls.force_torque.freq
+        self.data = self.init_data(
+            state_freq, attitude_freq, force_torque_freq, self.data.core.rng_key
+        )
+        return self.data
 
-    def build_default_data(self):
-        """Initialize the default data for the simulation."""
+    def build_default_data(self) -> SimData:
+        """Initialize the default data for the simulation.
+
+        Note:
+            This function initializes the default data used as a reference in the reset function to
+            reset the simulation to. It also returns the constructed data for use with pure
+            functions.
+
+        Returns:
+            The default simulation data used as a reference in the reset function to reset the
+            simulation to.
+        """
         self.default_data = self.data.replace()
+        return self.default_data
 
     def build_mjx(self):
         if self.viewer is not None:
@@ -281,16 +359,25 @@ class Sim:
         self.mj_model, self.mj_data, self.mjx_model, self.mjx_data = self.build_mjx_model(self.spec)
 
     def init_data(
-        self, state_freq: int, attitude_freq: int, thrust_freq: int, rng_key: Array
-    ) -> tuple[SimData, SimData]:
+        self, state_freq: int, attitude_freq: int, force_torque_freq: int, rng_key: Array
+    ) -> SimData:
         """Initialize the simulation data."""
         drone_ids = [self.mj_model.body(f"drone:{i}").id for i in range(self.n_drones)]
         N, D = self.n_worlds, self.n_drones
         data = SimData(
             states=SimState.create(N, D, self.device),
             states_deriv=SimStateDeriv.create(N, D, self.device),
-            controls=SimControls.create(N, D, state_freq, attitude_freq, thrust_freq, self.device),
-            params=SimParams.create(N, D, MASS, J, J_INV, self.device),
+            controls=SimControls.create(
+                N,
+                D,
+                self.control,
+                self.drone_model,
+                state_freq,
+                attitude_freq,
+                force_torque_freq,
+                self.device,
+            ),
+            params=SimParams.create(N, D, self.physics, self.drone_model, self.device),
             core=SimCore.create(self.freq, N, D, drone_ids, rng_key, self.device),
         )
         if D > 1:  # If multiple drones, arrange them in a grid
@@ -306,11 +393,11 @@ class Sim:
     @property
     def control_freq(self) -> int:
         if self.control == Control.state:
-            return self.data.controls.state_freq
+            return self.data.controls.state.freq
         if self.control == Control.attitude:
-            return self.data.controls.attitude_freq
-        if self.control == Control.thrust:
-            return self.data.controls.thrust_freq
+            return self.data.controls.attitude.freq
+        if self.control == Control.force_torque:
+            return self.data.controls.force_torque.freq
         raise NotImplementedError(f"Control mode {self.control} not implemented")
 
     @property
@@ -325,11 +412,12 @@ class Sim:
         controls = self.data.controls
         match self.control:
             case Control.state:
-                control_steps, control_freq = controls.state_steps, controls.state_freq
+                control_steps, control_freq = controls.state.steps, controls.state.freq
             case Control.attitude:
-                control_steps, control_freq = (controls.attitude_steps, controls.attitude_freq)
-            case Control.thrust:
-                control_steps, control_freq = (controls.thrust_steps, controls.thrust_freq)
+                control_steps, control_freq = controls.attitude.steps, controls.attitude.freq
+            case Control.force_torque:
+                control_steps = controls.force_torque.steps
+                control_freq = controls.force_torque.freq
             case _:
                 raise NotImplementedError(f"Control mode {self.control} not implemented")
         return controllable(self.data.core.steps, self.data.core.freq, control_steps, control_freq)
@@ -360,42 +448,53 @@ class Sim:
         raise NotInitializedError("_step call before building the simulation pipeline.")
 
 
-def select_control_fn(control: Control) -> Callable[[SimData], SimData]:
-    """Select the control function for the given control mode."""
+def build_control_fns(
+    control: Control, physics: Physics
+) -> tuple[Callable[[SimData], SimData], ...]:
+    """Select the control functions for the given control mode.
+
+    Note:
+        This function returns a tuple of functions, not a single function. The returned functions
+        are called in succession in the simulation pipeline.
+    """
     match control:
         case Control.state:
-            return lambda data: step_attitude_controller(step_state_controller(data))
+            control_pipeline = (step_state_controller, step_attitude_controller)
+            if physics == Physics.first_principles:
+                control_pipeline = control_pipeline + (step_force_torque_controller,)
         case Control.attitude:
-            return step_attitude_controller
-        case Control.thrust:
-            return step_thrust_controller
+            if physics == Physics.first_principles:
+                control_pipeline = (step_attitude_controller, step_force_torque_controller)
+            elif physics in (Physics.so_rpy, Physics.so_rpy_rotor, Physics.so_rpy_rotor_drag):
+                control_pipeline = (commit_attitude_controller,)
+            else:
+                raise NotImplementedError(f"Control mode {control} not implemented for {physics}")
+        case Control.force_torque:
+            control_pipeline = (step_force_torque_controller,)
         case _:
             raise NotImplementedError(f"Control mode {control} not implemented")
 
+    return control_pipeline
 
-def select_wrench_fn(physics: Physics) -> Callable[[SimData], SimData]:
-    """Select the wrench function for the given physics mode."""
+
+def select_physics_fn(physics: Physics) -> Callable[[SimData], SimData]:
+    """Select the physics function for the given physics mode."""
     match physics:
-        case Physics.analytical:
-            return analytical_wrench
-        case Physics.sys_id:
-            return identified_wrench
+        case Physics.first_principles:
+            return first_principles_physics
+        case Physics.so_rpy:
+            return so_rpy_physics
+        case Physics.so_rpy_rotor:
+            return so_rpy_rotor_physics
+        case Physics.so_rpy_rotor_drag:
+            return so_rpy_rotor_drag_physics
         case _:
             raise NotImplementedError(f"Physics mode {physics} not implemented")
 
 
-def select_derivative_fn(physics: Physics) -> Callable[[SimData], SimData]:
-    """Select the derivative function for the given physics mode."""
-    match physics:
-        case Physics.analytical:
-            return analytical_derivative
-        case Physics.sys_id:
-            return identified_derivative
-        case _:
-            raise NotImplementedError(f"Physics mode {physics} not implemented")
-
-
-def select_integrate_fn(physics: Physics, integrator: Integrator) -> Callable[[SimData], SimData]:
+def select_integrate_fn(
+    integrator: Integrator, physics_fn: Callable[[SimData], SimData]
+) -> Callable[[SimData], SimData]:
     """Select the integration function for the given physics and integrator mode."""
     match integrator:
         case Integrator.euler:
@@ -407,31 +506,12 @@ def select_integrate_fn(physics: Physics, integrator: Integrator) -> Callable[[S
         case _:
             raise NotImplementedError(f"Integrator {integrator} not implemented")
 
-    derivative_fn = select_derivative_fn(physics)
-
-    def integrate(data: SimData) -> SimData:
-        data = integrate_fn(data, derivative_fn)
-        data = data.replace(core=data.core.replace(steps=data.core.steps + 1))
-        return data
-
-    return integrate
+    return partial(integrate_fn, deriv_fn=physics_fn)
 
 
-@jax.jit
-def controllable(step: Array, freq: int, control_steps: Array, control_freq: int) -> Array:
-    """Check which worlds can currently update their controllers.
-
-    Args:
-        step: The current step of the simulation.
-        freq: The frequency of the simulation.
-        control_steps: The steps at which the controllers were last updated.
-        control_freq: The frequency of the controllers.
-
-    Returns:
-        A boolean mask of shape (n_worlds,) that is True at the worlds where the controllers can be
-        updated.
-    """
-    return ((step - control_steps) >= (freq / control_freq)) | (control_steps == -1)
+def increment_steps(data: SimData) -> SimData:
+    """Increment the simulation steps."""
+    return data.replace(core=data.core.replace(steps=data.core.steps + 1))
 
 
 @jax.jit
@@ -461,84 +541,78 @@ def sync_sim2mjx(data: SimData, mjx_data: Data, mjx_model: Model) -> tuple[SimDa
 
 def step_state_controller(data: SimData) -> SimData:
     """Compute the updated controls for the state controller."""
-    states, controls = data.states, data.controls
-    mask = controllable(data.core.steps, data.core.freq, controls.state_steps, controls.state_freq)
-    des_pos, des_vel = controls.state[..., :3], controls.state[..., 3:6]
-    des_yaw = controls.state[..., [9]]  # Keep (N, M, 1) shape for broadcasting
-    dt = 1 / data.controls.state_freq
-    attitude, pos_err_i = state2attitude(
-        states.pos, states.vel, states.quat, des_pos, des_vel, des_yaw, controls.pos_err_i, dt
+    states = data.states
+    state_ctrl: MellingerStateData = data.controls.state
+    assert state_ctrl is not None, "Using state controller without initialized data"
+    mask = controllable(data.core.steps, data.core.freq, state_ctrl.steps, state_ctrl.freq)
+    state_ctrl = leaf_replace(state_ctrl, mask, cmd=state_ctrl.staged_cmd)
+    rpyt, pos_err_i = state2attitude(
+        states.pos,
+        states.quat,
+        states.vel,
+        states.ang_vel,
+        state_ctrl.cmd,
+        ctrl_errors=(state_ctrl.pos_err_i,),
+        ctrl_freq=state_ctrl.freq,
+        **state_ctrl.params._asdict(),
     )
-    controls = leaf_replace(
-        controls, mask, state_steps=data.core.steps, staged_attitude=attitude, pos_err_i=pos_err_i
-    )
-    return data.replace(controls=controls)
+    state_ctrl = leaf_replace(state_ctrl, mask, steps=data.core.steps, pos_err_i=pos_err_i)
+    attitude_ctrl = leaf_replace(data.controls.attitude, mask, staged_cmd=rpyt)
+    return data.replace(controls=data.controls.replace(state=state_ctrl, attitude=attitude_ctrl))
 
 
 def step_attitude_controller(data: SimData) -> SimData:
     """Compute the updated controls for the attitude controller."""
-    controls = data.controls
-    steps, freq = data.core.steps, data.core.freq
-    mask = controllable(steps, freq, controls.attitude_steps, controls.attitude_freq)
-    # Commit the staged attitude controls
-    staged_attitude = controls.staged_attitude
-    controls = leaf_replace(controls, mask, attitude_steps=steps, attitude=staged_attitude)
-    # Compute the new rpm values from the committed attitude controls
-    quat, attitude = data.states.quat, controls.attitude
-    dt = 1 / controls.attitude_freq
-    rpms, rpy_err_i = attitude2rpm(attitude, quat, controls.last_rpy, controls.rpy_err_i, dt)
-    rpy = R.from_quat(quat).as_euler("xyz")
-    controls = leaf_replace(controls, mask, rpms=rpms, rpy_err_i=rpy_err_i, last_rpy=rpy)
-    return data.replace(controls=controls)
-
-
-def step_thrust_controller(data: SimData) -> SimData:
-    """Compute the updated controls for the thrust controller."""
-    controls = data.controls
-    steps = data.core.steps
-    mask = controllable(steps, data.core.freq, controls.thrust_steps, controls.thrust_freq)
-    rpms = pwm2rpm(thrust2pwm(controls.thrust))
-    controls = leaf_replace(controls, mask, thrust_steps=steps, rpms=rpms)
-    return data.replace(controls=controls)
-
-
-def analytical_wrench(data: SimData) -> SimData:
-    """Compute the wrench from the analytical dynamics model."""
-    states, controls, params = data.states, data.controls, data.params
-    force, torque = rpms2collective_wrench(controls.rpms, states.quat, states.ang_vel, params.J)
-    return data.replace(states=data.states.replace(force=force, torque=torque))
-
-
-def analytical_derivative(data: SimData) -> SimData:
-    """Compute the derivative of the states."""
-    quat, mass, J_inv = data.states.quat, data.params.mass, data.params.J_INV
-    acc = collective_force2acceleration(data.states.force, mass)
-    ang_vel_deriv = collective_torque2ang_vel_deriv(data.states.torque, quat, J_inv)
-    vel, ang_vel = (data.states.vel, data.states.ang_vel)  # Already given in the states
-    deriv = data.states_deriv
-    deriv = deriv.replace(dpos=vel, drot=ang_vel, dvel=acc, dang_vel=ang_vel_deriv)
-    return data.replace(states_deriv=deriv)
-
-
-def identified_wrench(data: SimData) -> SimData:
-    """Compute the wrench from the identified dynamics model."""
-    states, controls = data.states, data.controls
-    mass, J = data.params.mass, data.params.J
-    force, torque = surrogate_identified_collective_wrench(
-        controls.attitude, states.quat, states.ang_vel, mass, J, 1 / data.core.freq
+    states = data.states
+    attitude_ctrl: MellingerAttitudeData = data.controls.attitude
+    assert attitude_ctrl is not None, "Using attitude controller without initialized data"
+    mask = controllable(data.core.steps, data.core.freq, attitude_ctrl.steps, attitude_ctrl.freq)
+    attitude_ctrl = leaf_replace(attitude_ctrl, mask, cmd=attitude_ctrl.staged_cmd)
+    force, torque, r_int_error = attitude2force_torque(
+        states.pos,
+        states.quat,
+        states.vel,
+        states.ang_vel,
+        attitude_ctrl.cmd,
+        ctrl_errors=(attitude_ctrl.r_int_error,),
+        ctrl_freq=attitude_ctrl.freq,
+        prev_ang_vel=attitude_ctrl.last_ang_vel,
+        **attitude_ctrl.params._asdict(),
     )
-    return data.replace(states=data.states.replace(force=force, torque=torque))
+    attitude_ctrl = leaf_replace(
+        attitude_ctrl,
+        mask,
+        r_int_error=r_int_error,
+        last_ang_vel=states.ang_vel,
+        steps=data.core.steps,
+    )
+    ft_ctrl = leaf_replace(
+        data.controls.force_torque, mask, staged_cmd=jnp.concat([force, torque], axis=-1)
+    )
+    return data.replace(
+        states=states, controls=data.controls.replace(attitude=attitude_ctrl, force_torque=ft_ctrl)
+    )
 
 
-identified_derivative = analytical_derivative  # We can use the same derivative function for both
+def commit_attitude_controller(data: SimData) -> SimData:
+    """Commit the staged attitude command to the controller setpoint."""
+    attitude_ctrl: MellingerAttitudeData = data.controls.attitude
+    mask = controllable(data.core.steps, data.core.freq, attitude_ctrl.steps, attitude_ctrl.freq)
+    attitude_ctrl = leaf_replace(attitude_ctrl, mask, cmd=attitude_ctrl.staged_cmd)
+    return data.replace(controls=data.controls.replace(attitude=attitude_ctrl))
 
 
-def identity(data: SimData, *args: Any, **kwargs: Any) -> SimData:
-    """Identity function for the simulation pipeline.
-
-    Used as default function for optional pipeline steps.
-    """
-    return data
+def step_force_torque_controller(data: SimData) -> SimData:
+    """Compute the updated controls for the thrust controller."""
+    ft_ctrl: MellingerForceTorqueData = data.controls.force_torque
+    assert ft_ctrl is not None, "Using force torque controller without initialized data"
+    mask = controllable(data.core.steps, data.core.freq, ft_ctrl.steps, ft_ctrl.freq)
+    ft_ctrl = leaf_replace(ft_ctrl, mask, cmd=ft_ctrl.staged_cmd)
+    rotor_vel = force_torque2rotor_vel(
+        ft_ctrl.cmd[..., [0]], ft_ctrl.cmd[..., 1:], **ft_ctrl.params._asdict()
+    )
+    ft_ctrl = leaf_replace(ft_ctrl, mask, steps=data.core.steps)
+    return data.replace(controls=data.controls.replace(rotor_vel=rotor_vel, force_torque=ft_ctrl))
 
 
 def clip_floor_pos(data: SimData) -> SimData:
@@ -556,3 +630,28 @@ def seed_sim(data: SimData, seed: int, device: Device) -> SimData:
     """JIT-compiled seeding function."""
     rng_key = jax.device_put(jax.random.key(seed), device)
     return data.replace(core=data.core.replace(rng_key=rng_key))
+
+
+def use_box_collision(sim: Sim, enable: bool = True):
+    """Changes the collision geometry to use boxes or spheres (default).
+
+    Args:
+        sim: The simulation instance.
+        enable: If True, use box collision geometry. If False, use sphere collision geometry.
+
+    Warning:
+        Using box collision geometry is more computationally expensive than sphere collision
+        geometry, especially for larger swarms. It is recommended to only enable box collision
+        geometry for small swarms or when high accuracy is required.
+    """
+    for geom in sim.spec.geoms:
+        if geom.name.startswith("col_sphere"):
+            geom.contype = 1 * (not enable)
+            geom.conaffinity = 1 * (not enable)
+            geom.rgba[3] = 1 * (not enable)
+        if geom.name.startswith("col_box"):
+            geom.contype = 1 * enable
+            geom.conaffinity = 1 * enable
+            geom.rgba[3] = 1 * enable
+
+    sim.build_mjx()

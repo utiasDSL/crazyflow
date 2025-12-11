@@ -1,7 +1,7 @@
+import jax
 import numpy as np
 import pytest
 
-from crazyflow.constants import J
 from crazyflow.control import Control
 from crazyflow.randomize import randomize_inertia, randomize_mass
 from crazyflow.sim import Physics, Sim
@@ -9,44 +9,42 @@ from crazyflow.sim import Physics, Sim
 
 @pytest.mark.integration
 def test_randomize_mass():
-    sim = Sim(n_worlds=2, n_drones=4, control=Control.state, physics=Physics.analytical)
+    sim = Sim(n_worlds=2, n_drones=4, control=Control.state, physics=Physics.first_principles)
 
-    add_on_mass = np.random.uniform(-0.005, 0.005, size=(sim.n_worlds, sim.n_drones))
-    masses = np.ones((sim.n_worlds, sim.n_drones)) * 0.025
-    randomized_masses = masses + add_on_mass
     control = np.zeros((sim.n_worlds, sim.n_drones, 13))
     control[:, :, 2] = 0.5
 
     sim.state_control(control)
     sim.step(sim.freq // sim.control_freq)
     pos = sim.data.states.pos
-    sim.reset()
 
-    randomize_mass(sim, randomized_masses)
+    sim.reset()
+    mass_disturbance = jax.random.normal(jax.random.key(0), sim.data.params.mass.shape) * 1e-4
+    randomize_mass(sim, sim.data.params.mass + mass_disturbance)
 
     sim.state_control(control)
     sim.step(sim.freq // sim.control_freq)
     pos_random = sim.data.states.pos
-    assert not np.all(pos == pos_random), "Inertia randomization has no effect on dynamics"
+    assert not np.all(pos == pos_random), "Mass randomization has no effect on dynamics"
 
 
 @pytest.mark.integration
 def test_randomize_inertia():
-    sim = Sim(n_worlds=2, n_drones=4, control=Control.state, physics=Physics.analytical)
+    sim = Sim(n_worlds=2, n_drones=4, control=Control.state, physics=Physics.first_principles)
+    steps = 50  # around 0.1s at 500Hz, not too long to still be in transient state
 
-    add_on_j = np.random.uniform(-1.5e-5, 1.5e-5, size=(sim.n_worlds, sim.n_drones, 3, 3))
-    randomized_j = J + add_on_j
     control = np.zeros((sim.n_worlds, sim.n_drones, 13))
-    control[:, :, 2] = 0.5
+    control[:, :, :2] = 0.2  # Sideways motion to force tilt for inertia to have an effect
 
     sim.state_control(control)
-    sim.step(sim.freq // sim.control_freq)
+    sim.step(steps)
     pos = sim.data.states.pos
-    sim.reset()
 
-    randomize_inertia(sim, randomized_j)
+    sim.reset()
+    J = sim.data.params.J + jax.random.normal(jax.random.key(0), sim.data.params.J.shape) * 1e-5
+    randomize_inertia(sim, J)
 
     sim.state_control(control)
-    sim.step(sim.freq // sim.control_freq)
+    sim.step(steps)
     pos_random = sim.data.states.pos
     assert not np.all(pos == pos_random), "Inertia randomization has no effect on dynamics"

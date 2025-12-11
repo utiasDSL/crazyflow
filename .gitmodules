@@ -1,0 +1,8 @@
+[submodule "submodules/drone-models"]
+	path = submodules/drone-models
+	url = https://github.com/utiasDSL/drone-models.git
+	branch = main
+[submodule "submodules/drone-controllers"]
+	path = submodules/drone-controllers
+	url = https://github.com/utiasDSL/drone-controllers.git
+	branch = main

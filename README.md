@@ -6,17 +6,43 @@ Fast, parallelizable simulations of Crazyflies with JAX.
 
 [![Python Version]][Python Version URL] [![Ruff Check]][Ruff Check URL] [![Documentation Status]][Documentation Status URL] [![Tests]][Tests URL]
 
-[Python Version]: https://img.shields.io/badge/python-3.10+-blue.svg
+[Python Version]: https://img.shields.io/badge/python-3.11+-blue.svg
 [Python Version URL]: https://www.python.org
 
 [Ruff Check]: https://github.com/utiasDSL/crazyflow/actions/workflows/ruff.yml/badge.svg?style=flat-square
 [Ruff Check URL]: https://github.com/utiasDSL/crazyflow/actions/workflows/ruff.yml
 
-[Documentation Status]: https://readthedocs.org/projects/crazyflow/badge/?version=latest
-[Documentation Status URL]: https://crazyflow.readthedocs.io/en/latest/?badge=latest
+[Documentation Status]: https://github.com/utiasDSL/crazyflow/actions/workflows/docs.yml/badge.svg
+[Documentation Status URL]: https://utiasdsl.github.io/crazyflow
 
 [Tests]: https://github.com/utiasDSL/crazyflow/actions/workflows/testing.yml/badge.svg
 [Tests URL]: https://github.com/utiasDSL/crazyflow/actions/workflows/testing.yml
+
+## Quick Start
+For a more detailed guide, check out our [documentation TODO](TODO).
+
+### Normal installation
+The regular way to use Crazyflow is to install it from PyPI with your favourite package manager, e.g., with pip:
+``` bash
+pip install crazyflow
+```
+
+### Developer installation
+If you plan to develop with and around Crazyflow, you can use the existing [pixi](https://pixi.sh/) environment.
+``` bash
+git clone --recurse-submodules git@github.com:utiasDSL/crazyflow.git
+cd crazyflow
+pixi shell
+```
+
+This will install Crazyflow, drone-models, and drone-controllers in editable mode for easy development.
+
+In case you want to use another package manager or install the simulator with it's subpackages into another project, simply install all packages manually in your environment:
+``` bash
+pip install -e . # Installing Crazyflow
+pip install -e ./submodules/drone-models
+pip install -e ./submodules/drone-controllers
+```
 
 
 ## Architecture
@@ -30,8 +56,10 @@ The simulation is built as a pipeline of functions that are composed at initiali
 
 #### Physics Backends
 Multiple physics models are supported:
-- analytical: A first-principles model based on physical equations
-- sys_id: A system-identified model trained on real drone data
+- first_principles: A first-principles model based on physical equations
+- so_rpy: A system-identified model trained on real drone data
+- so_rpy_rotor: An enhanced system-identified model that includes thrust dynamics
+- so_rpy_rotor_drag: A system-identified model that includes thrust dynamics and drag effects
 
 #### Control Modes
 Different control interfaces are available:

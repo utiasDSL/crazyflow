@@ -1,211 +1,322 @@
+"""Physics models for the simulation."""
+
+from __future__ import annotations
+
 from enum import Enum
-from functools import partial
+from typing import TYPE_CHECKING
 
 import jax
 import jax.numpy as jnp
-import numpy as np
+from drone_models.core import load_params
+from drone_models.first_principles import dynamics as first_principles_dynamics
+from drone_models.so_rpy import dynamics as so_rpy_dynamics
+from drone_models.so_rpy_rotor import dynamics as so_rpy_rotor_dynamics
+from drone_models.so_rpy_rotor_drag import dynamics as so_rpy_rotor_drag_dynamics
+from flax.struct import dataclass
 from jax import Array
-from jax.numpy import vectorize
-from jax.scipy.spatial.transform import Rotation as R
 
-from crazyflow.constants import ARM_LEN, GRAVITY, SIGN_MIX_MATRIX
-from crazyflow.control.control import KF, KM
+if TYPE_CHECKING:
+    from jax import Device
 
-SYS_ID_PARAMS = {
-    "acc": np.array([20.907574256269616, 3.653687545690674]),
-    "roll_acc": np.array([-130.3, -16.33, 119.3]),
-    "pitch_acc": np.array([-99.94, -13.3, 84.73]),
-    # Yaw dynamics are not identified, parameters were chosen to stabilize yaw dynamics. See
-    # https://github.com/utiasDSL/crazyflow/pull/41
-    "yaw_acc": np.array([-60.0, -10.0, 140.0]),
-}
+    from crazyflow.sim.data import SimData
 
 
 class Physics(str, Enum):
     """Physics mode for the simulation."""
 
-    analytical = "analytical"
-    sys_id = "sys_id"
-    default = analytical
+    first_principles = "first_principles"
+    so_rpy = "so_rpy"
+    so_rpy_rotor = "so_rpy_rotor"
+    so_rpy_rotor_drag = "so_rpy_rotor_drag"
+    default = first_principles
 
 
-@partial(vectorize, signature="(4),(4),(3),(1),(3,3)->(3),(3)", excluded=[5])
-def surrogate_identified_collective_wrench(
-    controls: Array, quat: Array, ang_vel: Array, mass: Array, J: Array, dt: float
-) -> tuple[Array, Array]:
-    """Surrogate collective wrench for the identified dynamics model.
+@dataclass
+class FirstPrinciplesData:
+    mass: Array  # (N, M, 1)
+    """Mass of the drone."""
+    L: Array  # (N, M, 1)
+    """Arm length of the drone."""
+    prop_inertia: Array  # (N, M, 1)
+    """Inertia of the propeller."""
+    gravity_vec: Array  # (N, M, 3)
+    """Gravity vector of the drone."""
+    J: Array  # (N, M, 3, 3)
+    """Inertia matrix of the drone."""
+    J_inv: Array  # (N, M, 3, 3)
+    """Inverse of the inertia matrix of the drone."""
+    rpm2thrust: Array  # (N, M, 1)
+    """Force constant of the drone."""
+    rpm2torque: Array  # (N, M, 1)
+    """Torque constant of the drone."""
+    mixing_matrix: Array  # (N, M, 3, 4)
+    """Mixing matrix of the drone."""
+    drag_matrix: Array  # (N, M, 3, 3)
+    """Drag matrix of the drone."""
+    rotor_dyn_coef: Array  # (N, M, 4)
+    """Rotor speed dynamics time constant of the drone."""
 
-    Contrary to the other physics implementations, this function is not based on a physical model.
-    Instead, we use a predefined model structure, fit its parameters to data collected on a real
-    drone, and predict the next state based on the control inputs and the current state. Since we do
-    not have a physical model, we cannot compute the actual forces and torques required by the
-    simulation pipeline. Instead, we return surrogate forces and torques that result in the desired
-    acceleration and rpy rates derivative after converting back to the state derivative.
-
-    Args:
-        controls: The 4D control input consisting of the desired collective thrust and attitude.
-        quat: The current orientation.
-        ang_vel: The current angular velocity.
-        mass: The drone's mass.
-        J: The drone's inertia matrix.
-        dt: The simulation time step.
-    """
-    collective_thrust, attitude = controls[0], controls[1:]
-    rot = R.from_quat(quat)
-    thrust = rot.apply(jnp.array([0, 0, collective_thrust]))
-    drift = rot.apply(jnp.array([0, 0, 1]))
-    k1, k2 = SYS_ID_PARAMS["acc"]
-    acc = thrust * k1 + drift * k2
-    rpy = rot.as_euler("xyz")
-    # TODO: Move to an angular velocity based model to avoid this conversion.
-    rpy_rates = ang_vel2rpy_rates(ang_vel, quat)
-    k1, k2, k3 = SYS_ID_PARAMS["roll_acc"]
-    roll_rate_deriv = k1 * rpy[0] + k2 * rpy_rates[0] + k3 * attitude[0]
-    k1, k2, k3 = SYS_ID_PARAMS["pitch_acc"]
-    pitch_rate_deriv = k1 * rpy[1] + k2 * rpy_rates[1] + k3 * attitude[1]
-    k1, k2, k3 = SYS_ID_PARAMS["yaw_acc"]
-    yaw_rate_deriv = k1 * rpy[2] + k2 * rpy_rates[2] + k3 * attitude[2]
-    rpy_rates_deriv = jnp.array([roll_rate_deriv, pitch_rate_deriv, yaw_rate_deriv])
-    # The identified dynamics model does not use forces or torques, because we assume no knowledge
-    # of the drone's mass and inertia. However, to remain compatible with the physics pipeline, we
-    # return surrogate forces and torques that result in the desired linear and angular velocity
-    # derivative. When converting back to the state derivative, the mass and inertia will cancel
-    # out, resulting in the correct linear and angular acceleration regardless of the model's mass
-    # and inertia.
-    # Rotate surrogate torques into global frame
-    ang_vel_deriv = rpy_rates_deriv2ang_vel_deriv(rpy_rates_deriv, rpy_rates, quat)
-    surrogate_torques = rot.apply(J @ ang_vel_deriv)
-    surrogate_forces = acc * mass
-    return surrogate_forces, surrogate_torques
+    @staticmethod
+    def create(
+        n_worlds: int, n_drones: int, drone_model: str, device: Device
+    ) -> FirstPrinciplesData:
+        """Create a default set of parameters for the simulation."""
+        p = load_params("first_principles", drone_model)
+        J = jax.device_put(jnp.tile(p["J"][None, None, :, :], (n_worlds, n_drones, 1, 1)), device)
+        return FirstPrinciplesData(
+            mass=jnp.full((n_worlds, n_drones, 1), p["mass"], device=device),
+            L=jnp.asarray(p["L"], device=device),
+            prop_inertia=jnp.asarray(p["prop_inertia"], device=device),
+            gravity_vec=jnp.asarray(p["gravity_vec"], device=device),
+            J=J,
+            J_inv=jnp.linalg.inv(J),
+            rpm2thrust=jnp.asarray(p["rpm2thrust"], device=device),
+            rpm2torque=jnp.asarray(p["rpm2torque"], device=device),
+            mixing_matrix=jnp.asarray(p["mixing_matrix"], device=device),
+            drag_matrix=jnp.asarray(p["drag_matrix"], device=device),
+            rotor_dyn_coef=jnp.asarray(p["rotor_dyn_coef"], device=device),
+        )
 
 
-@partial(vectorize, signature="(3),(1)->(3)")
-def collective_force2acceleration(force: Array, mass: Array) -> Array:
-    """Convert forces to acceleration."""
-    return force / mass - jnp.array([0, 0, GRAVITY])
-
-
-@partial(vectorize, signature="(3),(4),(3,3)->(3)")
-def collective_torque2ang_vel_deriv(torque: Array, quat: Array, J_INV: Array) -> Array:
-    """Convert torques to ang_vel_deriv."""
-    return J_INV @ R.from_quat(quat).apply(torque, inverse=True)
-
-
-@partial(vectorize, signature="(4),(4),(3),(3,3)->(3),(3)")
-def rpms2collective_wrench(
-    rpms: Array, quat: Array, ang_vel: Array, J: Array
-) -> tuple[Array, Array]:
-    """Convert RPMs to forces and torques in the global frame."""
-    rot = R.from_quat(quat)
-    motor_forces = rpms2motor_forces(rpms)
-    body_force = jnp.array([0, 0, jnp.sum(motor_forces)])
-    body_torque = rpms2body_torque(rpms, ang_vel, motor_forces, J)
-    return rot.apply(body_force), rot.apply(body_torque)
-
-
-@partial(vectorize, signature="(4)->(4)")
-def rpms2motor_forces(rpms: Array) -> Array:
-    """Convert RPMs to motor forces (body frame, along the z-axis)."""
-    return rpms**2 * KF
-
-
-@partial(vectorize, signature="(4)->(4)")
-def rpms2motor_torques(rpms: Array) -> Array:
-    """Convert RPMs to motor torques (body frame, around the z-axis)."""
-    return rpms**2 * KM
-
-
-@partial(vectorize, signature="(4),(3),(4),(3,3)->(3)")
-def rpms2body_torque(rpms: Array, ang_vel: Array, motor_forces: Array, J: Array) -> Array:
-    """Convert RPMs to torques in the body frame."""
-    motor_torques = rpms2motor_torques(rpms)
-    z_torque = SIGN_MIX_MATRIX[..., 2] @ motor_torques
-    x_torque = SIGN_MIX_MATRIX[..., 0] @ motor_forces * (ARM_LEN / jnp.sqrt(2))
-    y_torque = SIGN_MIX_MATRIX[..., 1] @ motor_forces * (ARM_LEN / jnp.sqrt(2))
-    return jnp.array([x_torque, y_torque, z_torque]) - jnp.cross(ang_vel, J @ ang_vel)
-
-
-@jax.jit
-@partial(vectorize, signature="(3),(4)->(3)")
-def ang_vel2rpy_rates(ang_vel: Array, quat: Array) -> Array:
-    """Convert angular velocity to rpy rates.
-
-    Args:
-        ang_vel: The angular velocity in the body frame.
-        quat: The current orientation.
-
-    Returns:
-        The rpy rates in the body frame, following the 'xyz' convention.
-    """
-    rpy = R.from_quat(quat).as_euler("xyz")
-    sin_phi, cos_phi = jnp.sin(rpy[0]), jnp.cos(rpy[0])
-    cos_theta, tan_theta = jnp.cos(rpy[1]), jnp.tan(rpy[1])
-    conv_mat = jnp.array(
-        [
-            [1, sin_phi * tan_theta, cos_phi * tan_theta],
-            [0, cos_phi, -sin_phi],
-            [0, sin_phi / cos_theta, cos_phi / cos_theta],
-        ]
+def first_principles_physics(data: SimData) -> SimData:
+    """Compute the forces and torques from the first principle physics model."""
+    params: FirstPrinciplesData = data.params
+    vel, _, acc, ang_acc, rotor_acc = first_principles_dynamics(
+        pos=data.states.pos,
+        quat=data.states.quat,
+        vel=data.states.vel,
+        ang_vel=data.states.ang_vel,
+        cmd=data.controls.rotor_vel,
+        rotor_vel=data.states.rotor_vel,
+        dist_f=data.states.force,
+        dist_t=data.states.torque,
+        mass=params.mass,
+        L=params.L,
+        prop_inertia=params.prop_inertia,
+        gravity_vec=params.gravity_vec,
+        J=params.J,
+        J_inv=params.J_inv,
+        rpm2thrust=params.rpm2thrust,
+        rpm2torque=params.rpm2torque,
+        mixing_matrix=params.mixing_matrix,
+        drag_matrix=params.drag_matrix,
+        rotor_dyn_coef=params.rotor_dyn_coef,
     )
-    return conv_mat @ ang_vel
-
-
-@jax.jit
-@partial(vectorize, signature="(3),(4)->(3)")
-def rpy_rates2ang_vel(rpy_rates: Array, quat: Array) -> Array:
-    """Convert rpy rates to angular velocity."""
-    return rpy_rates2ang_vel_matrix(quat) @ rpy_rates
-
-
-@jax.jit
-@partial(vectorize, signature="(3),(3),(4)->(3)")
-def rpy_rates_deriv2ang_vel_deriv(rpy_rates_deriv: Array, rpy_rates: Array, quat: Array) -> Array:
-    r"""Convert rpy rates derivatives to angular velocity derivatives.
-
-    .. math::
-        \dot{\omega} = \mathbf{\dot{W}}\dot{\mathbf{\psi}} + \mathbf{W} \ddot{\mathbf{\psi}}
-    """
-    rpy = R.from_quat(quat).as_euler("xyz")
-    # W_dot
-    phi, theta = rpy[0], rpy[1]
-    phi_dot, theta_dot = rpy_rates[0], rpy_rates[1]
-    sin_phi, cos_phi = jnp.sin(phi), jnp.cos(phi)
-    sin_theta, cos_theta = jnp.sin(theta), jnp.cos(theta)
-    # fmt: off
-    conv_mat_dot = jnp.array(
-        [[0,                  0,                                           -cos_theta * theta_dot],
-         [0, -sin_phi * phi_dot,  cos_phi * phi_dot * cos_theta - sin_phi * sin_theta * theta_dot],
-         [0, -cos_phi * phi_dot, -sin_phi * phi_dot * cos_theta - cos_phi * sin_theta * theta_dot]]
+    states_deriv = data.states_deriv.replace(
+        vel=vel, ang_vel=data.states.ang_vel, acc=acc, ang_acc=ang_acc, rotor_acc=rotor_acc
     )
-    # fmt: on
-    return conv_mat_dot @ rpy_rates + rpy_rates2ang_vel_matrix(quat) @ rpy_rates_deriv
+    return data.replace(states_deriv=states_deriv)
 
 
-def ang_vel2rpy_rates_matrix(quat: Array) -> Array:
-    """Calculate the conversion matrix from angular velocities to rpy rates."""
-    rpy = R.from_quat(quat).as_euler("xyz")
-    sin_phi, cos_phi = jnp.sin(rpy[0]), jnp.cos(rpy[0])
-    cos_theta, tan_theta = jnp.cos(rpy[1]), jnp.tan(rpy[1])
-    # fmt: off
-    conv_mat = jnp.array(
-        [[1, sin_phi * tan_theta, cos_phi * tan_theta],
-         [0,             cos_phi,            -sin_phi],
-         [0, sin_phi / cos_theta, cos_phi / cos_theta]]
+@dataclass
+class SoRpyData:
+    mass: Array  # (N, M, 1)
+    """Mass of the drone."""
+    gravity_vec: Array  # (N, M, 3)
+    """Gravity vector of the drone."""
+    J: Array  # (N, M, 3, 3)
+    """Inertia matrix of the drone."""
+    J_inv: Array  # (N, M, 3, 3)
+    """Inverse of the inertia matrix of the drone."""
+    acc_coef: Array  # (N, M, 1)
+    """Coefficient for the acceleration."""
+    cmd_f_coef: Array  # (N, M, 1)
+    """Coefficient for the collective thrust."""
+    rpy_coef: Array  # (N, M, 1)
+    """Coefficient for the roll pitch yaw dynamics."""
+    rpy_rates_coef: Array  # (N, M, 1)
+    """Coefficient for the roll pitch yaw rates dynamics."""
+    cmd_rpy_coef: Array  # (N, M, 1)
+    """Coefficient for the roll pitch yaw command dynamics."""
+
+    @staticmethod
+    def create(n_worlds: int, n_drones: int, drone_model: str, device: Device) -> SoRpyData:
+        """Create a default set of parameters for the simulation."""
+        p = load_params("so_rpy", drone_model)
+        J = jax.device_put(jnp.tile(p["J"][None, None, :, :], (n_worlds, n_drones, 1, 1)), device)
+        return SoRpyData(
+            mass=jnp.full((n_worlds, n_drones, 1), p["mass"], device=device),
+            gravity_vec=jnp.asarray(p["gravity_vec"], device=device),
+            J=J,
+            J_inv=jnp.linalg.inv(J),
+            acc_coef=jnp.asarray(p["acc_coef"], device=device),
+            cmd_f_coef=jnp.asarray(p["cmd_f_coef"], device=device),
+            rpy_coef=jnp.asarray(p["rpy_coef"], device=device),
+            rpy_rates_coef=jnp.asarray(p["rpy_rates_coef"], device=device),
+            cmd_rpy_coef=jnp.asarray(p["cmd_rpy_coef"], device=device),
+        )
+
+
+def so_rpy_physics(data: SimData) -> SimData:
+    """Compute the forces and torques from the so_rpy physics model."""
+    params: SoRpyData = data.params
+    vel, _, acc, ang_acc, _ = so_rpy_dynamics(
+        pos=data.states.pos,
+        quat=data.states.quat,
+        vel=data.states.vel,
+        ang_vel=data.states.ang_vel,
+        cmd=data.controls.attitude.cmd,
+        dist_f=data.states.force,
+        dist_t=data.states.torque,
+        mass=params.mass,
+        gravity_vec=params.gravity_vec,
+        J=params.J,
+        J_inv=params.J_inv,
+        acc_coef=params.acc_coef,
+        cmd_f_coef=params.cmd_f_coef,
+        rpy_coef=params.rpy_coef,
+        rpy_rates_coef=params.rpy_rates_coef,
+        cmd_rpy_coef=params.cmd_rpy_coef,
     )
-    # fmt: on
-    return conv_mat
-
-
-def rpy_rates2ang_vel_matrix(quat: Array) -> Array:
-    """Calculate the conversion matrix from rpy rates to angular velocities."""
-    rpy = R.from_quat(quat).as_euler("xyz")
-    sin_phi, cos_phi = jnp.sin(rpy[0]), jnp.cos(rpy[0])
-    cos_theta, sin_theta = jnp.cos(rpy[1]), jnp.sin(rpy[1])
-    # fmt: off
-    conv_mat = jnp.array(
-        [[1,        0,          -sin_theta],
-         [0,  cos_phi, sin_phi * cos_theta],
-         [0, -sin_phi, cos_phi * cos_theta]]
+    states_deriv = data.states_deriv.replace(
+        vel=vel, ang_vel=data.states.ang_vel, acc=acc, ang_acc=ang_acc
     )
-    # fmt: on
-    return conv_mat
+    return data.replace(states_deriv=states_deriv)
+
+
+@dataclass
+class SoRpyRotorData:
+    mass: Array  # (N, M, 1)
+    """Mass of the drone."""
+    gravity_vec: Array  # (N, M, 3)
+    """Gravity vector of the drone."""
+    J: Array  # (N, M, 3, 3)
+    """Inertia matrix of the drone."""
+    J_inv: Array  # (N, M, 3, 3)
+    """Inverse of the inertia matrix of the drone."""
+    thrust_time_coef: Array  # (N, M, 1)
+    """Rotor coefficient of the drone."""
+    acc_coef: Array  # (N, M, 1)
+    """Acceleration coefficient of the drone."""
+    cmd_f_coef: Array  # (N, M, 1)
+    """Collective thrust coefficient of the drone."""
+    rpy_coef: Array  # (N, M, 1)
+    """Roll pitch yaw coefficient of the drone."""
+    rpy_rates_coef: Array  # (N, M, 1)
+    """Roll pitch yaw rates coefficient of the drone."""
+    cmd_rpy_coef: Array  # (N, M, 1)
+    """Roll pitch yaw command coefficient of the drone."""
+
+    @staticmethod
+    def create(n_worlds: int, n_drones: int, drone_model: str, device: Device) -> SoRpyRotorData:
+        """Create a default set of parameters for the simulation."""
+        p = load_params("so_rpy_rotor", drone_model)
+        J = jax.device_put(jnp.tile(p["J"][None, None, :, :], (n_worlds, n_drones, 1, 1)), device)
+        return SoRpyRotorData(
+            mass=jnp.full((n_worlds, n_drones, 1), p["mass"], device=device),
+            gravity_vec=jnp.asarray(p["gravity_vec"], device=device),
+            J=J,
+            J_inv=jnp.linalg.inv(J),
+            thrust_time_coef=jnp.asarray(p["thrust_time_coef"], device=device),
+            acc_coef=jnp.asarray(p["acc_coef"], device=device),
+            cmd_f_coef=jnp.asarray(p["cmd_f_coef"], device=device),
+            rpy_coef=jnp.asarray(p["rpy_coef"], device=device),
+            rpy_rates_coef=jnp.asarray(p["rpy_rates_coef"], device=device),
+            cmd_rpy_coef=jnp.asarray(p["cmd_rpy_coef"], device=device),
+        )
+
+
+def so_rpy_rotor_physics(data: SimData) -> SimData:
+    """Compute the forces and torques from the so_rpy_rotor physics model."""
+    params: SoRpyRotorData = data.params
+    vel, _, acc, ang_acc, rotor_acc = so_rpy_rotor_dynamics(
+        pos=data.states.pos,
+        quat=data.states.quat,
+        vel=data.states.vel,
+        ang_vel=data.states.ang_vel,
+        rotor_vel=data.states.rotor_vel,
+        cmd=data.controls.attitude.cmd,
+        dist_f=data.states.force,
+        dist_t=data.states.torque,
+        mass=params.mass,
+        gravity_vec=params.gravity_vec,
+        J=params.J,
+        J_inv=params.J_inv,
+        thrust_time_coef=params.thrust_time_coef,
+        acc_coef=params.acc_coef,
+        cmd_f_coef=params.cmd_f_coef,
+        rpy_coef=params.rpy_coef,
+        rpy_rates_coef=params.rpy_rates_coef,
+        cmd_rpy_coef=params.cmd_rpy_coef,
+    )
+    states_deriv = data.states_deriv.replace(
+        vel=vel, ang_vel=data.states.ang_vel, acc=acc, ang_acc=ang_acc, rotor_acc=rotor_acc
+    )
+    return data.replace(states_deriv=states_deriv)
+
+
+@dataclass
+class SoRpyRotorDragData:
+    mass: Array  # (N, M, 1)
+    """Mass of the drone."""
+    gravity_vec: Array  # (N, M, 3)
+    """Gravity vector of the drone."""
+    J: Array  # (N, M, 3, 3)
+    """Inertia matrix of the drone."""
+    J_inv: Array  # (N, M, 3, 3)
+    """Inverse of the inertia matrix of the drone."""
+    thrust_time_coef: Array  # (N, M, 1)
+    """Rotor coefficient of the drone."""
+    acc_coef: Array  # (N, M, 1)
+    """Acceleration coefficient of the drone."""
+    cmd_f_coef: Array  # (N, M, 1)
+    """Collective thrust coefficient of the drone."""
+    rpy_coef: Array  # (N, M, 1)
+    """Roll pitch yaw coefficient of the drone."""
+    rpy_rates_coef: Array  # (N, M, 1)
+    """Roll pitch yaw rates coefficient of the drone."""
+    cmd_rpy_coef: Array  # (N, M, 1)
+    """Roll pitch yaw command coefficient of the drone."""
+    drag_matrix: Array  # (N, M, 3, 3)
+    """Linear drag coefficient matrix of the drone."""
+
+    @staticmethod
+    def create(
+        n_worlds: int, n_drones: int, drone_model: str, device: Device
+    ) -> SoRpyRotorDragData:
+        """Create a default set of parameters for the simulation."""
+        p = load_params("so_rpy_rotor_drag", drone_model)
+        J = jax.device_put(jnp.tile(p["J"][None, None, :, :], (n_worlds, n_drones, 1, 1)), device)
+        return SoRpyRotorDragData(
+            mass=jnp.full((n_worlds, n_drones, 1), p["mass"], device=device),
+            gravity_vec=jnp.asarray(p["gravity_vec"], device=device),
+            J=J,
+            J_inv=jnp.linalg.inv(J),
+            thrust_time_coef=jnp.asarray(p["thrust_time_coef"], device=device),
+            acc_coef=jnp.asarray(p["acc_coef"], device=device),
+            cmd_f_coef=jnp.asarray(p["cmd_f_coef"], device=device),
+            rpy_coef=jnp.asarray(p["rpy_coef"], device=device),
+            rpy_rates_coef=jnp.asarray(p["rpy_rates_coef"], device=device),
+            cmd_rpy_coef=jnp.asarray(p["cmd_rpy_coef"], device=device),
+            drag_matrix=jnp.asarray(p["drag_matrix"], device=device),
+        )
+
+
+def so_rpy_rotor_drag_physics(data: SimData) -> SimData:
+    """Compute the forces and torques from the so_rpy_rotor_drag physics model."""
+    params: SoRpyRotorDragData = data.params
+    vel, _, acc, ang_acc, rotor_acc = so_rpy_rotor_drag_dynamics(
+        pos=data.states.pos,
+        quat=data.states.quat,
+        vel=data.states.vel,
+        ang_vel=data.states.ang_vel,
+        cmd=data.controls.attitude.cmd,
+        rotor_vel=data.states.rotor_vel,
+        dist_f=data.states.force,
+        dist_t=data.states.torque,
+        mass=params.mass,
+        gravity_vec=params.gravity_vec,
+        J=params.J,
+        J_inv=params.J_inv,
+        thrust_time_coef=params.thrust_time_coef,
+        acc_coef=params.acc_coef,
+        cmd_f_coef=params.cmd_f_coef,
+        rpy_coef=params.rpy_coef,
+        rpy_rates_coef=params.rpy_rates_coef,
+        cmd_rpy_coef=params.cmd_rpy_coef,
+        drag_matrix=params.drag_matrix,
+    )
+    states_deriv = data.states_deriv.replace(
+        vel=vel, ang_vel=data.states.ang_vel, acc=acc, ang_acc=ang_acc, rotor_acc=rotor_acc
+    )
+    return data.replace(states_deriv=states_deriv)

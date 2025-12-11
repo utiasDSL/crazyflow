@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "crazyflow"
 dynamic = ["version"]
 description = "Fast, parallelizable simulations of Crazyflies with JAX and MuJoCo."
+authors = [{ name = "Martin Schuck" }, { name = "Marcel Rath" }]
 readme = "README.md"
 license = { file = "LICENSE" }
 classifiers = [
@@ -18,7 +19,9 @@ classifiers = [
 ]
 
 dependencies = [
-    "jax>=0.7.0", # 0.5.3 and 0.6.0 have a bug that causes resets to not work properly.
+    "numpy>=2.0.0",
+    "scipy>=1.17.0rc1",
+    "jax>=0.7.0",               # 0.5.3 and 0.6.0 have a bug that causes resets to not work properly.
     "mujoco>=3.3.0",
     "mujoco-mjx>=3.3.0",
     "gymnasium[mujoco]>=1.2.0",
@@ -27,12 +30,12 @@ dependencies = [
     "flax",
     "ml_collections",
     "casadi",
-    "numpy",
+    "drone-models",             # from PyPI (regular install) or submodules folder (pixi install)
+    "drone-controllers",        # from PyPI (regular install) or submodules folder (pixi install)
 ]
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.14" # MuJoCo has no wheels for python 14
 
 [project.optional-dependencies]
-test = ["pytest>=8.0.0", "pytest-cov", "pytest-timeout", "gymnasium[array-api]"]
 gpu = ["jax[cuda12]"]
 benchmark = ["fire", "matplotlib", "pandas"]
 
@@ -47,7 +50,7 @@ find = {include = ["crazyflow*"]}
 version = { attr = "crazyflow.__version__" }
 
 [tool.setuptools.package-data]
-crazyflow = ["models/cf2/*.xml", "models/cf2/assets/*.obj"]
+crazyflow = ["scene.xml"]
 
 [tool.pytest.ini_options]
 markers = ["unit", "integration", "render"]
@@ -79,10 +82,13 @@ indent-width = 4
 target-version = "py312"
 
 [tool.ruff.lint]
-select = ["E4", "E7", "E9", "F", "I", "D", "TCH", "ANN"]
+select = ["E", "F", "I", "D", "TCH", "ANN"]
 ignore = ["ANN401"]
 fixable = ["ALL"]
 unfixable = []
+
+[tool.ruff.lint.isort]  # Prevent ruff from reporting conflicting settings with isort
+split-on-trailing-comma = false
 
 [tool.ruff.lint.per-file-ignores]
 "benchmark/*" = ["D100", "D103"]
@@ -107,12 +113,19 @@ line-ending = "auto"
 docstring-code-format = true
 docstring-code-line-length = "dynamic"
 
+[tool.pixi]
 [tool.pixi.workspace]
 channels = ["conda-forge"]
 platforms = ["linux-64"]
 
+[tool.pixi.dependencies]
+pip = "*"
+ruff = "*"
+
 [tool.pixi.pypi-dependencies]
 crazyflow = { path = "./", editable = true }
+drone-models = { path = "./submodules/drone-models", editable = true }
+drone-controllers = { path = "./submodules/drone-controllers", editable = true }
 
 [tool.pixi.feature.build.pypi-dependencies]
 build = ">=1.3"
@@ -122,15 +135,32 @@ twine = ">=6.0"
 default = { solve-group = "default" }
 benchmark = { features = ["benchmark", "gpu"], solve-group = "default" }
 gpu = { features = ["gpu"], solve-group = "default" }
-test = { features = ["test", "gpu"], solve-group = "default" }
-build = { features = ["build"], solve-group = "default" }
+tests = { features = ["tests"], solve-group = "default" }
+gpu-tests = { features = ["tests", "gpu"], solve-group = "default" }
+docs = { features = ["docs"], solve-group = "default" }
+release = { features = ["build"], solve-group = "default" }
 
-[tool.pixi.tasks]
+[tool.pixi.feature.tests.dependencies]
+pytest = ">=8.4.1"
+pytest-timeout = ">=2.1.0"
+array-api-strict = ">=2.4.1"
+matplotlib = "*"
 
-[tool.pixi.dependencies]  
-# TODO: Remove compilers once scipy 1.17 is released and drone-models have been updated.
-gcc = ">=15.1.0,<15.2"
-cxx-compiler = ">=1.0.0,<2"
-gfortran = ">=15.1.0,<15.2"
-openblas = ">=0.3.30,<0.4"
-ruff = "*"
+[tool.pixi.feature.tests.tasks]
+tests = { cmd = "pytest -v tests", description = "Run tests" }
+
+[tool.pixi.feature.docs.dependencies]
+mkdocs = ">=1.5.0"
+mkdocs-material = ">=9.0.0"
+python = ">=3.10"
+
+[tool.pixi.feature.docs.pypi-dependencies]
+mkdocs-autorefs = ">=1.2.0"
+mkdocstrings = { extras = ["python"], version = ">=0.26.0" }
+mkdocs-gen-files = ">=0.5.0"
+mkdocs-literate-nav = ">=0.6.0"
+mkdocs-section-index = ">=0.3.0"
+
+[tool.pixi.feature.docs.tasks]
+docs-serve = { cmd = "mkdocs serve", description = "Serve docs locally" }
+docs-build = { cmd = "mkdocs build", description = "Build docs" }

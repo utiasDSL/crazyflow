@@ -28,7 +28,7 @@ def main():
 
     # dummy action for going up (in attitude control)
     action = np.zeros((20, 4), dtype=np.float32)
-    action[..., 0] = -0.2
+    action[..., 3] = 0.3
 
     obs, info = envs.reset()
     # Step through the environment

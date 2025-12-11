@@ -19,13 +19,10 @@ def main():
     action = np.zeros((20, 4), dtype=np.float32)
     action[..., 0] = 0.4
 
-    # Environments provide reset parameters that can be used to set the initial state of the environment.
+    # Environments provide reset parameters that can be used to set the initial state of the
+    # environment.
     obs, info = envs.reset(
         options={
-            "pos_min": np.array([-1.0, 1.0, 1.0]),
-            "pos_max": np.array([-1.0, 1.0, 1.0]),
-            "vel_min": 0.0,
-            "vel_max": 0.0,
             "goal_pos_min": np.array([-1.0, 1.0, 1.0]),
             "goal_pos_max": np.array([-1.0, 1.0, 1.0]),
         }
