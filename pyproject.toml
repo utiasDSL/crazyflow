@@ -30,8 +30,8 @@ dependencies = [
     "flax",
     "ml_collections",
     "casadi",
-    # "drone-models",             # from submodules folder, defined below, TODO: needs to be here to work proplery for PyPI release
-    # "drone-controllers",        # from submodules folder, defined below, TODO: needs to be here to work proplery for PyPI release
+    "drone-models",             # from PyPI (regular install) or submodules folder (pixi install)
+    "drone-controllers",        # from PyPI (regular install) or submodules folder (pixi install)
 ]
 requires-python = ">=3.11,<3.14" # MuJoCo has no wheels for python 14
 
@@ -112,11 +112,6 @@ skip-magic-trailing-comma = true
 line-ending = "auto"
 docstring-code-format = true
 docstring-code-line-length = "dynamic"
-
-[tool.uv.sources]
-crazyflow = { path = "./", editable = true }
-drone-models = { path = "./submodules/drone-models", editable = true }
-drone-controllers = { path = "./submodules/drone-controllers", editable = true }
 
 [tool.pixi]
 [tool.pixi.workspace]

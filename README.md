@@ -18,6 +18,32 @@ Fast, parallelizable simulations of Crazyflies with JAX.
 [Tests]: https://github.com/utiasDSL/crazyflow/actions/workflows/testing.yml/badge.svg
 [Tests URL]: https://github.com/utiasDSL/crazyflow/actions/workflows/testing.yml
 
+## Quick Start
+For a more detailed guide, check out our [documentation TODO](TODO).
+
+### Normal installation
+The regular way to use Crazyflow is to install it from PyPI with your favourite package manager, e.g., with pip:
+``` bash
+pip install crazyflow
+```
+
+### Developer installation
+If you plan to develop with and around Crazyflow, you can use the existing [pixi](https://pixi.sh/) environment.
+``` bash
+git clone --recurse-submodules git@github.com:utiasDSL/crazyflow.git
+cd crazyflow
+pixi shell
+```
+
+This will install Crazyflow, drone-models, and drone-controllers in editable mode for easy development.
+
+In case you want to use another package manager or install the simulator with it's subpackages into another project, simply install all packages manually in your environment:
+``` bash
+pip install -e . # Installing Crazyflow
+cd submodules/drone-models && pip install -e . # Installing drone-models
+cd submodules/drone-controllers && pip install -e . # Installing drone-controllers
+```
+
 
 ## Architecture
 
