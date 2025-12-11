@@ -40,8 +40,8 @@ This will install Crazyflow, drone-models, and drone-controllers in editable mod
 In case you want to use another package manager or install the simulator with it's subpackages into another project, simply install all packages manually in your environment:
 ``` bash
 pip install -e . # Installing Crazyflow
-cd submodules/drone-models && pip install -e . # Installing drone-models
-cd submodules/drone-controllers && pip install -e . # Installing drone-controllers
+pip install -e ./submodules/drone-models
+pip install -e ./submodules/drone-controllers
 ```
 
 
