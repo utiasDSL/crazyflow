@@ -12,10 +12,6 @@ from crazyflow.sim import Physics, Sim
 @pytest.mark.integration
 @pytest.mark.parametrize("physics", Physics)
 def test_state_interface(physics: Physics):
-    # TODO: Skip unimplemented physics modes until they are implemented in crazyflow
-    if physics in (Physics.so_rpy_rotor, Physics.so_rpy_rotor_drag):
-        pytest.skip(f"Physics mode {physics} not yet implemented")
-
     sim = Sim(physics=physics, control=Control.state)
 
     # Simple P controller for attitude to reach target height
@@ -36,10 +32,6 @@ def test_state_interface(physics: Physics):
 @pytest.mark.integration
 @pytest.mark.parametrize("physics", Physics)
 def test_attitude_interface(physics: Physics):
-    # TODO: Skip unimplemented physics modes until they are implemented in crazyflow
-    if physics in (Physics.so_rpy_rotor, Physics.so_rpy_rotor_drag):
-        pytest.skip(f"Physics mode {physics} not yet implemented")
-
     sim = Sim(physics=physics, control=Control.attitude)
     target_pos = np.array([0.0, 0.0, 1.0])
     jit_state2attitude = jax.jit(parametrize(state2attitude, drone_model="cf2x_L250"))
@@ -63,10 +55,6 @@ def test_attitude_interface(physics: Physics):
 @pytest.mark.integration
 @pytest.mark.parametrize("physics", Physics)
 def test_swarm_control(physics: Physics):
-    # TODO: Skip unimplemented physics modes until they are implemented in crazyflow
-    if physics in (Physics.so_rpy_rotor, Physics.so_rpy_rotor_drag):
-        pytest.skip(f"Physics mode {physics} not yet implemented")
-
     n_worlds, n_drones = 2, 3
     sim = Sim(n_worlds=n_worlds, n_drones=n_drones, physics=physics, control=Control.state)
     target_pos = sim.data.states.pos + np.array([0.3, 0.3, 0.3])

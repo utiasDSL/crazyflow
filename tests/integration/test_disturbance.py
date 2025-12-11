@@ -17,10 +17,6 @@ def disturbance_fn(data: SimData) -> SimData:
 @pytest.mark.parametrize("physics", Physics)
 @pytest.mark.integration
 def test_disturbance(physics: Physics):
-    # TODO: Skip unimplemented physics modes until they are implemented in crazyflow
-    if physics in (Physics.so_rpy_rotor, Physics.so_rpy_rotor_drag):
-        pytest.skip(f"Physics mode {physics} not yet implemented")
-
     sim = Sim(n_worlds=2, n_drones=3, control="state", physics=physics)
     control = np.zeros((sim.n_worlds, sim.n_drones, 13))
     control[..., :3] = 1.0

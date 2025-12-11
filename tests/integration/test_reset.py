@@ -11,9 +11,6 @@ from crazyflow.sim import Physics, Sim
 @pytest.mark.parametrize("physics", Physics)
 def test_reset_during_simulation(physics: Physics):
     """Test reset behavior during an active simulation."""
-    if physics in (Physics.so_rpy_rotor, Physics.so_rpy_rotor_drag):  # TODO: Remove
-        pytest.skip(f"Physics mode {physics} not yet implemented")
-
     sim = Sim(physics=physics, control=Control.attitude)
     # Run simulation
     n_steps = 3
@@ -42,9 +39,6 @@ def test_reset_during_simulation(physics: Physics):
 @pytest.mark.parametrize("physics", Physics)
 def test_reset_multi_world(physics: Physics):
     """Test reset behavior with multiple worlds."""
-    if physics in (Physics.so_rpy_rotor, Physics.so_rpy_rotor_drag):  # TODO: Remove
-        pytest.skip(f"Physics mode {physics} not yet implemented")
-
     n_worlds, n_drones = 2, 2
     sim = Sim(n_worlds=n_worlds, n_drones=n_drones, physics=physics, control=Control.attitude)
 

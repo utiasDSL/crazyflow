@@ -52,9 +52,7 @@ def test_attitude_cmd_gradients(physics: Physics):
     cmd = jnp.zeros((1, 1, 4), dtype=jnp.float32)
     cmd = cmd.at[..., 3].set(0.3)
 
-    with warnings.catch_warnings():  # TODO: Remove once rotor_vel is working
-        warnings.simplefilter("ignore")
-        grad = step_grad(cmd, sim.data)
+    grad = step_grad(cmd, sim.data)
     assert not jnp.any(jnp.isnan(grad))
 
 

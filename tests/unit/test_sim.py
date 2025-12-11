@@ -66,10 +66,6 @@ def test_sim_init(physics: Physics, device: str, control: Control, n_worlds: int
             Sim(n_worlds=n_worlds, physics=physics, device=device, control=control)
         return
 
-    # TODO: Skip unimplemented physics modes until they are implemented in crazyflow
-    if physics in (Physics.so_rpy_rotor, Physics.so_rpy_rotor_drag):
-        pytest.skip(f"Physics mode {physics} not yet implemented")
-
     sim = Sim(n_worlds=n_worlds, physics=physics, device=device, control=control)
     assert sim.n_worlds == n_worlds
     assert sim.n_drones == n_drones
@@ -110,10 +106,6 @@ def test_sim_init(physics: Physics, device: str, control: Control, n_worlds: int
 @pytest.mark.parametrize("n_drones", [1, 3])
 def test_reset(device: str, physics: Physics, n_worlds: int, n_drones: int):
     """Test that reset without mask resets all worlds to default state."""
-    # TODO: Skip unimplemented physics modes until they are implemented in crazyflow
-    if physics in (Physics.so_rpy_rotor, Physics.so_rpy_rotor_drag):
-        pytest.skip(f"Physics mode {physics} not yet implemented")
-
     sim = Sim(n_worlds=n_worlds, n_drones=n_drones, physics=physics, device=device)
 
     # Modify states
@@ -150,10 +142,6 @@ def test_reset(device: str, physics: Physics, n_worlds: int, n_drones: int):
 @pytest.mark.parametrize("physics", Physics)
 def test_reset_masked(device: str, physics: Physics):
     """Test that reset with mask only resets specified worlds."""
-    # TODO: Skip unimplemented physics modes until they are implemented in crazyflow
-    if physics in (Physics.so_rpy_rotor, Physics.so_rpy_rotor_drag):
-        pytest.skip(f"Physics mode {physics} not yet implemented")
-
     sim = Sim(n_worlds=2, n_drones=1, physics=physics, device=device)
 
     # Modify states
@@ -202,10 +190,6 @@ def test_reset_masked(device: str, physics: Physics):
 def test_sim_step(n_worlds: int, n_drones: int, physics: Physics, control: Control, device: str):
     if physics != Physics.first_principles and control == Control.force_torque:
         pytest.skip("Force-torque control is not supported with non-first-principles physics")
-
-    # TODO: Skip unimplemented physics modes until they are implemented in crazyflow
-    if physics in (Physics.so_rpy_rotor, Physics.so_rpy_rotor_drag):
-        pytest.skip(f"Physics mode {physics} not yet implemented")
 
     sim = Sim(n_worlds=n_worlds, n_drones=n_drones, physics=physics, device=device, control=control)
     sim.step(2)
@@ -327,10 +311,6 @@ def test_sync_shape_consistency(device: str, n_drones: int, n_worlds: int):
 @pytest.mark.unit
 @pytest.mark.parametrize("physics", Physics)
 def test_control_frequency(physics: Physics):
-    # TODO: Skip unimplemented physics modes until they are implemented in crazyflow
-    if physics in (Physics.so_rpy_rotor, Physics.so_rpy_rotor_drag):
-        pytest.skip(f"Physics mode {physics} not yet implemented")
-
     # Create two sims with different frequencies
     sim_500 = Sim(freq=500, physics=physics, control="state")
     sim_1000 = Sim(freq=1000, physics=physics, control="state")
@@ -398,10 +378,6 @@ def test_floor_penetration(physics: Physics):
     We don't test for mujoco, as mujoco uses collisions by default and will let the drone bounce on
     the floor.
     """
-    # TODO: Skip unimplemented physics modes until they are implemented in crazyflow
-    if physics in (Physics.so_rpy_rotor, Physics.so_rpy_rotor_drag):
-        pytest.skip(f"Physics mode {physics} not yet implemented")
-
     sim = Sim(physics=physics, control=Control.attitude, freq=500, device="cpu")
     sim.reset()
     # Command to fall: zero thrust and attitude that points downward
@@ -423,10 +399,6 @@ def test_floor_penetration(physics: Physics):
 @pytest.mark.unit
 @pytest.mark.parametrize("physics", Physics)
 def test_contacts(physics: Physics):
-    # TODO: Skip unimplemented physics modes until they are implemented in crazyflow
-    if physics in (Physics.so_rpy_rotor, Physics.so_rpy_rotor_drag):
-        pytest.skip(f"Physics mode {physics} not yet implemented")
-
     sim = Sim(physics=physics, control=Control.attitude, freq=500, device="cpu")
     sim.reset()
     sim.step(10)  # Make sure the drone is on the ground
@@ -461,10 +433,6 @@ def test_data_committed(control: Control, device: str):
 @pytest.mark.unit
 @pytest.mark.parametrize("physics", Physics)
 def test_compile(physics: Physics, device: str):
-    # TODO: Skip unimplemented physics modes until they are implemented in crazyflow
-    if physics in (Physics.so_rpy_rotor, Physics.so_rpy_rotor_drag):
-        pytest.skip(f"Physics mode {physics} not yet implemented")
-
     sim = Sim(physics=physics, control=Control.state, freq=500, device=device)
     # Make sure we don't recompile the step function after the first call
     sim.step(1)
@@ -475,10 +443,6 @@ def test_compile(physics: Physics, device: str):
 @pytest.mark.unit
 @pytest.mark.parametrize("physics", Physics)
 def test_scan_results(physics: Physics):
-    # TODO: Skip unimplemented physics modes until they are implemented in crazyflow
-    if physics in (Physics.so_rpy_rotor, Physics.so_rpy_rotor_drag):
-        pytest.skip(f"Physics mode {physics} not yet implemented")
-
     sim = Sim(n_worlds=2, n_drones=3, physics=physics, control=Control.state, device="cpu")
     sim.reset()
     cmd = np.zeros((sim.n_worlds, sim.n_drones, 13))
