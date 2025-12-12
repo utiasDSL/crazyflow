@@ -73,9 +73,9 @@ python examples/disturbance.py
 
 ---
 
-### Figure‑8 / RL example
+### Figure‑8 / RL environment
 
-A scripted figure‑8 tracking example and a reference environment usable for training RL agents. This demonstrates how to use the provided environments for training and deployment; example RL setups for PPO and SHAC are provided as references.
+A scripted figure‑8 environment intended for evaluation or as a training target. The example shows how to create vectorized envs, apply the NormalizeActions wrapper and step/render the environment. It does not include any agent implementations — integrate the environment with your preferred RL training code (Stable Baselines3, RLlib, custom JAX trainers, etc.).
 
 Run:
 ```bash
