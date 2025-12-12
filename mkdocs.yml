@@ -1,12 +1,15 @@
-site_name: Crazyflow Documentation
-site_description: Fast, parallelizable simulations of Crazyflies in JAX
+site_name: CrazyFlow Documentation
+site_description: Fast, parallelizable simulations of Crazyflies with JAX and MuJoCo
 site_url: https://utiasdsl.github.io/crazyflow/
 repo_name: utiasDSL/crazyflow
 repo_url: https://github.com/utiasDSL/crazyflow
 
+docs_dir: docs
+
 theme:
   name: material
   logo: img/logo.png
+  favicon: img/logo.png
   features:
     - navigation.tabs
     - navigation.sections
@@ -34,6 +37,12 @@ theme:
 
 nav:
   - Home: index.md
+  - Installation: installation.md
+  - Usage: usage.md
+  - "Features & Architecture": features.md
+  - Examples: examples.md
+  - API:
+      - Overview: api/index.md
 
 plugins:
   - search
@@ -41,7 +50,7 @@ plugins:
   - mkdocstrings:
       handlers:
         python:
-          paths: [../crazyflow]
+          paths: ["../crazyflow"]
           options:
             docstring_style: google
             show_source: true
@@ -71,10 +80,10 @@ markdown_extensions:
   - footnotes
   - def_list
 
+extra_css:
+  - stylesheets/extra.css
+
 extra:
   social:
     - icon: fontawesome/brands/github
       link: https://github.com/utiasDSL/crazyflow
-
-extra_css:
-  - stylesheets/extra.css
