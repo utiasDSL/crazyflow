@@ -1,11 +1,11 @@
 # Installation
 
-This page mirrors the installation instructions in the project README and provides practical notes for developers.
-
 ## Requirements
+The simulator is extensively tested on Ubuntu 24.04. However, other platforms should also work out of the box with the PyPI install. Further, you need an environment with:
+
 - Python >= 3.11, < 3.14
 - MuJoCo (follow the mujoco installation instructions for your platform)
-- pixi >= 0.6.1 (required for the provided developer environment)
+- (Optional) pixi >= 0.6.1 (required for the provided developer environment)
 
 ## Quick install (PyPI)
 Recommended for users who only want to use Crazyflow:
@@ -15,7 +15,7 @@ pip install crazyflow
 ```
 
 ## Developer install (recommended for contributors)
-Use [pixi](https://pixi.sh/) to create a reproducible development environment that also installs submodules in editable mode.
+Use [pixi](https://pixi.sh/) to create a reproducible development environment that also installs submodules in editable mode. This requires some 64 bit linux distribution to work.
 
 1. Clone the repo (with submodules)
 ```bash
