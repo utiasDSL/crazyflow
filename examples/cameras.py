@@ -83,7 +83,7 @@ def main(show_plot: bool = False, save_plot: bool = False):
     im1 = ax1.imshow(rgb)
     ax1.set_title("RGB")
     ax1.axis("off")
-    im2 = ax2.imshow(d, cmap="grey")
+    im2 = ax2.imshow(d, cmap="viridis")
     ax2.set_title("Depth")
     ax2.axis("off")
     fig.tight_layout()

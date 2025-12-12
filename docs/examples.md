@@ -22,6 +22,11 @@ Shows how to obtain RGB and depth frames from the renderer. Demonstrates offscre
 python examples/cameras.py
 ```
 
+<p style="text-align:center;">
+RGB Image 
+&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp; 
+Depth Image 
+</p>
 ![cameras](img/examples/cameras.gif)
 
 ---
