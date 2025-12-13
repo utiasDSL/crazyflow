@@ -1,6 +1,6 @@
-/* Custom color scheme for Drone Models */
-:root {
-  --md-primary-fg-color: #2a3f84;
+/* Light mode custom colors */
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color: #39e3f6;
   --md-primary-fg-color--light: #3bd5f5;
   --md-primary-fg-color--dark: #2a3f84;
   --md-accent-fg-color: #2a3f84;
@@ -9,7 +9,7 @@
 
 /* Dark mode custom colors */
 [data-md-color-scheme="slate"] {
-  --md-primary-fg-color: #5d69e7;
+  --md-primary-fg-color: #871ee8;
   --md-primary-fg-color--light: #3bd5f5;
   --md-primary-fg-color--dark: #2a3f84;
   --md-accent-fg-color: #2a3f84;

@@ -1,7 +1,7 @@
 # Crazyflow
 
 <div align="center">
-  <img src="img/logo.png" alt="CrazyFlow Logo" width="360"/>
+  <img src="img/logo.svg" alt="CrazyFlow Logo" width="360"/>
 </div>
 
 ## Overview

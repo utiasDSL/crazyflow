@@ -8,8 +8,8 @@ docs_dir: docs
 
 theme:
   name: material
-  logo: img/logo.png
-  favicon: img/logo.png
+  logo: img/logo_white.svg
+  favicon: img/logo.svg
   features:
     - navigation.tabs
     - navigation.sections
