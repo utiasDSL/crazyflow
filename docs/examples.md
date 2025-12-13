@@ -87,8 +87,6 @@ Run:
 python examples/figure8.py
 ```
 
-![figure8](img/examples/figure8.png)
-
 ---
 
 For API details and configuration options referenced by these examples, see the [API Reference](api/index.md) and [Usage](usage.md).

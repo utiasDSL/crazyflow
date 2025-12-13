@@ -19,7 +19,7 @@ Fast, parallelizable simulations of Crazyflies with JAX.
 [Tests URL]: https://github.com/utiasDSL/crazyflow/actions/workflows/testing.yml
 
 ## Quick Start
-For a more detailed guide, check out our [documentation TODO](TODO).
+For a more detailed guide, check out our [documentation](https://utiasdsl.github.io/crazyflow/).
 
 ### Normal installation
 The regular way to use Crazyflow is to install it from PyPI with your favourite package manager, e.g., with pip:
