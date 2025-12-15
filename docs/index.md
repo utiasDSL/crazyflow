@@ -9,7 +9,7 @@
 Crazyflow is a high-performance research simulator for Crazyflie‑style small quadrotors.  
 Built on JAX and MuJoCo, it supports batched GPU execution, differentiable dynamics, and accurate, identified models — designed for reproducible experiments at scale.
 
-Audience: researchers working on control, learning, system identification and sim2real for quadrotors.
+Audience: researchers working on control, learning, system identification, sim2real, multi-agent RL and swarm control for quadrotors.
 
 ## Highlights
 
