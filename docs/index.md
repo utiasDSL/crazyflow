@@ -1,7 +1,7 @@
 # Crazyflow
 
 <div align="center">
-  <img src="img/logo.svg" alt="CrazyFlow Logo" width="360"/>
+  <img src="img/logo.svg" alt="Crazyflow Logo" width="360"/>
 </div>
 
 ## Overview
@@ -20,6 +20,8 @@ Audience: researchers working on control, learning, system identification and si
 - Onboard-controller support and symbolic model matching
 - Extensible step pipeline (randomization, disturbances, custom hooks)
 - MuJoCo-based visualization and offscreen rendering
+
+![Performance benchmarks and comparisons](img/performance.png)
 
 ## Quick start
 

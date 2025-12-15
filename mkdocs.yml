@@ -1,4 +1,4 @@
-site_name: CrazyFlow Documentation
+site_name: Crazyflow Documentation
 site_description: Fast, parallelizable simulations of Crazyflies with JAX and MuJoCo
 site_url: https://utiasdsl.github.io/crazyflow/
 repo_name: utiasDSL/crazyflow
