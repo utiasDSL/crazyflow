@@ -21,4 +21,4 @@ from crazyflow.control import Control
 from crazyflow.sim import Physics, Sim
 
 __all__ = ["Sim", "Physics", "Control"]
-__version__ = "0.0.2"
+__version__ = "0.1.0b0"
