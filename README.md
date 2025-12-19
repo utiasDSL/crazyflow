@@ -2,7 +2,7 @@
 
 --------------------------------------------------------------------------------
 
-Fast, parallelizable simulations of Crazyflies with JAX.
+Fast, parallelizable simulations of drones with JAX.
 
 [![Python Version]][Python Version URL] [![Ruff Check]][Ruff Check URL] [![Documentation Status]][Documentation Status URL] [![Tests]][Tests URL]
 
