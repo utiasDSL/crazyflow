@@ -232,11 +232,10 @@ class Sim:
         spec.copy_during_attach = True
         drone_spec = mujoco.MjSpec.from_file(str(self.drone_path))
         frame = spec.worldbody.add_frame(name="world")
+        if (drone_body := drone_spec.body("drone")) is None:
+            raise ValueError("Drone body not found in drone spec")
         # Add drones and their actuators
         for i in range(self.n_drones):
-            drone_body = drone_spec.body("drone")
-            if drone_body is None:
-                raise ValueError("Drone body not found in drone spec")
             drone = frame.attach_body(drone_body, "", f":{i}")
             drone.add_freejoint()
         return spec
@@ -534,6 +533,8 @@ def sync_sim2mjx(data: SimData, mjx_data: Data, mjx_model: Model) -> tuple[SimDa
     qvel = rearrange(jnp.concat([vel, ang_vel], axis=-1), "w d qvel -> w (d qvel)")
     mjx_data = mjx_data.replace(qpos=qpos, qvel=qvel)
     mjx_data = jax.vmap(mjx.kinematics, in_axes=(None, 0))(mjx_model, mjx_data)
+    # Required for rendering w. ray casting
+    mjx_data = jax.vmap(mjx.camlight, in_axes=(None, 0))(mjx_model, mjx_data)
     mjx_data = jax.vmap(mjx.collision, in_axes=(None, 0))(mjx_model, mjx_data)
     data = data.replace(core=data.core.replace(mjx_synced=True))
     return data, mjx_data
