@@ -35,7 +35,7 @@ def test_camera_rays():
 @pytest.mark.unit
 def test_render_depth(device: str):
     """Test render_depth with different resolutions."""
-    sim = Sim(n_worlds=2)
+    sim = Sim(n_worlds=2, device=device)
     dist = render_depth(sim, camera=0, resolution=(10, 10))
     assert dist.shape == (2, 10, 10), f"Expected shape (2, 10, 10), got {dist.shape}"
     assert dist.device == jax.devices(device)[0], f"Expected device {device}, got {dist.device}"
