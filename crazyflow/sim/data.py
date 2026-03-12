@@ -102,6 +102,8 @@ class ControlData(typing.Protocol):
 
 @dataclass
 class SimControls:
+    mode: Control = field(pytree_node=False)
+    """Control mode of the simulation."""
     state: ControlData | None
     """State control data."""
     attitude: ControlData | None
@@ -136,7 +138,11 @@ class SimControls:
                     n_worlds, n_drones, force_torque_freq, drone_model, device
                 )
                 return SimControls(
-                    state=state, attitude=attitude, force_torque=force_torque, rotor_vel=rotor_vel
+                    mode=control,
+                    state=state,
+                    attitude=attitude,
+                    force_torque=force_torque,
+                    rotor_vel=rotor_vel,
                 )
             case Control.attitude:
                 attitude = attitude = MellingerAttitudeData.create(
@@ -146,14 +152,22 @@ class SimControls:
                     n_worlds, n_drones, force_torque_freq, drone_model, device
                 )
                 return SimControls(
-                    state=None, attitude=attitude, force_torque=force_torque, rotor_vel=rotor_vel
+                    mode=control,
+                    state=None,
+                    attitude=attitude,
+                    force_torque=force_torque,
+                    rotor_vel=rotor_vel,
                 )
             case Control.force_torque:
                 force_torque = MellingerForceTorqueData.create(
                     n_worlds, n_drones, force_torque_freq, drone_model, device
                 )
                 return SimControls(
-                    state=None, attitude=None, force_torque=force_torque, rotor_vel=rotor_vel
+                    mode=control,
+                    state=None,
+                    attitude=None,
+                    force_torque=force_torque,
+                    rotor_vel=rotor_vel,
                 )
             case _:
                 raise ValueError(f"Control mode {control} not implemented")

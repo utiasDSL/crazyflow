@@ -18,6 +18,7 @@ from einops import rearrange
 from gymnasium.envs.mujoco.mujoco_rendering import MujocoRenderer
 from jax import Array, Device
 
+import crazyflow.sim.functional as F
 from crazyflow.control.control import Control, controllable
 from crazyflow.exception import ConfigError, NotInitializedError
 from crazyflow.sim.data import SimControls, SimCore, SimData, SimParams, SimState, SimStateDeriv
@@ -29,7 +30,7 @@ from crazyflow.sim.physics import (
     so_rpy_rotor_drag_physics,
     so_rpy_rotor_physics,
 )
-from crazyflow.utils import grid_2d, leaf_replace, pytree_replace, to_device
+from crazyflow.utils import grid_2d, leaf_replace, pytree_replace
 
 if TYPE_CHECKING:
     from mujoco.mjx import Data, Model
@@ -134,45 +135,15 @@ class Sim:
 
     def state_control(self, controls: Array):
         """Set the desired state for all drones in all worlds."""
-        assert controls.shape == (self.n_worlds, self.n_drones, 13), "controls shape mismatch"
-        assert self.control == Control.state, "State control is not enabled by the sim config"
-        controls = to_device(controls, self.device)
-        self.data = self.data.replace(
-            controls=self.data.controls.replace(
-                state=self.data.controls.state.replace(staged_cmd=controls)
-            )
-        )
+        self.data = F.state_control(self.data, controls)
 
     def attitude_control(self, controls: Array):
-        """Set the desired attitude for all drones in all worlds.
+        """Set the desired attitude for all drones in all worlds."""
+        self.data = F.attitude_control(self.data, controls)
 
-        We need to stage the attitude controls because the sys_id physics mode operates directly on
-        the attitude controls. If we were to directly update the controls, this would effectively
-        bypass the control frequency and run the attitude controller at the physics update rate. By
-        staging the controls, we ensure that the physics module sees the old controls until the
-        controller updates at its correct frequency.
-        """
-        assert controls.shape == (self.n_worlds, self.n_drones, 4), "controls shape mismatch"
-        assert self.control == Control.attitude, "Attitude control is not enabled by the sim config"
-        controls = to_device(controls, self.device)
-        self.data = self.data.replace(
-            controls=self.data.controls.replace(
-                attitude=self.data.controls.attitude.replace(staged_cmd=controls)
-            )
-        )
-
-    def force_torque_control(self, cmd: Array):
+    def force_torque_control(self, controls: Array):
         """Set the desired force and torque for all drones in all worlds."""
-        assert cmd.shape == (self.n_worlds, self.n_drones, 4), "Command shape mismatch"
-        assert self.control == Control.force_torque, (
-            "Force-torque control is not enabled by the sim config"
-        )
-        controls = to_device(cmd, self.device)
-        self.data = self.data.replace(
-            controls=self.data.controls.replace(
-                force_torque=self.data.controls.force_torque.replace(staged_cmd=controls)
-            )
-        )
+        self.data = F.force_torque_control(self.data, controls)
 
     @requires_mujoco_sync
     def render(
@@ -408,18 +379,7 @@ class Sim:
         as soon as the controller frequency allows for an update. Successive control updates that
         happen before the staged buffers are applied overwrite the desired values.
         """
-        controls = self.data.controls
-        match self.control:
-            case Control.state:
-                control_steps, control_freq = controls.state.steps, controls.state.freq
-            case Control.attitude:
-                control_steps, control_freq = controls.attitude.steps, controls.attitude.freq
-            case Control.force_torque:
-                control_steps = controls.force_torque.steps
-                control_freq = controls.force_torque.freq
-            case _:
-                raise NotImplementedError(f"Control mode {self.control} not implemented")
-        return controllable(self.data.core.steps, self.data.core.freq, control_steps, control_freq)
+        return F.controllable(self.data)
 
     @requires_mujoco_sync
     def contacts(self, body: str | None = None) -> Array:
