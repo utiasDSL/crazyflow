@@ -1,12 +1,13 @@
 import numpy as np
 import pytest
-from conftest import skip_headless
+from conftest import skip_if_headless
 
 from crazyflow import Sim
 from crazyflow.sim.visualize import draw_capsule, draw_line, draw_points
 
 
 @pytest.mark.unit
+@skip_if_headless
 def test_draw_capsule(device: str):
     """Test drawing a capsule and verify it changes the rendering."""
     sim = Sim(device=device)
@@ -25,9 +26,9 @@ def test_draw_capsule(device: str):
 
 
 @pytest.mark.unit
+@skip_if_headless
 def test_draw_capsule_cylinder(device: str):
     """Test drawing a cylinder."""
-    skip_headless()
     sim = Sim(device=device)
     sim.render(mode="rgb_array", width=120, height=90)  # Warm up the renderer
     img_before = sim.render(mode="rgb_array", width=120, height=90)
@@ -42,9 +43,9 @@ def test_draw_capsule_cylinder(device: str):
 
 
 @pytest.mark.unit
+@skip_if_headless
 def test_draw_line(device: str):
     """Test drawing a line and verify it changes the rendering."""
-    skip_headless()
     sim = Sim(device=device)
     sim.render(mode="rgb_array", width=120, height=90)  # Warm up the renderer
     img_before = sim.render(mode="rgb_array", width=120, height=90)
@@ -58,9 +59,9 @@ def test_draw_line(device: str):
 
 
 @pytest.mark.unit
+@skip_if_headless
 def test_draw_points(device: str):
     """Test drawing points and verify it changes the rendering."""
-    skip_headless()
     sim = Sim(device=device)
     sim.render(mode="rgb_array", width=120, height=90)  # Warm up the renderer
     img_before = sim.render(mode="rgb_array", width=120, height=90)
@@ -74,9 +75,9 @@ def test_draw_points(device: str):
 
 
 @pytest.mark.unit
+@skip_if_headless
 def test_draw_combined(device: str):
     """Test drawing multiple visualization elements together."""
-    skip_headless()
     sim = Sim(device=device)
     p1 = np.array([0.0, 0.0, 0.5])
     p2 = np.array([0.2, 0.0, 0.8])
