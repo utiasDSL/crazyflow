@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from typing import TYPE_CHECKING
 
 import jax
@@ -10,6 +9,7 @@ import jax.numpy as jnp
 import mujoco
 import numpy as np
 import pytest
+from conftest import skip_if_headless
 from jax import Array
 
 from crazyflow.control import Control
@@ -21,11 +21,6 @@ from crazyflow.sim.visualize import change_material
 
 if TYPE_CHECKING:
     from typing import Any
-
-
-def skip_headless():
-    if os.environ.get("DISPLAY") is None:
-        pytest.skip("DISPLAY is not set, skipping test in headless environment")
 
 
 def array_meta_assert(
@@ -272,15 +267,15 @@ def test_sim_state_control_device(device: str):
 
 
 @pytest.mark.render
+@skip_if_headless
 def test_render_human(device: str):
     sim = Sim(device=device)
     sim.render()
     sim.viewer.close()
 
 
-# Do not mark as render to ensure it runs by default. This function will not open a viewer.
+@skip_if_headless
 def test_render_rgb_array(device: str):
-    skip_headless()
     sim = Sim(n_worlds=2, device=device)
     img = sim.render(mode="rgb_array", width=1024, height=1024)
     assert isinstance(img, np.ndarray), "Image must be a numpy array"

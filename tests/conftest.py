@@ -31,3 +31,15 @@ def device() -> str:
     if "gpu" in available_backends():
         return "gpu"
     return "cpu"
+
+
+def skip_headless():
+    if os.environ.get("DISPLAY") is None:
+        pytest.skip("DISPLAY is not set, skipping test in headless environment")
+
+
+# Marker for conditional skip in headless environments
+skip_if_headless = pytest.mark.skipif(
+    os.environ.get("DISPLAY") is None,
+    reason="DISPLAY is not set, skipping test in headless environment",
+)

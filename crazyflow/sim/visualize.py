@@ -69,6 +69,37 @@ def draw_points(sim: Sim, points: NDArray, rgba: NDArray | None = None, size: fl
         )
 
 
+def draw_capsule(
+    sim: Sim,
+    p1: NDArray,
+    p2: NDArray,
+    radius: float = 0.05,
+    rgba: NDArray | None = None,
+    cylinder: bool = False,
+):
+    """Draw a capsule (pill) or cylinder between two points.
+
+    Args:
+        sim: The simulation.
+        p1: Start point [3,]
+        p2: End point [3,]
+        radius: The thickness of the geom in [m].
+        rgba: The color of the object.
+        cylinder: If True, draws a flat-ended cylinder. If False, draws a pill-shaped capsule.
+    """
+    if sim.viewer is None:
+        return
+
+    pos = (p1 + p2) / 2.0  # Center of the geom
+    half_length = np.linalg.norm(p2 - p1) / 2.0  # MuJoCo uses half-extents
+    size = np.array([radius, half_length, 0])
+    # Align the z-axis of the geom to the vector from p1 to p2
+    mat = _rotation_matrix_from_points(p1[None, :], p2[None, :]).as_matrix().flatten()
+    geom_type = mujoco.mjtGeom.mjGEOM_CYLINDER if cylinder else mujoco.mjtGeom.mjGEOM_CAPSULE
+    rgba = rgba if rgba is not None else np.array([1, 0, 0, 1.0])
+    sim.viewer.viewer.add_marker(type=geom_type, pos=pos, size=size, mat=mat, rgba=rgba)
+
+
 def change_material(
     sim: Sim,
     mat_name: str,
