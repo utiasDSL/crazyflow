@@ -119,7 +119,7 @@ def draw_capsule(
     p2: NDArray,
     radius: float = 0.05,
     rgba: NDArray | None = None,
-    is_cylinder: bool = False,
+    cylinder: bool = False,
 ):
     """Draw a capsule (pill) or cylinder between two points.
 
@@ -129,31 +129,18 @@ def draw_capsule(
         p2: End point [3,]
         radius: The thickness of the geom in [m].
         rgba: The color of the object.
-        is_cylinder: If True, draws a flat-ended cylinder.
-                     If False, draws a pill-shaped capsule.
+        cylinder: If True, draws a flat-ended cylinder. If False, draws a pill-shaped capsule.
     """
     if sim.viewer is None:
         return
 
-    # 1. Calculate Midpoint (Center of the geom)
-    pos = (p1 + p2) / 2.0
-
-    # 2. Calculate Half-length (MuJoCo uses half-extents)
-    dist = np.linalg.norm(p2 - p1)
-    half_length = dist / 2.0
-
-    # 3. Define Size: [radius, radius, half_length]
-    # Note: For capsules, size[2] is the half-length of the *cylindrical* part.
-    # MuJoCo adds the hemispherical caps on top of this.
+    pos = (p1 + p2) / 2.0  # Center of the geom
+    half_length = np.linalg.norm(p2 - p1) / 2.0  # MuJoCo uses half-extents
     size = np.array([radius, half_length, 0])
-
-    # 4. Get Rotation (Align Z-axis to the vector p2-p1)
-    # Using your existing helper (wrapped in a list for the reshape)
+    # Align the z-axis of the geom to the vector from p1 to p2
     mat = _rotation_matrix_from_points(p1[None, :], p2[None, :]).as_matrix().flatten()
-
-    geom_type = mujoco.mjtGeom.mjGEOM_CYLINDER if is_cylinder else mujoco.mjtGeom.mjGEOM_CAPSULE
-    rgba = rgba if rgba is not None else np.array([0, 1.0, 0, 1])
-
+    geom_type = mujoco.mjtGeom.mjGEOM_CYLINDER if cylinder else mujoco.mjtGeom.mjGEOM_CAPSULE
+    rgba = rgba if rgba is not None else np.array([1, 0, 0, 1.0])
     sim.viewer.viewer.add_marker(type=geom_type, pos=pos, size=size, mat=mat, rgba=rgba)
 
 
