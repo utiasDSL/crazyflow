@@ -6,50 +6,6 @@ from scipy.spatial.transform import Rotation as R
 from crazyflow.sim import Sim
 
 
-def draw_capsule(
-    sim: Sim,
-    p1: NDArray,
-    p2: NDArray,
-    radius: float = 0.05,
-    rgba: NDArray | None = None,
-    is_cylinder: bool = False,
-):
-    """Draw a capsule (pill) or cylinder between two points.
-
-    Args:
-        sim: The simulation.
-        p1: Start point [3,]
-        p2: End point [3,]
-        radius: The thickness of the geom.
-        rgba: The color of the object.
-        is_cylinder: If True, draws a flat-ended cylinder.
-                     If False, draws a pill-shaped capsule.
-    """
-    if sim.viewer is None:
-        return
-
-    # 1. Calculate Midpoint (Center of the geom)
-    pos = (p1 + p2) / 2.0
-
-    # 2. Calculate Half-length (MuJoCo uses half-extents)
-    dist = np.linalg.norm(p2 - p1)
-    half_length = dist / 2.0
-
-    # 3. Define Size: [radius, radius, half_length]
-    # Note: For capsules, size[2] is the half-length of the *cylindrical* part.
-    # MuJoCo adds the hemispherical caps on top of this.
-    size = np.array([radius, half_length, 0])
-
-    # 4. Get Rotation (Align Z-axis to the vector p2-p1)
-    # Using your existing helper (wrapped in a list for the reshape)
-    mat = _rotation_matrix_from_points(p1[None, :], p2[None, :]).as_matrix().flatten()
-
-    geom_type = mujoco.mjtGeom.mjGEOM_CYLINDER if is_cylinder else mujoco.mjtGeom.mjGEOM_CAPSULE
-    rgba = rgba if rgba is not None else np.array([0, 1.0, 0, 1])
-
-    sim.viewer.viewer.add_marker(type=geom_type, pos=pos, size=size, mat=mat, rgba=rgba)
-
-
 def draw_line(
     sim: Sim,
     points: NDArray,

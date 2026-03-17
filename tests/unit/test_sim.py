@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from typing import TYPE_CHECKING
 
 import jax
@@ -10,6 +9,7 @@ import jax.numpy as jnp
 import mujoco
 import numpy as np
 import pytest
+from conftest import skip_headless
 from jax import Array
 
 from crazyflow.control import Control
@@ -21,11 +21,6 @@ from crazyflow.sim.visualize import change_material
 
 if TYPE_CHECKING:
     from typing import Any
-
-
-def skip_headless():
-    if os.environ.get("DISPLAY") is None:
-        pytest.skip("DISPLAY is not set, skipping test in headless environment")
 
 
 def array_meta_assert(
