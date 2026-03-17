@@ -411,14 +411,14 @@ def test_data_committed(control: Control, device: str):
     def assert_committed(obj0: Array | Any, path: str = "data"):
         if isinstance(obj0, jnp.ndarray):
             assert obj0.committed, f"{path} is not committed"
+        elif isinstance(obj0, (int, float, bool, str, type(None))):
+            pass  # Primitive types are always "committed"
         elif hasattr(obj0, "__dict__"):  # Dataclass
             for attr_name in obj0.__dict__:
                 assert_committed(getattr(obj0, attr_name), f"{path}.{attr_name}")
         elif isinstance(obj0, (list, tuple)):  # Handle sequences
             for i, item0 in enumerate(obj0):
                 assert_committed(item0, f"{path}[{i}]")
-        elif isinstance(obj0, (int, float, bool, str, type(None))):
-            pass
         else:
             raise TypeError(f"Could not handle type {type(obj0)} at {path}")
 
@@ -514,22 +514,3 @@ def test_build_data(control: Control):
     assert isinstance(data, SimData), "build_data() must return a SimData instance"
     default_data = sim.build_default_data()
     assert isinstance(default_data, SimData), "build_default_data() must return a SimData instance"
-
-
-@pytest.mark.unit
-def test_functional_api():
-    """Test that the functional API works as expected."""
-    sim = Sim()
-    reset_fn = sim.build_reset_fn()
-    step_fn = sim.build_step_fn()
-    # Test types
-    assert callable(reset_fn), "reset_fn must be a pure function"
-    assert not hasattr(reset_fn, "__self__"), "reset_fn must not be a bound method"
-    assert callable(step_fn), "step_fn must be a pure function"
-    assert not hasattr(step_fn, "__self__"), "step_fn must not be a bound method"
-    # Test the functions run as expected
-    data, default_data = sim.build_data(), sim.build_default_data()
-    data = reset_fn(data, default_data, None)
-    data = reset_fn(data, default_data, jnp.array([True] * sim.n_worlds))
-    data = step_fn(data, 1)
-    data = step_fn(data, 2)

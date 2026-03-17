@@ -2186,20 +2186,20 @@ packages:
 - pypi: ./submodules/drone-controllers
   name: drone-controllers
   version: 0.1.0b0
-  sha256: 12ea0340d69f702ff398f4b95fff4bf832f04ef1cdcafb11ee9c7b17bf021594
+  sha256: 0f0cce5d6dbfb97177ee9715f10ec77a81f2db354187075b7e68458bf87aacdf
   requires_dist:
   - numpy>=2.0.0
-  - scipy>=1.17.0rc1
+  - scipy>=1.17.0
   - array-api-compat
   - array-api-extra
   editable: true
 - pypi: ./submodules/drone-models
   name: drone-models
   version: 0.1.0b0
-  sha256: 2499c509a7a4aeb65f58a76943e839a865884f2912dd613ce7c40817e20c4ca6
+  sha256: 770f8b12fb285656aaf6bf7d05b94fd3a5fdce63d60eae13a73c3ec23a3db5bd
   requires_dist:
   - numpy>=2.0.0
-  - scipy>=1.17.0rc1
+  - scipy>=1.17.0
   - casadi>=3.7.0
   - array-api-compat
   - array-api-extra
