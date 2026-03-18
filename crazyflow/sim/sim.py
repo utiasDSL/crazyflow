@@ -157,11 +157,11 @@ class Sim:
     ) -> NDArray | None:
         if self.viewer is None:
             if isinstance(camera, str):
-                cam_id, cam_name = None, camera
+                cam_id = mujoco.mj_name2id(self.mj_model, mujoco.mjtObj.mjOBJ_CAMERA, camera)
+                assert cam_id > -1, f"Camera name '{camera}' not found in the model."
             elif isinstance(camera, int):
-                cam_id, cam_name = camera, None
-                if cam_id < -1:
-                    raise ValueError(f"camera id must be >=-1, was {cam_id}")
+                cam_id = camera
+                assert cam_id >= -1, f"camera id must be >=-1, was {cam_id}"
             else:
                 raise TypeError("camera argument must be integer or string")
             self.mj_model.vis.global_.offwidth = width
@@ -174,8 +174,14 @@ class Sim:
                 height=height,
                 width=width,
                 camera_id=cam_id,
-                camera_name=cam_name,
             )
+            # In human mode, cam_id is set to -1, so we force it to the desired value
+            if mode == "human" and cam_id > -1:
+                # Render one frame to force mj to create the viewer
+                self.viewer.render(mode)
+                self.viewer.viewer.cam.fixedcamid = cam_id
+                self.viewer.viewer.cam.type = mujoco.mjtCamera.mjCAMERA_FIXED
+
         self.mj_data.qpos[:] = self.mjx_data.qpos[world, :]
         self.mj_data.mocap_pos[:] = self.mjx_data.mocap_pos[world, :]
         self.mj_data.mocap_quat[:] = self.mjx_data.mocap_quat[world, :]
