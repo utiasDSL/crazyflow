@@ -145,6 +145,10 @@ class Sim:
         """Set the desired force and torque for all drones in all worlds."""
         self.data = F.force_torque_control(self.data, controls)
 
+    def rotor_vel_control(self, controls: Array):
+        """Set the desired rotor velocities for all drones in all worlds."""
+        self.data = F.rotor_vel_control(self.data, controls)
+
     @requires_mujoco_sync
     def render(
         self,
@@ -436,6 +440,8 @@ def build_control_fns(
                 raise NotImplementedError(f"Control mode {control} not implemented for {physics}")
         case Control.force_torque:
             control_pipeline = (step_force_torque_controller,)
+        case Control.rotor_vel:
+            control_pipeline = ()
         case _:
             raise NotImplementedError(f"Control mode {control} not implemented")
 

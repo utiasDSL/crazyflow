@@ -56,6 +56,17 @@ def force_torque_control(data: SimData, controls: Array) -> SimData:
     return data
 
 
+def rotor_vel_control(data: SimData, controls: Array) -> SimData:
+    """Rotor velocity control.
+
+    Directly set the desired rotor velocities of the drone.
+    """
+    assert data.controls.mode == Control.rotor_vel, f"control type {data.controls.mode} not enabled"
+    assert controls.shape == (data.core.n_worlds, data.core.n_drones, 4), "controls shape mismatch"
+    controls = to_device(controls, data.core.steps.device)
+    return data.replace(controls=data.controls.replace(rotor_vel=controls))
+
+
 def controllable(data: SimData) -> Array:
     """Check which worlds can currently update their controllers."""
     controls = data.controls
