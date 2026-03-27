@@ -36,7 +36,13 @@ class Control(str, Enum):
         Recommended frequency is >=100 Hz.
     """
     force_torque = "force_torque"
-    """Force and torque control takes [fx, fy, fz, tx, ty, tz].
+    """Force and torque control takes [fc, tx, ty, tz].
+
+    Note:
+        Recommended frequency is >=500 Hz.
+    """
+    rotor_vel = "rotor_vel"
+    """Rotor velocity control takes [w1, w2, w3, w4] in RPMs.
 
     Note:
         Recommended frequency is >=500 Hz.

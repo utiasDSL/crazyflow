@@ -77,8 +77,9 @@ class Sim:
     ):
         assert Physics(physics) in Physics, f"Physics mode {physics} not implemented"
         assert Control(control) in Control, f"Control mode {control} not implemented"
-        if physics != Physics.first_principles and control == Control.force_torque:
-            raise ConfigError("Force-torque control requires first principles physics")
+        if physics != Physics.first_principles:
+            if control in (Control.force_torque, Control.rotor_vel):
+                raise ConfigError(f"Control mode {control} requires first principles physics")
         if freq > 10_000 and not jax.config.jax_enable_x64:
             raise ConfigError("High frequency simulations require double precision mode")
         self.physics = physics
@@ -144,6 +145,10 @@ class Sim:
     def force_torque_control(self, controls: Array):
         """Set the desired force and torque for all drones in all worlds."""
         self.data = F.force_torque_control(self.data, controls)
+
+    def rotor_vel_control(self, controls: Array):
+        """Set the desired rotor velocities for all drones in all worlds."""
+        self.data = F.rotor_vel_control(self.data, controls)
 
     @requires_mujoco_sync
     def render(
@@ -303,11 +308,9 @@ class Sim:
             The simulation data as a single PyTree that can be passed to the pure simulation
             functions for stepping and resetting.
         """
-        state_freq = self.data.controls.state.freq if self.data.controls.state is not None else 0
-        attitude_freq = (
-            self.data.controls.attitude.freq if self.data.controls.attitude is not None else 0
-        )
-        force_torque_freq = self.data.controls.force_torque.freq
+        state_freq = 0 if (s := self.data.controls.state) is None else s.freq
+        attitude_freq = 0 if (a := self.data.controls.attitude) is None else a.freq
+        force_torque_freq = 0 if (ft := self.data.controls.force_torque) is None else ft.freq
         self.data = self.init_data(
             state_freq, attitude_freq, force_torque_freq, self.data.core.rng_key
         )
@@ -436,6 +439,8 @@ def build_control_fns(
                 raise NotImplementedError(f"Control mode {control} not implemented for {physics}")
         case Control.force_torque:
             control_pipeline = (step_force_torque_controller,)
+        case Control.rotor_vel:
+            control_pipeline = ()
         case _:
             raise NotImplementedError(f"Control mode {control} not implemented")
 

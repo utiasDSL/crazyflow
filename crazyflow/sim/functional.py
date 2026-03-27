@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import jax.numpy as jnp
+
 from crazyflow.control import Control
 from crazyflow.control.control import controllable as _controllable
 from crazyflow.utils import to_device
@@ -56,6 +58,17 @@ def force_torque_control(data: SimData, controls: Array) -> SimData:
     return data
 
 
+def rotor_vel_control(data: SimData, controls: Array) -> SimData:
+    """Rotor velocity control.
+
+    Directly set the desired rotor velocities of the drone.
+    """
+    assert data.controls.mode == Control.rotor_vel, f"control type {data.controls.mode} not enabled"
+    assert controls.shape == (data.core.n_worlds, data.core.n_drones, 4), "controls shape mismatch"
+    controls = to_device(controls, data.core.steps.device)
+    return data.replace(controls=data.controls.replace(rotor_vel=controls))
+
+
 def controllable(data: SimData) -> Array:
     """Check which worlds can currently update their controllers."""
     controls = data.controls
@@ -67,6 +80,8 @@ def controllable(data: SimData) -> Array:
         case Control.force_torque:
             control_steps = controls.force_torque.steps
             control_freq = controls.force_torque.freq
+        case Control.rotor_vel:
+            return jnp.ones((data.core.n_worlds, 1), dtype=bool, device=data.core.steps.device)
         case _:
             raise NotImplementedError(f"Control mode {data.controls.mode} not implemented")
     return _controllable(data.core.steps, data.core.freq, control_steps, control_freq)

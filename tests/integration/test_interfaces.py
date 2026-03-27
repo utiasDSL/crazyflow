@@ -3,6 +3,8 @@ import numpy as np
 import pytest
 from drone_controllers import parametrize
 from drone_controllers.mellinger import state2attitude
+from drone_models.core import load_params
+from drone_models.transform import motor_force2rotor_vel
 from scipy.spatial.transform import Rotation as R
 
 from crazyflow.control.control import Control
@@ -50,6 +52,24 @@ def test_attitude_interface(physics: Physics):
     dpos = sim.data.states.pos[0, 0] - target_pos
     distance = np.linalg.norm(dpos)
     assert distance < 0.05, f"Failed to maintain hover with {physics} ({dpos})"
+
+
+@pytest.mark.integration
+def test_rotor_vel_interface():
+    sim = Sim(physics=Physics.first_principles, control=Control.rotor_vel)
+    params = load_params("first_principles", "cf2x_L250")
+    max_rpm = motor_force2rotor_vel(np.array([params["thrust_max"]]), params["rpm2thrust"])[0]
+
+    sim.data = sim.data.replace(
+        states=sim.data.states.replace(pos=sim.data.states.pos.at[..., 2].set(0.5))
+    )
+    cmd = np.full((1, 1, 4), max_rpm, dtype=np.float32)  # More RPMs than required for hover
+    sim.rotor_vel_control(cmd)
+    sim.step(sim.freq * 2)  # Run simulation for 2 seconds
+
+    # Check if drone is not tilted
+    assert R.from_quat(sim.data.states.quat[0, 0]).magnitude() < 0.1, "Drone is tilted"
+    assert sim.data.states.pos[0, 0, 2] > 0.5, "Failed to accelerate with rotor velocity control"
 
 
 @pytest.mark.integration

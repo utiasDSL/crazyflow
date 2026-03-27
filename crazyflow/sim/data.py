@@ -169,6 +169,10 @@ class SimControls:
                     force_torque=force_torque,
                     rotor_vel=rotor_vel,
                 )
+            case Control.rotor_vel:
+                return SimControls(
+                    mode=control, state=None, attitude=None, force_torque=None, rotor_vel=rotor_vel
+                )
             case _:
                 raise ValueError(f"Control mode {control} not implemented")
 
