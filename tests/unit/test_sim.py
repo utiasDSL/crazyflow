@@ -56,10 +56,11 @@ def array_compare_assert(x: Array, y: Array, value: bool = True, name: str | Non
 def test_sim_init(physics: Physics, device: str, control: Control, n_worlds: int):
     n_drones = 1
 
-    if physics != Physics.first_principles and control == Control.force_torque:
-        with pytest.raises(ConfigError):
-            Sim(n_worlds=n_worlds, physics=physics, device=device, control=control)
-        return
+    if physics != Physics.first_principles:
+        if control in (Control.force_torque, Control.rotor_vel):
+            with pytest.raises(ConfigError):
+                Sim(n_worlds=n_worlds, physics=physics, device=device, control=control)
+            return
 
     sim = Sim(n_worlds=n_worlds, physics=physics, device=device, control=control)
     assert sim.n_worlds == n_worlds
@@ -89,10 +90,11 @@ def test_sim_init(physics: Physics, device: str, control: Control, n_worlds: int
         assert sim.data.controls.attitude is None
 
     # Test force torque buffer shapes
-    ft_ctrl = sim.data.controls.force_torque
-    assert isinstance(ft_ctrl, ControlData)
-    array_meta_assert(ft_ctrl.cmd, (n_worlds, n_drones, 4), device)
-    array_meta_assert(ft_ctrl.staged_cmd, (n_worlds, n_drones, 4), device)
+    if control in (Control.state, Control.attitude, Control.force_torque):
+        ft_ctrl = sim.data.controls.force_torque
+        assert isinstance(ft_ctrl, ControlData)
+        array_meta_assert(ft_ctrl.cmd, (n_worlds, n_drones, 4), device)
+        array_meta_assert(ft_ctrl.staged_cmd, (n_worlds, n_drones, 4), device)
 
 
 @pytest.mark.unit
@@ -183,8 +185,9 @@ def test_reset_masked(device: str, physics: Physics):
 @pytest.mark.parametrize("physics", Physics)
 @pytest.mark.parametrize("control", Control)
 def test_sim_step(n_worlds: int, n_drones: int, physics: Physics, control: Control, device: str):
-    if physics != Physics.first_principles and control == Control.force_torque:
-        pytest.skip("Force-torque control is not supported with non-first-principles physics")
+    if physics != Physics.first_principles:
+        if control in (Control.force_torque, Control.rotor_vel):
+            pytest.skip(f"{control} is not supported with non-first-principles physics")
 
     sim = Sim(n_worlds=n_worlds, n_drones=n_drones, physics=physics, device=device, control=control)
     sim.step(2)
