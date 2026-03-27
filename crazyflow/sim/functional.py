@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import jax.numpy as jnp
+
 from crazyflow.control import Control
 from crazyflow.control.control import controllable as _controllable
 from crazyflow.utils import to_device
@@ -78,6 +80,8 @@ def controllable(data: SimData) -> Array:
         case Control.force_torque:
             control_steps = controls.force_torque.steps
             control_freq = controls.force_torque.freq
+        case Control.rotor_vel:
+            return jnp.ones((data.core.n_worlds, 1), dtype=bool, device=data.core.steps.device)
         case _:
             raise NotImplementedError(f"Control mode {data.controls.mode} not implemented")
     return _controllable(data.core.steps, data.core.freq, control_steps, control_freq)

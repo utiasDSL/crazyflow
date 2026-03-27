@@ -145,3 +145,16 @@ def test_functional_state_control_device(device: str):
     assert isinstance(controls.cmd, jnp.ndarray), "Buffers must remain JAX arrays"
     assert isinstance(controls.staged_cmd, jnp.ndarray), "Buffers must remain JAX arrays"
     assert jnp.all(controls.staged_cmd == cmd), "Buffers must match command"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("control", Control)
+def test_functional_controllable(control: Control):
+    """Test that functional controllable function works correctly."""
+    sim = Sim(n_worlds=2, n_drones=3, control=control)
+    data = sim.build_data()
+    controllable = F.controllable(data)
+    assert isinstance(controllable, jnp.ndarray), "Controllable must be a JAX array"
+    shape = controllable.shape
+    des_shape = (sim.n_worlds, 1)
+    assert shape == des_shape, f"Controllable shape must be {des_shape}, got {shape}"
