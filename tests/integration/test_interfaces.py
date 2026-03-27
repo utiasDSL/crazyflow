@@ -63,7 +63,7 @@ def test_rotor_vel_interface():
     sim.data = sim.data.replace(
         states=sim.data.states.replace(pos=sim.data.states.pos.at[..., 2].set(0.5))
     )
-    cmd = np.full((1, 1, 4), max_rpm, dtype=np.float32)  # More RMPs than required for hover
+    cmd = np.full((1, 1, 4), max_rpm, dtype=np.float32)  # More RPMs than required for hover
     sim.rotor_vel_control(cmd)
     sim.step(sim.freq * 2)  # Run simulation for 2 seconds
 
