@@ -6,6 +6,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from jax import Array
 
 import crazyflow.sim.functional as F
 from crazyflow.control import Control
@@ -89,7 +90,7 @@ def test_functional_attitude_control(attitude_freq: int):
     # Check if we can apply inside of jax jit which does not permit device tracking. See
     # https://github.com/jax-ml/jax/issues/26000 for more context.
     @jax.jit
-    def apply_control(data: SimData, cmd: jnp.ndarray) -> SimData:
+    def apply_control(data: SimData, cmd: Array) -> SimData:
         return F.attitude_control(data, cmd)
 
     jax.block_until_ready(apply_control(data, cmd))
@@ -103,7 +104,7 @@ def test_functional_attitude_control_device(device: str):
     cmd = np.random.rand(sim.n_worlds, sim.n_drones, 4)
     data = F.attitude_control(data, cmd)
     controls = data.controls.attitude
-    assert isinstance(controls.staged_cmd, jnp.ndarray), "Buffers must remain JAX arrays"
+    assert isinstance(controls.staged_cmd, Array), "Buffers must remain JAX arrays"
     assert jnp.all(controls.staged_cmd == cmd), "Buffers must match command"
 
 
