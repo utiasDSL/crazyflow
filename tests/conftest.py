@@ -33,11 +33,6 @@ def device() -> str:
     return "cpu"
 
 
-def skip_headless():
-    if os.environ.get("DISPLAY") is None:
-        pytest.skip("DISPLAY is not set, skipping test in headless environment")
-
-
 # Marker for conditional skip in headless environments
 skip_if_headless = pytest.mark.skipif(
     os.environ.get("DISPLAY") is None,
