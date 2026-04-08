@@ -422,6 +422,8 @@ def test_data_committed(control: Control, device: str):
         elif isinstance(obj0, (list, tuple)):  # Handle sequences
             for i, item0 in enumerate(obj0):
                 assert_committed(item0, f"{path}[{i}]")
+        elif isinstance(obj0, type(sim.data.core.device)):  # Device objects
+            pass  # Devices themselves don't have committed attribute
         else:
             raise TypeError(f"Could not handle type {type(obj0)} at {path}")
 

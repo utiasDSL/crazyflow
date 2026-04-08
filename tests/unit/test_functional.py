@@ -1,12 +1,19 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from jax import Array
 
 import crazyflow.sim.functional as F
 from crazyflow.control import Control
 from crazyflow.sim import Sim
+
+if TYPE_CHECKING:
+    from crazyflow.sim.data import SimData
 
 
 @pytest.mark.unit
@@ -80,6 +87,14 @@ def test_functional_attitude_control(attitude_freq: int):
         if i == 0:  # Make world 2 asynchronous
             data = reset_fn(data, default_data, np.array([False, True]))
 
+    # Check if we can apply inside of jax jit which does not permit device tracking. See
+    # https://github.com/jax-ml/jax/issues/26000 for more context.
+    @jax.jit
+    def apply_control(data: SimData, cmd: Array) -> SimData:
+        return F.attitude_control(data, cmd)
+
+    jax.block_until_ready(apply_control(data, cmd))
+
 
 @pytest.mark.unit
 def test_functional_attitude_control_device(device: str):
@@ -89,7 +104,7 @@ def test_functional_attitude_control_device(device: str):
     cmd = np.random.rand(sim.n_worlds, sim.n_drones, 4)
     data = F.attitude_control(data, cmd)
     controls = data.controls.attitude
-    assert isinstance(controls.staged_cmd, jnp.ndarray), "Buffers must remain JAX arrays"
+    assert isinstance(controls.staged_cmd, Array), "Buffers must remain JAX arrays"
     assert jnp.all(controls.staged_cmd == cmd), "Buffers must match command"
 
 
@@ -132,6 +147,12 @@ def test_functional_state_control(state_freq: int):
             assert jnp.all(att == last_att), f"Controls should be unchanged at t={i}"
         if i == 0:  # Make world 2 asynchronous
             data = reset_fn(data, default_data, np.array([False, True]))
+
+    @jax.jit
+    def apply_control(data: SimData, cmd: jnp.ndarray) -> SimData:
+        return F.state_control(data, cmd)
+
+    jax.block_until_ready(apply_control(data, cmd))
 
 
 @pytest.mark.unit
