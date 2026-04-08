@@ -209,6 +209,8 @@ class SimParams(typing.Protocol):
 class SimCore:
     freq: int = field(pytree_node=False)
     """Frequency of the simulation."""
+    device: Device = field(pytree_node=False)
+    """Device of the simulation."""
     steps: Array  # (N, 1)
     """Simulation steps taken since the last reset."""
     n_worlds: int = field(pytree_node=False)
@@ -238,6 +240,7 @@ class SimCore:
         rng_key = jax.device_put(rng_key, device)
         return SimCore(
             freq=freq,
+            device=device,
             steps=steps,
             n_worlds=n_worlds,
             n_drones=n_drones,
