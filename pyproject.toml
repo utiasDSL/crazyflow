@@ -30,8 +30,8 @@ dependencies = [
     "flax",
     "ml_collections",
     "casadi",
-    "drone-models",             # from PyPI (regular install) or submodules folder (pixi install)
-    "drone-controllers",        # from PyPI (regular install) or submodules folder (pixi install)
+    "drone-models==0.1.0",             # from PyPI (regular install) or submodules folder (pixi install)
+    "drone-controllers==0.1.0",        # from PyPI (regular install) or submodules folder (pixi install)
 ]
 requires-python = ">=3.11,<3.14" # MuJoCo has no wheels for python 14
 
@@ -143,6 +143,7 @@ release = { features = ["build"], solve-group = "default" }
 gpu = { features = ["gpu"], solve-group = "gpu" }
 benchmark = { features = ["benchmark", "gpu"], solve-group = "gpu" }
 gpu-tests = { features = ["tests", "gpu"], solve-group = "gpu" }
+dist = { features = ["dist"], solve-group = "default" }
 
 [tool.pixi.feature.tests.dependencies]
 pytest = ">=8.4.1"
@@ -168,3 +169,12 @@ mkdocs-section-index = ">=0.3.0"
 [tool.pixi.feature.docs.tasks]
 docs-build = { cmd = "mkdocs build", description = "Build docs" }
 docs-serve = { cmd = "mkdocs serve --livereload", description = "Serve docs locally" }
+
+[tool.pixi.feature.dist.pypi-dependencies]
+build = "*"
+twine = "*"
+
+[tool.pixi.feature.dist.tasks]
+build = { cmd = "python -m build && twine check dist/*", description = "Build and test the package" }
+upload_test = { cmd = "twine upload -r testpypi dist/*", description = "Test upload of the built package" }
+upload = { cmd = "twine upload dist/*", description = "Upload of the built package" }
