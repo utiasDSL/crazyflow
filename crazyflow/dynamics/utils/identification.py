@@ -276,7 +276,8 @@ def sys_id_translation(
     # Plotting
     if plot:
         # Plot acceleration
-        fig, axs = plt.subplots(2, 1, figsize=(12, 5))
+        _, axs = plt.subplots(2 if data_validation is not None else 1, 1, figsize=(12, 5))
+        axs = np.atleast_1d(axs)
 
         # Training data subplot
         axs[0].plot(t, acc, label="Measured acc")
@@ -299,17 +300,15 @@ def sys_id_translation(
         plt.show()
 
         # Plot commanded thrust vs actual thrust
-        fig, ax = plt.subplots(1, 1, figsize=(6, 6))
-
-        ax.scatter(
-            cmd_f, np.linalg.norm((acc - constants["gravity_vec"]) * constants["mass"], axis=-1)
-        )
-        cmd_thrust_lin = np.linspace(np.min(cmd_f) * 0.9, np.max(cmd_f) * 1.1, 1000)
+        _, ax = plt.subplots(1, 1, figsize=(6, 6))
+        obs_f = np.linalg.norm((acc - constants["gravity_vec"]) * constants["mass"], axis=-1)
+        ax.scatter(cmd_f, obs_f, label="Measured")
+        cmd_thrust_lin = np.linspace(0.9 * np.min(cmd_f), 1.1 * np.max(cmd_f), 1000)
         ax.plot(cmd_thrust_lin, theta[0] * cmd_thrust_lin, label="Fit")
         ax.set_xlabel("Commanded Thrust [N]")
         ax.set_ylabel("Actual Thrust [N]")
-        ax.set_xlim(0.1, 0.8)
-        ax.set_ylim(0.1, 0.8)
+        ax.set_xlim(0.9 * np.min(cmd_f), 1.1 * np.max(cmd_f))
+        ax.set_ylim(0.9 * np.min(obs_f), 1.1 * np.max(obs_f))
 
         plt.tight_layout()
         plt.show()
@@ -463,34 +462,37 @@ def sys_id_rotation(
 
     # Plotting
     if plot:
-        fig, axs = plt.subplots(3, 2, figsize=(20, 12))
+        _, axs = plt.subplots(3, 2 if data_validation is not None else 1, figsize=(20, 12))
+        if data_validation is None:
+            axs = axs[:, None]
         plt.suptitle("RPY dynamics fit")
 
         axs[0, 0].plot(t, rpy[..., 0], label="Measured roll")
         axs[0, 0].plot(t, rpy_pred[..., 0], "--", label="Predicted roll")
         axs[0, 0].set_ylabel("Roll [rad]")
 
-        axs[0, 1].plot(t_valid, rpy_valid[..., 0], label="Measured roll (valid)")
-        axs[0, 1].plot(t_valid, rpy_pred_valid[..., 0], "--", label="Predicted roll (valid)")
-        axs[0, 1].set_ylabel("Roll [rad]")
-
         axs[1, 0].plot(t, rpy[..., 1], label="Measured pitch")
         axs[1, 0].plot(t, rpy_pred[..., 1], "--", label="Predicted pitch")
         axs[1, 0].set_ylabel("Pitch [rad]")
-
-        axs[1, 1].plot(t_valid, rpy_valid[..., 1], label="Measured pitch (valid)")
-        axs[1, 1].plot(t_valid, rpy_pred_valid[..., 1], "--", label="Predicted pitch (valid)")
-        axs[1, 1].set_ylabel("Pitch [rad]")
 
         axs[2, 0].plot(t, rpy[..., 2], label="Measured yaw")
         axs[2, 0].plot(t, rpy_pred[..., 2], "--", label="Predicted yaw")
         axs[2, 0].set_xlabel("Time [s]")
         axs[2, 0].set_ylabel("Yaw [rad]")
 
-        axs[2, 1].plot(t_valid, rpy_valid[..., 2], label="Measured yaw (valid)")
-        axs[2, 1].plot(t_valid, rpy_pred_valid[..., 2], "--", label="Predicted yaw (valid)")
-        axs[2, 1].set_xlabel("Time [s]")
-        axs[2, 1].set_ylabel("Yaw [rad]")
+        if data_validation is not None:
+            axs[0, 1].plot(t_valid, rpy_valid[..., 0], label="Measured roll (valid)")
+            axs[0, 1].plot(t_valid, rpy_pred_valid[..., 0], "--", label="Predicted roll (valid)")
+            axs[0, 1].set_ylabel("Roll [rad]")
+
+            axs[1, 1].plot(t_valid, rpy_valid[..., 1], label="Measured pitch (valid)")
+            axs[1, 1].plot(t_valid, rpy_pred_valid[..., 1], "--", label="Predicted pitch (valid)")
+            axs[1, 1].set_ylabel("Pitch [rad]")
+
+            axs[2, 1].plot(t_valid, rpy_valid[..., 2], label="Measured yaw (valid)")
+            axs[2, 1].plot(t_valid, rpy_pred_valid[..., 2], "--", label="Predicted yaw (valid)")
+            axs[2, 1].set_xlabel("Time [s]")
+            axs[2, 1].set_ylabel("Yaw [rad]")
 
         for ax in axs.flat:
             ax.grid(True)
