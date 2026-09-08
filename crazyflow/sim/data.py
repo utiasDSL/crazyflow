@@ -187,10 +187,7 @@ class SimParams(typing.Protocol):
 
     @staticmethod
     def create(dynamics: Dynamics, drone: str, device: Device) -> SimParams:
-        """Create the default parameters for the simulation.
-
-        All parameters are shared by all worlds and drones by default.
-        """
+        """Create the default parameters for the simulation."""
         match dynamics:
             case Dynamics.first_principles:
                 return FirstPrinciplesParams.create(drone, device)

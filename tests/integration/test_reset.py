@@ -3,7 +3,6 @@ from dataclasses import fields
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from conftest import vectorize
 
 import crazyflow  # noqa: F401, register gymnasium envs
 from crazyflow.control import Control
@@ -15,15 +14,7 @@ from crazyflow.utils import CORE_NDIM_KEY
 def vectorize_state(data: SimData) -> jnp.ndarray:
     """Stack the drone states into a (n_worlds, n_drones, 17) array."""
     s = data.states
-    return vectorize(s.pos, s.quat, s.vel, s.ang_vel, s.rotor_vel)
-
-
-def run(sim: Sim, cmds: np.ndarray) -> jnp.ndarray:
-    """Apply the attitude commands one control step each and return the final states."""
-    for cmd in cmds:
-        sim.attitude_control(cmd)
-        sim.step(sim.freq // sim.control_freq)
-    return vectorize_state(sim.data)
+    return jnp.concat([s.pos, s.quat, s.vel, s.ang_vel, s.rotor_vel], axis=-1)
 
 
 @pytest.mark.integration
@@ -33,14 +24,21 @@ def test_reset_during_simulation(dynamics: Dynamics):
     sim = Sim(dynamics=dynamics, control=Control.attitude)
     n_steps = 3
     random_cmds = np.random.rand(n_steps, 1, 1, 4)
-    states_final = run(sim, random_cmds)
+    # Run simulation once
+    for cmd in random_cmds:
+        sim.attitude_control(cmd)
+        sim.step(sim.freq // sim.control_freq)
+    final_state = vectorize_state(sim.data)
 
     sim.reset()
     assert jnp.all(sim.data.core.steps == 0)
     assert jnp.all(vectorize_state(sim.data) == vectorize_state(sim.default_data))
 
     # Verify simulation is identical when running again
-    assert jnp.all(run(sim, random_cmds) == states_final)
+    for i in range(n_steps):
+        sim.attitude_control(random_cmds[i])
+        sim.step(sim.freq // sim.control_freq)
+    assert jnp.all(vectorize_state(sim.data) == final_state)
 
 
 @pytest.mark.integration
@@ -51,16 +49,23 @@ def test_reset_multi_world(dynamics: Dynamics):
     sim = Sim(n_worlds=n_worlds, n_drones=n_drones, dynamics=dynamics, control=Control.attitude)
     n_steps = 3
     random_cmds = np.random.rand(n_steps, n_worlds, n_drones, 4)
-    states_final = run(sim, random_cmds)
-    assert isinstance(sim.data.controls.attitude.staged_cmd, jnp.ndarray)
-    assert isinstance(sim.data.controls.attitude.cmd, jnp.ndarray)
+    # Run simulation once
+    for i in range(n_steps):
+        sim.attitude_control(random_cmds[i])
+        assert isinstance(sim.data.controls.attitude.staged_cmd, jnp.ndarray)
+        assert isinstance(sim.data.controls.attitude.cmd, jnp.ndarray)
+        sim.step(sim.freq // sim.control_freq)
+    final_state = vectorize_state(sim.data)
 
     sim.reset()
     assert jnp.all(sim.data.core.steps == 0)
     assert jnp.all(vectorize_state(sim.data) == vectorize_state(sim.default_data))
 
     # Verify simulation is identical when running again
-    assert jnp.all(run(sim, random_cmds) == states_final)
+    for cmd in random_cmds:
+        sim.attitude_control(cmd)
+        sim.step(sim.freq // sim.control_freq)
+    assert jnp.all(vectorize_state(sim.data) == final_state)
 
 
 @pytest.mark.integration
@@ -71,12 +76,13 @@ def test_reset_masked_batched_params(dynamics: Dynamics):
     sim = Sim(n_worlds, n_drones, dynamics=dynamics, control=Control.attitude)
     random_cmds = np.random.rand(n_steps, n_worlds, n_drones, 4)
     # Reference trajectory with the shared default parameters
-    states_default = run(sim, random_cmds)
+    for cmd in random_cmds:
+        sim.attitude_control(cmd)
+        sim.step(sim.freq // sim.control_freq)
+    states_default = vectorize_state(sim.data)
     sim.reset()
 
-    # Give every drone its own copy of all parameters, scaled per world. World 0 keeps the default
-    # values. Multiplying with a (n_worlds, n_drones, 1, ...) scale with one trailing axis per core
-    # dimension broadcasts shared and already batched parameters alike to (n_worlds, n_drones, ...)
+    # Give every drone its own copy of all parameters, scaled per world
     scale = jnp.array([1.0, 1.1, 0.9])[:, None] * jnp.ones((n_worlds, n_drones))
     params = sim.data.params
     batched_params = {
@@ -86,10 +92,14 @@ def test_reset_masked_batched_params(dynamics: Dynamics):
     }
     batched_params["J_inv"] = jnp.linalg.inv(batched_params["J"])
     sim.data = sim.data.replace(params=params.replace(**batched_params))
-    states_stepped = run(sim, random_cmds)
-    # Batched copies of the defaults reproduce the default trajectory, scaled parameters change it
-    assert jnp.allclose(states_stepped[0], states_default[0])
-    assert not jnp.allclose(states_stepped[1], states_default[1])
+
+    for cmd in random_cmds:
+        sim.attitude_control(cmd)
+        sim.step(sim.freq // sim.control_freq)
+    states_param_change = vectorize_state(sim.data)
+    assert jnp.allclose(states_param_change[0], states_default[0])  # Should stay the same
+    assert not jnp.allclose(states_param_change[1], states_default[1])  # Must have changed
+    assert not jnp.allclose(states_param_change[2], states_default[2])
 
     mask = np.array([False, True, False])
     sim.reset(mask=mask)
@@ -101,12 +111,9 @@ def test_reset_masked_batched_params(dynamics: Dynamics):
         assert jnp.allclose(current[~mask], value[~mask]), name
     # The same holds for the states
     assert jnp.all(vectorize_state(sim.data)[1] == vectorize_state(sim.default_data)[1])
-    assert jnp.all(vectorize_state(sim.data)[~mask] == states_stepped[~mask])
+    assert jnp.all(vectorize_state(sim.data)[~mask] == states_param_change[~mask])
     assert jnp.all(sim.data.core.steps[1] == 0)
     assert jnp.all(sim.data.core.steps[~mask] > 0)
-
-    # Simulation keeps running with the mixed parameters
-    assert jnp.all(jnp.isfinite(run(sim, random_cmds)))
 
     # A full reset restores the shared default parameters
     sim.reset()

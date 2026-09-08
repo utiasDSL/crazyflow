@@ -433,11 +433,7 @@ class Params:
 
     @staticmethod
     def create(drone: str, device: Device) -> Params:
-        """Create the default parameters for the simulation.
-
-        All parameters are shared by all worlds and drones. Give them leading (n_worlds, n_drones)
-        axes to vary them per world and drone.
-        """
+        """Create the default parameters for the simulation."""
         p = load_params(dynamics, drone)
         J = jnp.asarray(p["J"], device=device)
         return Params(

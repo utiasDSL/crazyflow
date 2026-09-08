@@ -118,8 +118,6 @@ def dynamics(
         warnings.warn("Rotor velocity not provided, using commanded rotor velocity.")
         rotor_vel, rotor_vel_dot = cmd, None
     else:
-        # Index the coefficient axis away so that the motor axis is trailing: shared (1, 4) and
-        # per-motor (N, M, 4, 4) coefficients both broadcast against rotor_vel.
         acc1, acc2 = rotor_dyn_coef[..., 0], rotor_dyn_coef[..., 1]
         dec1, dec2 = rotor_dyn_coef[..., 2], rotor_dyn_coef[..., 3]
         rotor_vel_dot = xp.where(
@@ -343,11 +341,7 @@ class Params:
 
     @staticmethod
     def create(drone: str, device: Device) -> Params:
-        """Create the default parameters for the simulation.
-
-        All parameters are shared by all worlds and drones. Give them leading (n_worlds, n_drones)
-        axes to vary them per world and drone.
-        """
+        """Create the default parameters for the simulation."""
         p = load_params(dynamics, drone)
         J = jnp.asarray(p["J"], device=device)
         return Params(

@@ -29,8 +29,7 @@ def motor_force2rotor_vel(motor_forces: Array, rpm2thrust: Array) -> Array:
     """
     xp = array_namespace(motor_forces)
     rpm2thrust = to_xp(rpm2thrust, xp=xp, device=xp_device(motor_forces))
-    # Index the coefficient axis away so that the motor axis is trailing: shared (1, 3) and
-    # per-motor (..., N, 3) coefficients both broadcast against motor_forces.
+    # shared (1, 3) and per-motor (..., N, 3) coefficients both broadcast against motor_forces.
     c, b, a = rpm2thrust[..., 0], rpm2thrust[..., 1], rpm2thrust[..., 2]
     return (-b + xp.sqrt(b**2 - 4 * a * (c - motor_forces))) / (2 * a)
 

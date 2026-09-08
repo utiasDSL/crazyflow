@@ -144,14 +144,18 @@ def test_reset_masked(device: str, dynamics: Dynamics):
 
     # Modify states
     data = sim.data
-    states, controls, core = data.states, data.controls, data.core
+    states, controls, params, core = data.states, data.controls, data.params, data.core
+    # Use per-drone masses to verify per-world params resets
+    params = params.replace(mass=jnp.broadcast_to(params.mass, (sim.n_worlds, sim.n_drones, 1)))
+    sim.data = data = data.replace(params=params)
+    sim.build_default_data()
     core = core.replace(steps=core.steps + 100)
     controls = controls.replace(state=None)
     controls = controls.replace(force_torque=controls.force_torque.replace(cmd=jnp.ones((2, 1, 4))))
     controls = controls.replace(force_torque=controls.force_torque.replace(steps=jnp.ones((2, 1))))
     states = states.replace(pos=states.pos.at[:, :, 2].set(1.0))
-    # Parameters are shared by default, per-world parameters are covered in test_reset.py
-    sim.data = data.replace(states=states, controls=controls, core=core)
+    params = params.replace(mass=params.mass.at[..., 0].set(1.0))
+    sim.data = data.replace(states=states, controls=controls, params=params, core=core)
 
     # Reset only first world
     mask = jnp.array([True, False])
@@ -175,6 +179,7 @@ def test_reset_masked(device: str, dynamics: Dynamics):
     data = sim.data
     assert jnp.all(data.states.pos[1, :, 2] == 1.0), "World 2 pos was reset"
     assert jnp.all(data.controls.force_torque.cmd[1, ...] == 1.0), "World 2 cmd was reset"
+    assert jnp.all(data.params.mass[1, 0, 0] == 1.0), "World 2 mass was reset"
     assert jnp.all(data.core.steps[1] == 100), "World 2 steps were reset"
     assert data.controls.force_torque.steps[1] == 1, "World 2 force torque steps were reset"
 
