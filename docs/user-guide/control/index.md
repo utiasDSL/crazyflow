@@ -86,7 +86,7 @@ from crazyflow.control import Control
 sim = Sim(control=Control.attitude, dynamics=Dynamics.so_rpy)
 sim.reset()
 
-mass = float(sim.data.params.mass[0, 0, 0])
+mass = float(sim.data.params.mass[0])
 cmd = np.zeros((1, 1, 4), dtype=np.float32)
 cmd[0, 0, 3] = mass * 9.81
 
@@ -115,7 +115,7 @@ from crazyflow.control import Control
 sim = Sim(control=Control.force_torque, dynamics=Dynamics.first_principles)
 sim.reset()
 
-mass = float(sim.data.params.mass[0, 0, 0])
+mass = float(sim.data.params.mass[0])
 cmd = np.zeros((1, 1, 4), dtype=np.float32)
 cmd[0, 0, 0] = mass * 9.81
 

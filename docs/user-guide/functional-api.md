@@ -18,7 +18,7 @@ data, default_data = sim.data, sim.default_data
 step, reset = sim.build_step_fn(), sim.build_reset_fn()
 
 cmd = jnp.zeros((1, 1, 4), dtype=jnp.float32)
-cmd = cmd.at[..., 3].set(float(data.params.mass[0, 0, 0]) * 9.81)
+cmd = cmd.at[..., 3].set(float(data.params.mass[0]) * 9.81)
 
 
 @jax.jit
@@ -92,7 +92,7 @@ data, default_data = sim.data, sim.default_data
 step, reset = sim.build_step_fn(), sim.build_reset_fn()
 
 cmd = jnp.zeros((1, 1, 4), dtype=jnp.float32)
-cmd = cmd.at[..., 3].set(float(data.params.mass[0, 0, 0]) * 9.81)
+cmd = cmd.at[..., 3].set(float(data.params.mass[0]) * 9.81)
 
 
 @jax.jit
@@ -138,7 +138,7 @@ def loss(cmd, data):
 grad_fn = jax.jit(jax.grad(loss))
 
 cmd = jnp.zeros((1, 1, 4), dtype=jnp.float32)
-cmd = cmd.at[..., 3].set(float(data.params.mass[0, 0, 0]) * 9.81)
+cmd = cmd.at[..., 3].set(float(data.params.mass[0]) * 9.81)
 
 grad = grad_fn(cmd, data)
 # Drone is above the target: reducing thrust lowers it toward 1 m.

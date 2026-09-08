@@ -176,29 +176,27 @@ class SimControls:
 
 
 class SimParams(typing.Protocol):
-    mass: Array  # (N, M, 1)
+    mass: Array  # (1,)
     """Mass of the drone."""
-    gravity_vec: Array  # (N, M, 3)
+    gravity_vec: Array  # (3,)
     """Gravity vector of the drone."""
-    J: Array  # (N, M, 3, 3)
+    J: Array  # (3, 3)
     """Inertia matrix of the drone."""
-    J_inv: Array  # (N, M, 3, 3)
+    J_inv: Array  # (3, 3)
     """Inverse of the inertia matrix of the drone."""
 
     @staticmethod
-    def create(
-        n_worlds: int, n_drones: int, dynamics: Dynamics, drone: str, device: Device
-    ) -> SimParams:
-        """Create a default set of parameters for the simulation."""
+    def create(dynamics: Dynamics, drone: str, device: Device) -> SimParams:
+        """Create the default parameters for the simulation."""
         match dynamics:
             case Dynamics.first_principles:
-                return FirstPrinciplesParams.create(n_worlds, n_drones, drone, device)
+                return FirstPrinciplesParams.create(drone, device)
             case Dynamics.so_rpy:
-                return SoRpyParams.create(n_worlds, n_drones, drone, device)
+                return SoRpyParams.create(drone, device)
             case Dynamics.so_rpy_rotor:
-                return SoRpyRotorParams.create(n_worlds, n_drones, drone, device)
+                return SoRpyRotorParams.create(drone, device)
             case Dynamics.so_rpy_rotor_drag:
-                return SoRpyRotorDragParams.create(n_worlds, n_drones, drone, device)
+                return SoRpyRotorDragParams.create(drone, device)
             case _:
                 raise ValueError(f"Dynamics mode {dynamics} not implemented")
 

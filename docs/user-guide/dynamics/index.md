@@ -38,11 +38,11 @@ Parameters accessible through `sim.data.params`:
 |---|---|
 | `mass` | Drone mass, kg |
 | `J` | Inertia matrix, kg·m² |
-| `L` | Motor arm length, m |
-| `rpm2thrust` | Thrust coefficient, N/(RPM²) |
-| `rpm2torque` | Torque coefficient, Nm/(RPM²) |
+| `L` | Motor arm length, m, shared `(1,)` or per motor `(4,)` |
+| `rpm2thrust` | Thrust curve coefficients `[a, b, c]` of `f = a + b·rpm + c·rpm²`, shared `(1, 3)` or per motor `(4, 3)` |
+| `rpm2torque` | Torque curve coefficients, shared `(1, 3)` or per motor `(4, 3)` |
 | `mixing_matrix` | Maps rotor RPMs² to [thrust, tx, ty, tz] |
-| `rotor_dyn_coef` | First-order rotor time constant |
+| `rotor_dyn_coef` | Rotor spin-up/down coefficients, shared `(1, 4)` or per motor `(4, 4)` |
 
 ## Fitted dynamics (so_rpy family)
 

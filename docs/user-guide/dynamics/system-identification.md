@@ -28,7 +28,7 @@ from crazyflow.dynamics.utils.identification import sys_id_translation, sys_id_r
 # Step 1 — assemble raw data dict from your flight log
 data = {
     "time": time_array,  # (N,) seconds
-    "pos": pos_array,  # (N, 3) metres
+    "pos": pos_array,  # (N, 3) meters
     "quat": quat_array,  # (N, 4) xyzw
     "cmd_rpy": cmd_rpy_array,  # (N, 3) radians
     "cmd_f": cmd_f_array,  # (N,)  Newtons

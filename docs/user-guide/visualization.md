@@ -18,7 +18,7 @@ Crazyflow supports onscreen interactive rendering and offscreen RGB/depth captur
 |---|---|---|
 | `"human"` (default) | `None` | Opens an interactive MuJoCo viewer window |
 | `"rgb_array"` | `(H, W, 3) uint8` | Offscreen RGB frame |
-| `"depth_array"` | `(H, W) float32` | Offscreen depth frame in metres |
+| `"depth_array"` | `(H, W) float32` | Offscreen depth frame in meters |
 | `"rgbd_tuple"` | `(rgb, depth)` | Both channels as a tuple |
 
 <!-- notest: requires rendering -->

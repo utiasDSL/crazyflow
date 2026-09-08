@@ -154,6 +154,90 @@ append_fn(sim.step_pipeline, my_step_stage)
 sim.build_step_fn()
 ```
 
+## Randomization and disturbances
+
+The step and reset pipelines enable efficient parameter randomization and disturbance injection. Randomizations should be applied in the reset pipeline, where they run once per episode. Disturbances go into the step pipeline, where they are applied on every dynamics step.
+
+### Randomizing parameters per world and drone
+
+All parameters are shared by all worlds and drones by default. However, they also accept leading batch axes `(n_worlds, n_drones)` to use individual parameters per world and per drone. Parameters of the first-principles model that belong to a motor carry a motor axis of size 1 when shared, so they can also be randomized per motor: the arm length `L` and the propeller inertia `prop_inertia` go from `(1,)` to `(n_worlds, n_drones, 4)`, and the thrust curve `rpm2thrust`, the torque curve `rpm2torque` and the rotor dynamics coefficients `rotor_dyn_coef` go from `(1, K)` to `(n_worlds, n_drones, 4, K)`.
+
+Use the `default_data` argument as the base value so that repeated resets do not compound, and `leaf_replace` to only touch the worlds and drones selected by the mask:
+
+```python
+import jax
+from jax import Array
+
+from crazyflow.sim import Sim
+from crazyflow.sim.data import SimData
+from crazyflow.sim.pipeline import append_fn
+from crazyflow.utils import leaf_replace
+
+
+def randomize_thrust_curve(data: SimData, default_data: SimData, mask: Array | None) -> SimData:
+    key, subkey = jax.random.split(data.core.rng_key)
+    shape = (data.core.n_worlds, data.core.n_drones, 4, 3)  # One curve per motor
+    scale = jax.random.uniform(subkey, shape, minval=0.9, maxval=1.1)  # +-10% per coefficient
+    rpm2thrust = default_data.params.rpm2thrust * scale  # (1, 3) -> (n_worlds, n_drones, 4, 3)
+    params = leaf_replace(data.params, mask, rpm2thrust=rpm2thrust)
+    return data.replace(params=params, core=data.core.replace(rng_key=key))
+
+
+sim = Sim(n_worlds=4)
+append_fn(sim.reset_pipeline, randomize_thrust_curve)
+sim.build_reset_fn()
+sim.reset()
+assert sim.data.params.rpm2thrust.shape == (4, 1, 4, 3)
+```
+
+!!! warning "Split and update the rng key"
+    JAX random keys are stateless: drawing from the same key always produces the same numbers. Every stage that samples must split `data.core.rng_key`, draw from the new subkey, and write the other half back with `data.core.replace(rng_key=key)`. The reset stage restores everything except the rng key, so the key keeps advancing across resets.
+
+A masked reset first restores the parameters of the selected worlds to their defaults and then runs the randomization on them, while the other worlds keep their values. See the [domain randomization example](../examples/index.md#domain-randomization) for a randomization of every parameter of the first-principles model, and [The world axis](world-axis.md) for how per-world arrays are told apart from shared ones.
+
+!!! note "Recompilation"
+    The compiled step and reset functions are specialized on the shapes in `SimData`. The first randomization that turns a shared `(1, 3)` parameter into a `(n_worlds, n_drones, 4, 3)` array changes those shapes, so the following `sim.step()` and `sim.reset()` calls recompile once. The shapes are stable afterwards, unless something restores the shared shape again, e.g. a reset with a pipeline that no longer randomizes the parameter, which triggers another recompilation.
+
+To avoid the recompilation, or to keep the batched shape across changes of the reset pipeline, broadcast the parameters once and bake the shape into the default data:
+
+```{ .python continuation }
+import jax.numpy as jnp
+
+sim = Sim(n_worlds=4)
+params = sim.data.params
+rpm2thrust = jnp.broadcast_to(params.rpm2thrust, (4, 1, 4, 3))  # Same values, batched shape
+sim.data = sim.data.replace(params=params.replace(rpm2thrust=rpm2thrust))
+sim.build_default_data()  # Resets now restore the batched shape instead of the shared one
+```
+
+### Injecting disturbances
+
+Disturbances act on every dynamics tick, so they must be added to the step pipeline instead. The dynamics read an external force `data.states.force` and torque `data.states.torque` acting on the center of mass in the world frame. Both have shape `(n_worlds, n_drones, 3)` and are zero by default, so a stage that fills them applies a disturbance per world and per drone:
+
+```python
+import jax
+
+from crazyflow.sim import Sim
+from crazyflow.sim.data import SimData
+from crazyflow.sim.pipeline import insert_fn_before
+
+
+def wind(data: SimData) -> SimData:
+    key, subkey = jax.random.split(data.core.rng_key)
+    force = jax.random.normal(subkey, data.states.force.shape) * 0.02  # N, world frame
+    states = data.states.replace(force=force)
+    return data.replace(states=states, core=data.core.replace(rng_key=key))
+
+
+sim = Sim(n_worlds=4)
+insert_fn_before(sim.step_pipeline, "integration", wind)
+sim.build_step_fn()
+sim.step()
+```
+
+See the [disturbance injection example](../examples/index.md#disturbance-injection) for a full run comparing disturbed and undisturbed trajectories.
+
+
 ## Next steps
 
 - [Functional API](functional-api.md) — how `build_step_fn` fits into a compiled training loop

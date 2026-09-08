@@ -34,7 +34,7 @@ All simulation state is stored in `sim.data`, a `SimData` pytree. The main sub-t
 
 | Field | Shape | Units |
 |---|---|---|
-| `pos` | `(N, M, 3)` | Position in world frame, metres |
+| `pos` | `(N, M, 3)` | Position in world frame, meters |
 | `quat` | `(N, M, 4)` | Orientation quaternion, scalar-last `xyzw` |
 | `vel` | `(N, M, 3)` | Linear velocity, m/s |
 | `ang_vel` | `(N, M, 3)` | Angular velocity in body frame, rad/s |

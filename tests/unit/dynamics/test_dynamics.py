@@ -18,6 +18,8 @@ from crazyflow.dynamics import available_dynamics, dynamics_features
 from crazyflow.dynamics.core import parametrize
 
 if TYPE_CHECKING:
+    from types import ModuleType
+
     from crazyflow._typing import Array  # To be changed to array_api_typing later
 
 
@@ -34,6 +36,10 @@ def _enable_x64():
         yield
     finally:
         jax.config.update("jax_enable_x64", prev)
+
+
+# Parameters that optionally accept one value per motor. Defaults to single values.
+_PER_MOTOR = ("L", "prop_inertia", "rpm2thrust", "rpm2torque", "rotor_dyn_coef")
 
 
 def create_rnd_states(
@@ -83,6 +89,20 @@ def make_inputs(
     if ext_wrench:
         inp["dist_f"], inp["dist_t"] = dist_f, dist_t
     return inp
+
+
+def make_params(
+    dynamics: Callable, batch: tuple[int, ...] = (), scale: float = 0.0, xp: ModuleType = np
+) -> dict[str, Array]:
+    """Build batched parameters for a parametrized dynamics function."""
+    params = {}
+    for name, value in dynamics.keywords.items():
+        core = np.shape(value) or (1,)
+        if name in _PER_MOTOR:
+            core = (4,) + np.shape(value)  # Quadrotors only
+        value = np.broadcast_to(value, batch + core) * (1 + scale * np.random.randn(*batch, *core))
+        params[name] = xp.asarray(value)
+    return params
 
 
 def state_vector(inp: dict) -> Array:
@@ -168,34 +188,40 @@ def test_dynamics_shapes(dynamics_name: str, dynamics: Callable, drone: str):
 @pytest.mark.parametrize("drone", available_drones)
 def test_dynamics_shapes_batched(dynamics_name: str, dynamics: Callable, drone: str):
     dynamics = parametrize(dynamics, drone, xp=xp)
-    shape = (10, 5)
-    check_shapes(dynamics, batch=shape)
+    batch = (10, 5)
+    check_shapes(dynamics, batch=batch)
     # Batched parameters
-    dynamics.keywords["J"] = xp.tile(dynamics.keywords["J"][None, None, ...], shape + (1, 1))
-    dynamics.keywords["J_inv"] = xp.tile(
-        dynamics.keywords["J_inv"][None, None, ...], shape + (1, 1)
-    )
-    check_shapes(dynamics, batch=shape)
+    dynamics.keywords.update(make_params(dynamics, batch, xp=xp))
+    check_shapes(dynamics, batch=batch)
 
 
 @pytest.mark.unit
 @pytest.mark.parametrize("dynamics_name, dynamics", available_dynamics.items())
 @pytest.mark.parametrize("drone", available_drones)
 @pytest.mark.parametrize("ext_wrench", [False, True])
-def test_symbolic_dynamics(dynamics_name: str, dynamics: Callable, drone: str, ext_wrench: bool):
+@pytest.mark.parametrize("per_motor_params", [False, True])
+def test_symbolic_dynamics(
+    dynamics_name: str, dynamics: Callable, drone: str, ext_wrench: bool, per_motor_params: bool
+):
     """Tests if the symbolic and numeric dynamics produce the same output."""
     symbolic_dynamics = getattr(sys.modules[dynamics.__module__], "symbolic_dynamics")
     symbolic_dynamics = parametrize(symbolic_dynamics, drone)
     dynamics = parametrize(dynamics, drone)
+    if per_motor_params:
+        params = make_params(dynamics, scale=0.1)
+        dynamics.keywords.update(params)
+        symbolic_dynamics.keywords.update(params)
     inp = make_inputs(dynamics, batch=(10, 5), ext_wrench=ext_wrench)
 
     X_dot, X, U, _ = symbolic_dynamics(**symbolic_flags(dynamics, dist=ext_wrench))
     symbolic2numeric = cs.Function(dynamics_name, [X, U], [X_dot])
 
+    order = ("pos", "quat", "vel", "ang_vel", "rotor_vel", "dist_f", "dist_t")
     for i in np.ndindex(np.shape(inp["pos"])[:-1]):  # casadi only supports non batched calls
         inp_i = {k: v[i + (...,)] for k, v in inp.items()}
         x_dot = xp.concat([x for x in dynamics(**inp_i) if x is not None], axis=-1)
-        X, U = np.asarray(state_vector(inp_i)), np.asarray(inp_i["cmd"])
+        X = np.asarray(xp.concat([inp_i[k] for k in order if k in inp_i], axis=-1))
+        U = np.asarray(inp_i["cmd"])
         x_dot_symbolic2numeric = xp.squeeze(xp.asarray(symbolic2numeric(X, U)), axis=-1)
         assert np.allclose(x_dot, x_dot_symbolic2numeric), (
             "Symbolic and numeric dynamics have different output"
@@ -222,6 +248,34 @@ def test_compare_batched_non_batched(dynamics_name: str, dynamics: Callable, dro
 @pytest.mark.unit
 @pytest.mark.parametrize("dynamics_name, dynamics", available_dynamics.items())
 @pytest.mark.parametrize("drone", available_drones)
+def test_batched_params(dynamics_name: str, dynamics: Callable, drone: str):
+    """Tests if batched parameters give the same results as the shared parameters."""
+    dynamics = parametrize(dynamics, drone, xp=xp)
+    batch = (4, 3)
+    inp = make_inputs(dynamics, batch=batch, ext_wrench=True)
+
+    x_dot = dynamics(**inp)
+    x_dot_batched = dynamics(**inp, **make_params(dynamics, batch, xp=xp))
+    for dx, dx_batched in zip(x_dot, x_dot_batched, strict=True):
+        assert_array_meta(dx_batched, dx)
+
+    x_dot_batched = xp.concat([x for x in x_dot_batched if x is not None], axis=-1)
+    x_dot = xp.concat([x for x in x_dot if x is not None], axis=-1)
+    assert np.allclose(x_dot_batched, x_dot)
+
+    params = make_params(dynamics, batch, scale=0.1, xp=xp)
+    x_dot_batched = xp.concat([x for x in dynamics(**inp, **params) if x is not None], axis=-1)
+    assert not np.allclose(x_dot_batched, x_dot), "Perturbation has no effect"
+    for i in np.ndindex(batch):
+        inp_i = {k: v[i + (...,)] for k, v in inp.items()}
+        params_i = {k: v[i + (...,)] for k, v in params.items()}
+        x_dot = xp.concat([x for x in dynamics(**inp_i, **params_i) if x is not None], axis=-1)
+        assert np.allclose(x_dot_batched[i + (...,)], x_dot), f"Drone {i} differs"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("dynamics_name, dynamics", available_dynamics.items())
+@pytest.mark.parametrize("drone", available_drones)
 def test_numeric_jit(dynamics_name: str, dynamics: Callable, drone: str):
     """Tests if the dynamics are jitable and if the results are identical to the array API ones."""
     dynamics = parametrize(dynamics, drone)
@@ -235,8 +289,7 @@ def test_numeric_jit(dynamics_name: str, dynamics: Callable, drone: str):
     assert np.allclose(xp_dot, jp_dot), "numpy and jax results differ"
 
 
-# TODO test if external wrench gets applied properly. But how to test it?
-# -> maybe apply and predict based on mass how much higher the acceleration should be
-# same for torque
+# TODO test if external wrench gets applied properly
+# Maybe apply and predict how much higher the (angular) acceleration should be?
 @pytest.mark.unit
 def test_external_wrench(): ...

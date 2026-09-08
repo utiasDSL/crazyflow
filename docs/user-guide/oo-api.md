@@ -82,7 +82,7 @@ sim.reset()
 
 # [roll, pitch, yaw, collective_thrust_N]
 cmd = np.zeros((1, 1, 4), dtype=np.float32)
-cmd[0, 0, 3] = float(sim.data.params.mass[0, 0, 0]) * 9.81  # hover thrust
+cmd[0, 0, 3] = float(sim.data.params.mass[0]) * 9.81  # hover thrust
 
 sim.attitude_control(cmd)
 sim.step(sim.freq // sim.control_freq)
@@ -102,7 +102,7 @@ sim.reset()
 
 # [collective_force_N, torque_x_Nm, torque_y_Nm, torque_z_Nm]
 cmd = np.zeros((1, 1, 4), dtype=np.float32)
-cmd[0, 0, 0] = float(sim.data.params.mass[0, 0, 0]) * 9.81  # hover force
+cmd[0, 0, 0] = float(sim.data.params.mass[0]) * 9.81  # hover force
 
 sim.force_torque_control(cmd)
 sim.step(1)
@@ -216,7 +216,8 @@ from crazyflow.utils import leaf_replace
 
 def randomize_mass(data: SimData, default_data: SimData, mask: Array | None = None) -> SimData:
     key, mass_key = jax.random.split(data.core.rng_key)
-    mass = data.params.mass + jax.random.normal(mass_key, data.params.mass.shape) * 2e-3
+    shape = (data.core.n_worlds, data.core.n_drones, 1)  # One mass per drone
+    mass = default_data.params.mass + jax.random.normal(mass_key, shape) * 2e-3
     params = leaf_replace(data.params, mask, mass=mass)
     return data.replace(params=params, core=data.core.replace(rng_key=key))
 
@@ -227,7 +228,7 @@ sim.build_reset_fn()
 sim.reset()  # randomizes every world
 ```
 
-Passing a boolean mask to `sim.reset(mask=mask)` randomizes only the worlds being reset. See the [domain randomization example](../examples/index.md#domain-randomization) for mass and inertia randomization in a complete simulation.
+Passing a boolean mask to `sim.reset(mask=mask)` randomizes only the worlds being reset. Every parameter of every dynamics model can be randomized per world this way. See [Randomization and disturbances](pipelines.md#randomization-and-disturbances) for the details and the recompilation this might cause, and the [domain randomization example](../examples/index.md#domain-randomization) for a complete simulation.
 
 ## Next steps
 

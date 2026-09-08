@@ -18,7 +18,6 @@ import warnings
 from typing import TYPE_CHECKING
 
 import casadi as cs
-import jax
 import jax.numpy as jnp
 from array_api_compat import array_namespace
 from array_api_compat import device as xp_device
@@ -49,8 +48,8 @@ def dynamics(
     dist_t: Array | None = None,
     *,
     mass: float,
-    L: float,
-    prop_inertia: float,
+    L: float | Array,
+    prop_inertia: float | Array,
     gravity_vec: Array,
     J: Array,
     J_inv: Array,
@@ -80,18 +79,25 @@ def dynamics(
         dist_t: Disturbance torque (Nm) in the world frame acting on the CoM.
 
         mass: Mass of the drone (kg).
-        L: Distance from the CoM to the motor (m).
-        prop_inertia: Inertia of one propeller in z direction (kg m^2).
+        L: Distance from the CoM to the motors (m). Shared (1,) or one value per motor (4,).
+        prop_inertia: Inertia of the propellers in z direction (kg m^2). Shared (1,) or one value
+            per motor (4,).
         gravity_vec: Gravity vector (m/s^2). We assume the gravity vector points downwards, e.g.
             [0, 0, -9.81].
         J: Inertia matrix (kg m^2).
         J_inv: Inverse inertia matrix (1/kg m^2).
-        rpm2thrust: Propeller force constant (N min^2).
-        rpm2torque: Propeller torque constant (Nm min^2).
+        rpm2thrust: Propeller force constants (N min^2). Shared (1, 3) or one curve per motor
+            (4, 3).
+        rpm2torque: Propeller torque constants (Nm min^2). Shared (1, 3) or one curve per motor
+            (4, 3).
         mixing_matrix: Mixing matrix denoting the turn direction of the motors (4x3).
         drag_matrix: Drag matrix containing the linear drag coefficients (3x3).
-        rotor_dyn_coef: Rotor dynamics coefficients.
+        rotor_dyn_coef: Rotor dynamics coefficients. Shared (1, 4) or one set per motor (4, 4).
 
+    Note:
+        All array parameters accept leading batch axes (N, M) to vary per world and per drone.
+        Per-motor parameters carry a motor axis of size 1 when shared, so that the per-world layout
+        is e.g. (N, M, 1, 3) for a shared and (N, M, 4, 3) for a per-motor thrust curve.
 
     Warning:
         Do not use quat_dot directly for integration! Only usage of ang_vel is mathematically
@@ -112,13 +118,16 @@ def dynamics(
         warnings.warn("Rotor velocity not provided, using commanded rotor velocity.")
         rotor_vel, rotor_vel_dot = cmd, None
     else:
+        acc1, acc2 = rotor_dyn_coef[..., 0], rotor_dyn_coef[..., 1]
+        dec1, dec2 = rotor_dyn_coef[..., 2], rotor_dyn_coef[..., 3]
         rotor_vel_dot = xp.where(
             cmd > rotor_vel,
-            rotor_dyn_coef[0] * (cmd - rotor_vel) + rotor_dyn_coef[1] * (cmd**2 - rotor_vel**2),
-            rotor_dyn_coef[2] * (cmd - rotor_vel) + rotor_dyn_coef[3] * (cmd**2 - rotor_vel**2),
+            acc1 * (cmd - rotor_vel) + acc2 * (cmd**2 - rotor_vel**2),
+            dec1 * (cmd - rotor_vel) + dec2 * (cmd**2 - rotor_vel**2),
         )
     # Creating force and torque vector
-    forces_motor = rpm2thrust[0] + rpm2thrust[1] * rotor_vel + rpm2thrust[2] * rotor_vel**2
+    k0, k1, k2 = rpm2thrust[..., 0], rpm2thrust[..., 1], rpm2thrust[..., 2]
+    forces_motor = k0 + k1 * rotor_vel + k2 * rotor_vel**2
     forces_motor_tot = xp.sum(forces_motor, axis=-1)
     zeros = xp.zeros_like(forces_motor_tot)
     forces_motor_vec = xp.stack((zeros, zeros, forces_motor_tot), axis=-1)
@@ -126,10 +135,11 @@ def dynamics(
     force_gravity = gravity_vec * mass
     force_drag = (rot_mat.mT @ (drag_matrix @ (rot_mat @ vel[..., None])))[..., 0]
 
-    torques_motor = rpm2torque[0] + rpm2torque[1] * rotor_vel + rpm2torque[2] * rotor_vel**2
-    torque_thrust = (mixing_matrix @ (forces_motor)[..., None])[..., 0] * xp.stack(
-        [L, L, xp.asarray(0.0)]
-    )
+    c0, c1, c2 = rpm2torque[..., 0], rpm2torque[..., 1], rpm2torque[..., 2]
+    torques_motor = c0 + c1 * rotor_vel + c2 * rotor_vel**2
+    # Weight each motor force by its arm length before mixing to support per-motor arm lengths
+    lever = xp.asarray([1.0, 1.0, 0.0], dtype=forces_motor.dtype, device=device)
+    torque_thrust = (mixing_matrix @ (forces_motor * L)[..., None])[..., 0] * lever
     torque_drag = (mixing_matrix @ (torques_motor)[..., None])[..., 0] * xp.stack(
         [xp.asarray(0.0), xp.asarray(0.0), xp.asarray(1.0)]
     )
@@ -139,12 +149,12 @@ def dynamics(
     rotor_vel_dot_rads = (
         rotor_vel_dot * rpm_to_rad if rotor_vel_dot is not None else xp.zeros_like(rotor_vel)
     )
-    torque_inertia = prop_inertia * xp.stack(
-        [
-            ang_vel[..., 1] * xp.sum(mixing_matrix[..., -1, :] * rotor_vel_rads, axis=-1),
-            -ang_vel[..., 0] * xp.sum(mixing_matrix[..., -1, :] * rotor_vel_rads, axis=-1),
-            xp.sum(mixing_matrix[..., -1, :] * rotor_vel_dot_rads, axis=-1),
-        ],
+    # Angular momentum of the propellers along the body z-axis, weighted per motor by its inertia
+    spin = mixing_matrix[..., -1, :] * prop_inertia
+    rotor_momentum = xp.sum(spin * rotor_vel_rads, axis=-1)
+    rotor_momentum_dot = xp.sum(spin * rotor_vel_dot_rads, axis=-1)
+    torque_inertia = xp.stack(
+        [ang_vel[..., 1] * rotor_momentum, -ang_vel[..., 0] * rotor_momentum, rotor_momentum_dot],
         axis=-1,
     )
     torque_vec = torque_thrust + torque_drag + torque_inertia
@@ -172,8 +182,8 @@ def symbolic_dynamics(
     model_dist_t: bool = False,
     *,
     mass: float,
-    L: float,
-    prop_inertia: float,
+    L: float | Array,
+    prop_inertia: float | Array,
     gravity_vec: Array,
     J: Array,
     J_inv: Array,
@@ -195,18 +205,21 @@ def symbolic_dynamics(
         model_dist_f: If ``True``, a 3-D force disturbance is appended to ``X``.
         model_dist_t: If ``True``, a 3-D torque disturbance is appended to ``X``.
         mass: Drone mass in kg.
-        L: Distance from centre of mass to motor in metres.
-        prop_inertia: Moment of inertia of one propeller about its spin axis in kg m².
+        L: Distance from centre of mass to the motors in meters, shared ``(1,)`` or one value per
+            motor ``(4,)``.
+        prop_inertia: Moment of inertia of the propellers about their spin axis in kg m², shared
+            ``(1,)`` or one value per motor ``(4,)``.
         gravity_vec: Gravity vector, shape ``(3,)``.
         J: Inertia matrix, shape ``(3, 3)``.
         J_inv: Inverse inertia matrix, shape ``(3, 3)``.
         rpm2thrust: Polynomial coefficients ``[a, b, c]`` for the thrust curve
-            ``f = a + b * rpm + c * rpm²``.
+            ``f = a + b * rpm + c * rpm²``, shared ``(1, 3)`` or one curve per motor ``(4, 3)``.
         rpm2torque: Polynomial coefficients ``[a, b, c]`` for the drag-torque curve
-            ``τ = a + b * rpm + c * rpm²``.
+            ``τ = a + b * rpm + c * rpm²``, shared ``(1, 3)`` or one curve per motor ``(4, 3)``.
         mixing_matrix: Matrix of shape ``(3, 4)`` mapping per-motor forces to body torques.
         rotor_dyn_coef: Four rotor dynamics coefficients ``[k_acc1, k_acc2, k_dec1, k_dec2]`` used
-            in the piecewise-linear spin-up/down model.
+            in the piecewise-linear spin-up/down model, shared ``(1, 4)`` or one set per motor
+            ``(4, 4)``.
         drag_matrix: Diagonal ``(3, 3)`` matrix of linear drag coefficients.
 
     Returns:
@@ -234,17 +247,19 @@ def symbolic_dynamics(
         # Rotor dynamics
         rotor_vel_dot = cs.if_else(
             U > symbols.rotor_vel,
-            rotor_dyn_coef[0] * (U - symbols.rotor_vel)
-            + rotor_dyn_coef[1] * (U**2 - symbols.rotor_vel**2),
-            rotor_dyn_coef[2] * (U - symbols.rotor_vel)
-            + rotor_dyn_coef[3] * (U**2 - symbols.rotor_vel**2),
+            rotor_dyn_coef[..., 0] * (U - symbols.rotor_vel)
+            + rotor_dyn_coef[..., 1] * (U**2 - symbols.rotor_vel**2),
+            rotor_dyn_coef[..., 2] * (U - symbols.rotor_vel)
+            + rotor_dyn_coef[..., 3] * (U**2 - symbols.rotor_vel**2),
         )
     else:
         _saved_rotor_vel = symbols.rotor_vel
         symbols.rotor_vel = U
     # Creating force and torque vector
     forces_motor = (
-        rpm2thrust[0] + rpm2thrust[1] * symbols.rotor_vel + rpm2thrust[2] * symbols.rotor_vel**2
+        rpm2thrust[..., 0]
+        + rpm2thrust[..., 1] * symbols.rotor_vel
+        + rpm2thrust[..., 2] * symbols.rotor_vel**2
     )
     forces_motor_vec = cs.vertcat(0.0, 0.0, cs.sum1(forces_motor))
     forces_motor_vec_world = symbols.rot @ forces_motor_vec
@@ -252,18 +267,21 @@ def symbolic_dynamics(
     force_drag = symbols.rot @ (drag_matrix @ (symbols.rot.T @ symbols.vel))
 
     torques_motor = (
-        rpm2torque[0] + rpm2torque[1] * symbols.rotor_vel + rpm2torque[2] * symbols.rotor_vel**2
+        rpm2torque[..., 0]
+        + rpm2torque[..., 1] * symbols.rotor_vel
+        + rpm2torque[..., 2] * symbols.rotor_vel**2
     )
-    torques_thrust = mixing_matrix @ forces_motor * cs.vertcat(L, L, 0.0)
+    torques_thrust = mixing_matrix @ (forces_motor * L) * cs.vertcat(1.0, 1.0, 0.0)
     torques_drag = mixing_matrix @ torques_motor * cs.vertcat(0.0, 0.0, 1.0)
     # convert rotor speed from RPM to rad/s for physical calculations
     rpm_to_rad = 2 * cs.pi / 60
     rotor_vel_rads = symbols.rotor_vel * rpm_to_rad
     rotor_vel_dot_rads = rotor_vel_dot * rpm_to_rad if model_rotor_vel else symbols.rotor_vel * 0.0
-    torque_inertia = prop_inertia * cs.vertcat(
-        symbols.ang_vel[1] * cs.sum(mixing_matrix[-1, :] * rotor_vel_rads),
-        -symbols.ang_vel[0] * cs.sum(mixing_matrix[-1, :] * rotor_vel_rads),
-        cs.sum(mixing_matrix[-1, :] * rotor_vel_dot_rads),
+    spin = mixing_matrix[-1, :] * prop_inertia
+    torque_inertia = cs.vertcat(
+        symbols.ang_vel[1] * cs.sum(spin * rotor_vel_rads),
+        -symbols.ang_vel[0] * cs.sum(spin * rotor_vel_rads),
+        cs.sum(spin * rotor_vel_dot_rads),
     )
     torques_motor_vec = torques_thrust + torques_drag + torque_inertia
 
@@ -298,46 +316,46 @@ def symbolic_dynamics(
 
 @dataclass
 class Params:
-    mass: Array = field(metadata={CORE_NDIM_KEY: 1})  # (N, M, 1)
+    mass: Array = field(metadata={CORE_NDIM_KEY: 1})  # (1,)
     """Mass of the drone."""
-    L: Array = field(metadata={CORE_NDIM_KEY: 0})  # ()
-    """Arm length of the drone."""
-    prop_inertia: Array = field(metadata={CORE_NDIM_KEY: 0})  # ()
-    """Inertia of the propeller."""
+    L: Array = field(metadata={CORE_NDIM_KEY: 1})  # (1,)
+    """Arm length of the drone. One shared value, or one value per motor with shape (4,)."""
+    prop_inertia: Array = field(metadata={CORE_NDIM_KEY: 1})  # (1,)
+    """Inertia of the propellers. One shared value, or one value per motor with shape (4,)."""
     gravity_vec: Array = field(metadata={CORE_NDIM_KEY: 1})  # (3,)
     """Gravity vector of the drone."""
-    J: Array = field(metadata={CORE_NDIM_KEY: 2})  # (N, M, 3, 3)
+    J: Array = field(metadata={CORE_NDIM_KEY: 2})  # (3, 3)
     """Inertia matrix of the drone."""
-    J_inv: Array = field(metadata={CORE_NDIM_KEY: 2})  # (N, M, 3, 3)
+    J_inv: Array = field(metadata={CORE_NDIM_KEY: 2})  # (3, 3)
     """Inverse of the inertia matrix of the drone."""
-    rpm2thrust: Array = field(metadata={CORE_NDIM_KEY: 1})  # (3,)
-    """Force constant of the drone."""
-    rpm2torque: Array = field(metadata={CORE_NDIM_KEY: 1})  # (3,)
-    """Torque constant of the drone."""
+    rpm2thrust: Array = field(metadata={CORE_NDIM_KEY: 2})  # (1, 3)
+    """Force constants of the drone. One shared curve, or one curve per motor with shape (4, 3)."""
+    rpm2torque: Array = field(metadata={CORE_NDIM_KEY: 2})  # (1, 3)
+    """Torque constants of the drone. One shared curve, or one curve per motor with shape (4, 3)."""
     mixing_matrix: Array = field(metadata={CORE_NDIM_KEY: 2})  # (3, 4)
     """Mixing matrix of the drone."""
     drag_matrix: Array = field(metadata={CORE_NDIM_KEY: 2})  # (3, 3)
     """Drag matrix of the drone."""
-    rotor_dyn_coef: Array = field(metadata={CORE_NDIM_KEY: 1})  # (4,)
-    """Rotor speed dynamics time constant of the drone."""
+    rotor_dyn_coef: Array = field(metadata={CORE_NDIM_KEY: 2})  # (1, 4)
+    """Rotor speed dynamics coefficients of the drone. One shared set, or one per motor (4, 4)."""
 
     @staticmethod
-    def create(n_worlds: int, n_drones: int, drone: str, device: Device) -> Params:
-        """Create a default set of parameters for the simulation."""
+    def create(drone: str, device: Device) -> Params:
+        """Create the default parameters for the simulation."""
         p = load_params(dynamics, drone)
-        J = jax.device_put(jnp.tile(p["J"][None, None, :, :], (n_worlds, n_drones, 1, 1)), device)
+        J = jnp.asarray(p["J"], device=device)
         return Params(
-            mass=jnp.full((n_worlds, n_drones, 1), p["mass"], device=device),
-            L=jnp.asarray(p["L"], device=device),
-            prop_inertia=jnp.asarray(p["prop_inertia"], device=device),
+            mass=jnp.asarray([p["mass"]], device=device),
+            L=jnp.asarray([p["L"]], device=device),
+            prop_inertia=jnp.asarray([p["prop_inertia"]], device=device),
             gravity_vec=jnp.asarray(p["gravity_vec"], device=device),
             J=J,
             J_inv=jnp.linalg.inv(J),
-            rpm2thrust=jnp.asarray(p["rpm2thrust"], device=device),
-            rpm2torque=jnp.asarray(p["rpm2torque"], device=device),
+            rpm2thrust=jnp.asarray([p["rpm2thrust"]], device=device),
+            rpm2torque=jnp.asarray([p["rpm2torque"]], device=device),
             mixing_matrix=jnp.asarray(p["mixing_matrix"], device=device),
             drag_matrix=jnp.asarray(p["drag_matrix"], device=device),
-            rotor_dyn_coef=jnp.asarray(p["rotor_dyn_coef"], device=device),
+            rotor_dyn_coef=jnp.asarray([p["rotor_dyn_coef"]], device=device),
         )
 
 

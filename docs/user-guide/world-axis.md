@@ -16,7 +16,7 @@ sim = Sim(n_worlds=3)
 mask = world_mask(sim.data)
 
 assert mask.states.pos  # (n_worlds, n_drones, 3), indexed by world
-assert mask.params.mass  # (n_worlds, n_drones, 1), one mass per drone
+assert not mask.params.mass  # (1,), shared by all worlds
 assert not mask.params.gravity_vec  # (3,), shared by all worlds
 assert not mask.params.drag_matrix  # (3, 3), shared by all worlds
 ```

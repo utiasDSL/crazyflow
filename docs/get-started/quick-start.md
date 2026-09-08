@@ -82,7 +82,7 @@ for _ in range(10):
     sim.state_control(cmd)
     sim.step(sim.freq // sim.control_freq)
 
-pos = sim.data.states.pos[0, 0]  # (3,)  — position in metres
+pos = sim.data.states.pos[0, 0]  # (3,)  — position in meters
 quat = sim.data.states.quat[0, 0]  # (4,)  — quaternion xyzw
 vel = sim.data.states.vel[0, 0]  # (3,)  — linear velocity m/s
 ang_vel = sim.data.states.ang_vel[0, 0]  # (3,)  — angular velocity rad/s

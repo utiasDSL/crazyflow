@@ -69,7 +69,7 @@ def test_world_mask():
     assert mask.states.pos
     assert mask.states_deriv.acc
     assert mask.core.steps
-    assert mask.params.mass
+    assert not mask.params.mass
     assert mask.controls.attitude.cmd
     assert not mask.params.gravity_vec
     assert not mask.params.drag_matrix

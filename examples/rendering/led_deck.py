@@ -45,7 +45,7 @@ def main():
         sim = Sim(n_drones=25, drone="cf21B_500", control=Control.state, xml_path=tmp_path)
         fps = 60
         cmd = np.zeros((sim.n_worlds, sim.n_drones, 4))
-        cmd[..., 3] = sim.data.params.mass[0, 0, 0] * 9.81
+        cmd[..., 3] = sim.data.params.mass[0] * 9.81
         rgbas = np.random.default_rng(0).uniform(0, 1, (sim.n_drones, 4))
         rgbas[..., 3] = 1.0
 

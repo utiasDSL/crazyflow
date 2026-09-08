@@ -69,9 +69,7 @@ def main():
             "vel": sim.data.states.vel[0, 0],
             "quat": sim.data.states.quat[0, 0],
         }
-        cmd[0, 0, :] = control(
-            i / sim.control_freq, obs, pos_start[0, 0], sim.data.params.mass[0, 0, 0]
-        )
+        cmd[0, 0, :] = control(i / sim.control_freq, obs, pos_start[0, 0], sim.data.params.mass[0])
         sim.attitude_control(cmd)
         sim.step(sim.freq // sim.control_freq)
         if ((i * fps) % sim.control_freq) < fps:

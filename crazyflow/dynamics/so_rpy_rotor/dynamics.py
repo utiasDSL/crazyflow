@@ -19,7 +19,6 @@ import warnings
 from typing import TYPE_CHECKING
 
 import casadi as cs
-import jax
 import jax.numpy as jnp
 from array_api_compat import array_namespace
 from array_api_compat import device as xp_device
@@ -168,12 +167,12 @@ def dynamics_euler(
         warnings.warn("Rotor velocity not provided, using commanded rotor velocity.")
         rotor_vel, rotor_vel_dot = cmd_f[..., None], None
     else:
-        rotor_vel_dot = 1 / thrust_time_coef * (cmd_f[..., None] - rotor_vel)
-    forces_motor = rotor_vel[..., 0]
+        rotor_vel_dot = (cmd_f[..., None] - rotor_vel) / thrust_time_coef
+    forces_motor = rotor_vel[..., 0:1]  # (..., 1)
     thrust = acc_coef + cmd_f_coef * forces_motor
     drone_z_axis = R.from_euler("xyz", rpy).as_matrix()[..., -1]
     pos_dot = vel
-    vel_dot = 1.0 / mass * thrust[..., None] * drone_z_axis + gravity_vec
+    vel_dot = 1.0 / mass * thrust * drone_z_axis + gravity_vec
     rpy_rates_dot = rpy_coef * rpy + rpy_rates_coef * rpy_rates + cmd_rpy_coef * cmd_rpy
     return pos_dot, rpy_rates, vel_dot, rpy_rates_dot, rotor_vel_dot
 
@@ -375,19 +374,19 @@ def symbolic_dynamics_euler(
 
 @dataclass
 class Params:
-    mass: Array = field(metadata={CORE_NDIM_KEY: 1})  # (N, M, 1)
+    mass: Array = field(metadata={CORE_NDIM_KEY: 1})  # (1,)
     """Mass of the drone."""
     gravity_vec: Array = field(metadata={CORE_NDIM_KEY: 1})  # (3,)
     """Gravity vector of the drone."""
-    J: Array = field(metadata={CORE_NDIM_KEY: 2})  # (N, M, 3, 3)
+    J: Array = field(metadata={CORE_NDIM_KEY: 2})  # (3, 3)
     """Inertia matrix of the drone."""
-    J_inv: Array = field(metadata={CORE_NDIM_KEY: 2})  # (N, M, 3, 3)
+    J_inv: Array = field(metadata={CORE_NDIM_KEY: 2})  # (3, 3)
     """Inverse of the inertia matrix of the drone."""
-    thrust_time_coef: Array = field(metadata={CORE_NDIM_KEY: 0})  # ()
+    thrust_time_coef: Array = field(metadata={CORE_NDIM_KEY: 1})  # (1,)
     """Rotor coefficient of the drone."""
-    acc_coef: Array = field(metadata={CORE_NDIM_KEY: 0})  # ()
+    acc_coef: Array = field(metadata={CORE_NDIM_KEY: 1})  # (1,)
     """Acceleration coefficient of the drone."""
-    cmd_f_coef: Array = field(metadata={CORE_NDIM_KEY: 0})  # ()
+    cmd_f_coef: Array = field(metadata={CORE_NDIM_KEY: 1})  # (1,)
     """Collective thrust coefficient of the drone."""
     rpy_coef: Array = field(metadata={CORE_NDIM_KEY: 1})  # (3,)
     """Roll pitch yaw coefficient of the drone."""
@@ -397,18 +396,18 @@ class Params:
     """Roll pitch yaw command coefficient of the drone."""
 
     @staticmethod
-    def create(n_worlds: int, n_drones: int, drone: str, device: Device) -> Params:
-        """Create a default set of parameters for the simulation."""
+    def create(drone: str, device: Device) -> Params:
+        """Create the default parameters for the simulation."""
         p = load_params(dynamics, drone)
-        J = jax.device_put(jnp.tile(p["J"][None, None, :, :], (n_worlds, n_drones, 1, 1)), device)
+        J = jnp.asarray(p["J"], device=device)
         return Params(
-            mass=jnp.full((n_worlds, n_drones, 1), p["mass"], device=device),
+            mass=jnp.asarray([p["mass"]], device=device),
             gravity_vec=jnp.asarray(p["gravity_vec"], device=device),
             J=J,
             J_inv=jnp.linalg.inv(J),
-            thrust_time_coef=jnp.asarray(p["thrust_time_coef"], device=device),
-            acc_coef=jnp.asarray(p["acc_coef"], device=device),
-            cmd_f_coef=jnp.asarray(p["cmd_f_coef"], device=device),
+            thrust_time_coef=jnp.asarray([p["thrust_time_coef"]], device=device),
+            acc_coef=jnp.asarray([p["acc_coef"]], device=device),
+            cmd_f_coef=jnp.asarray([p["cmd_f_coef"]], device=device),
             rpy_coef=jnp.asarray(p["rpy_coef"], device=device),
             rpy_rates_coef=jnp.asarray(p["rpy_rates_coef"], device=device),
             cmd_rpy_coef=jnp.asarray(p["cmd_rpy_coef"], device=device),

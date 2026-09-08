@@ -30,7 +30,7 @@ def main():
     step_grad = jax.jit(jax.grad(step))
 
     cmd = jnp.zeros((1, 1, 4), dtype=jnp.float32)
-    cmd = cmd.at[..., 3].set(sim.data.params.mass[0, 0, 0] * 9.81 * 1.05)
+    cmd = cmd.at[..., 3].set(sim.data.params.mass[0] * 9.81 * 1.05)
 
     # Trigger jax's jit to compile the gradient function. This is not necessary, but it ensures that
     # the timings are not affected by the compilation time.

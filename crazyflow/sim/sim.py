@@ -495,7 +495,7 @@ class Sim:
                 force_torque_freq,
                 self.device,
             ),
-            params=SimParams.create(N, D, self.dynamics, self.drone, self.device),
+            params=SimParams.create(self.dynamics, self.drone, self.device),
             core=SimCore.create(self.freq, N, D, drone_mocap_ids, rng_key, self.device),
         )
         if D > 1:  # If multiple drones, arrange them in a grid

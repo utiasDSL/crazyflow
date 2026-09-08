@@ -75,7 +75,7 @@ We can also distribute the simulation across devices. The host backend is asked 
 
 ## Domain randomization
 
-Randomizing mass and inertia through the reset pipeline. An optional mask limits randomization to selected worlds.
+Randomizing mass, inertia and drag per drone, and thrust and torque curves, rotor dynamics, arm lengths and propeller inertias per motor through the reset pipeline, each by a uniform factor around its default value. An optional mask limits randomization to selected worlds.
 
 <!-- notest: imported script, covered by tests/integration/test_examples.py -->
 ```{ .python notest }

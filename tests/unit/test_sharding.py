@@ -39,7 +39,7 @@ def test_placement(platform: str):
     sim = Sim(n_worlds=2 * len(devices), device=platform)
     sim.shard(world_mesh(devices))
     assert sim.data.states.pos.sharding.spec == PartitionSpec("worlds")
-    assert sim.data.params.mass.sharding.spec == PartitionSpec("worlds")
+    assert sim.data.params.mass.sharding.spec == PartitionSpec()
     assert sim.data.params.gravity_vec.sharding.spec == PartitionSpec()
     assert sim.data.params.rotor_dyn_coef.sharding.spec == PartitionSpec()
 
