@@ -10,14 +10,10 @@ import jax  # noqa: I001
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import numpy as np
-from jax.scipy.spatial.transform import Rotation as R  # noqa: F401
 from scipy.optimize import least_squares
 
 from crazyflow.dynamics.so_rpy_rotor_drag import dynamics as dynamics_so_rpy_rotor_drag
-from crazyflow.dynamics.utils.rotation import (  # noqa: F401
-    ang_vel_deriv2rpy_rates_deriv,
-    rpy_rates2ang_vel,
-)
+from crazyflow.dynamics.so_rpy_rotor_drag.dynamics import dynamics_euler
 
 if TYPE_CHECKING:
     from crazyflow._typing import Array  # To be changed to array_api_typing later
@@ -37,15 +33,13 @@ dynamics_translation = partial(
 )
 
 dynamics_rotation = partial(
-    dynamics_so_rpy_rotor_drag,
+    dynamics_euler,
     mass=0.1,
     gravity_vec=jnp.array([0, 0, -9.81]),
     thrust_time_coef=0.1,
     acc_coef=0.0,
     drag_matrix=jnp.zeros((3, 3)),
     cmd_f_coef=1.0,
-    J=jnp.zeros((3, 3)),
-    J_inv=jnp.zeros((3, 3)),
 )
 
 
@@ -276,7 +270,8 @@ def sys_id_translation(
     # Plotting
     if plot:
         # Plot acceleration
-        fig, axs = plt.subplots(2, 1, figsize=(12, 5))
+        _, axs = plt.subplots(2 if data_validation is not None else 1, 1, figsize=(12, 5))
+        axs = np.atleast_1d(axs)
 
         # Training data subplot
         axs[0].plot(t, acc, label="Measured acc")
@@ -299,17 +294,15 @@ def sys_id_translation(
         plt.show()
 
         # Plot commanded thrust vs actual thrust
-        fig, ax = plt.subplots(1, 1, figsize=(6, 6))
-
-        ax.scatter(
-            cmd_f, np.linalg.norm((acc - constants["gravity_vec"]) * constants["mass"], axis=-1)
-        )
-        cmd_thrust_lin = np.linspace(np.min(cmd_f) * 0.9, np.max(cmd_f) * 1.1, 1000)
+        _, ax = plt.subplots(1, 1, figsize=(6, 6))
+        obs_f = np.linalg.norm((acc - constants["gravity_vec"]) * constants["mass"], axis=-1)
+        ax.scatter(cmd_f, obs_f, label="Measured")
+        cmd_thrust_lin = np.linspace(0.9 * np.min(cmd_f), 1.1 * np.max(cmd_f), 1000)
         ax.plot(cmd_thrust_lin, theta[0] * cmd_thrust_lin, label="Fit")
         ax.set_xlabel("Commanded Thrust [N]")
         ax.set_ylabel("Actual Thrust [N]")
-        ax.set_xlim(0.1, 0.8)
-        ax.set_ylim(0.1, 0.8)
+        ax.set_xlim(0.9 * np.min(cmd_f), 1.1 * np.max(cmd_f))
+        ax.set_ylim(0.9 * np.min(obs_f), 1.1 * np.max(obs_f))
 
         plt.tight_layout()
         plt.show()
@@ -339,23 +332,17 @@ def _simulate_system_rotation(cmd_rpy: Array, t: Array, params: Array) -> Array:
         cmd_rpy_coef = jnp.array([params[4], params[4], params[5]])
         rpy, rpy_rates = carry[0], carry[1]
 
-        ### Alternative 1: Using the actual dynamics (slower)
-        quat = R.from_euler("xyz", rpy).as_quat()
-        ang_vel = rpy_rates2ang_vel(quat, rpy_rates)
-        _, _, _, ang_acc, _ = dynamics_rotation(
+        _, _, _, drpy_rates, _ = dynamics_rotation(
             pos=jnp.array([0.0, 0.0, 0.0]),
-            quat=quat,
+            rpy=rpy,
             vel=jnp.array([0.0, 0.0, 0.0]),
-            ang_vel=ang_vel,
+            rpy_rates=rpy_rates,
             cmd=cmd,
             rotor_vel=jnp.array([0.0]),
             rpy_coef=rpy_coef,
             rpy_rates_coef=rpy_rates_coef,
             cmd_rpy_coef=cmd_rpy_coef,
         )
-        drpy_rates = ang_vel_deriv2rpy_rates_deriv(quat, ang_vel, ang_acc)
-        ### Alternative 2: Using the 2nd-order part directly (faster)
-        # drpy_rates = rpy_coef * rpy + rpy_rates_coef * rpy_rates + cmd_rpy_coef * cmd[:-1]
 
         ### Integration
         next_rpy = rpy + rpy_rates * dt_step
@@ -463,34 +450,37 @@ def sys_id_rotation(
 
     # Plotting
     if plot:
-        fig, axs = plt.subplots(3, 2, figsize=(20, 12))
+        _, axs = plt.subplots(3, 2 if data_validation is not None else 1, figsize=(20, 12))
+        if data_validation is None:
+            axs = axs[:, None]
         plt.suptitle("RPY dynamics fit")
 
         axs[0, 0].plot(t, rpy[..., 0], label="Measured roll")
         axs[0, 0].plot(t, rpy_pred[..., 0], "--", label="Predicted roll")
         axs[0, 0].set_ylabel("Roll [rad]")
 
-        axs[0, 1].plot(t_valid, rpy_valid[..., 0], label="Measured roll (valid)")
-        axs[0, 1].plot(t_valid, rpy_pred_valid[..., 0], "--", label="Predicted roll (valid)")
-        axs[0, 1].set_ylabel("Roll [rad]")
-
         axs[1, 0].plot(t, rpy[..., 1], label="Measured pitch")
         axs[1, 0].plot(t, rpy_pred[..., 1], "--", label="Predicted pitch")
         axs[1, 0].set_ylabel("Pitch [rad]")
-
-        axs[1, 1].plot(t_valid, rpy_valid[..., 1], label="Measured pitch (valid)")
-        axs[1, 1].plot(t_valid, rpy_pred_valid[..., 1], "--", label="Predicted pitch (valid)")
-        axs[1, 1].set_ylabel("Pitch [rad]")
 
         axs[2, 0].plot(t, rpy[..., 2], label="Measured yaw")
         axs[2, 0].plot(t, rpy_pred[..., 2], "--", label="Predicted yaw")
         axs[2, 0].set_xlabel("Time [s]")
         axs[2, 0].set_ylabel("Yaw [rad]")
 
-        axs[2, 1].plot(t_valid, rpy_valid[..., 2], label="Measured yaw (valid)")
-        axs[2, 1].plot(t_valid, rpy_pred_valid[..., 2], "--", label="Predicted yaw (valid)")
-        axs[2, 1].set_xlabel("Time [s]")
-        axs[2, 1].set_ylabel("Yaw [rad]")
+        if data_validation is not None:
+            axs[0, 1].plot(t_valid, rpy_valid[..., 0], label="Measured roll (valid)")
+            axs[0, 1].plot(t_valid, rpy_pred_valid[..., 0], "--", label="Predicted roll (valid)")
+            axs[0, 1].set_ylabel("Roll [rad]")
+
+            axs[1, 1].plot(t_valid, rpy_valid[..., 1], label="Measured pitch (valid)")
+            axs[1, 1].plot(t_valid, rpy_pred_valid[..., 1], "--", label="Predicted pitch (valid)")
+            axs[1, 1].set_ylabel("Pitch [rad]")
+
+            axs[2, 1].plot(t_valid, rpy_valid[..., 2], label="Measured yaw (valid)")
+            axs[2, 1].plot(t_valid, rpy_pred_valid[..., 2], "--", label="Predicted yaw (valid)")
+            axs[2, 1].set_xlabel("Time [s]")
+            axs[2, 1].set_ylabel("Yaw [rad]")
 
         for ax in axs.flat:
             ax.grid(True)
