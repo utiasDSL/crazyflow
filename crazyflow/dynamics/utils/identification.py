@@ -332,7 +332,6 @@ def _simulate_system_rotation(cmd_rpy: Array, t: Array, params: Array) -> Array:
         cmd_rpy_coef = jnp.array([params[4], params[4], params[5]])
         rpy, rpy_rates = carry[0], carry[1]
 
-        # Evaluate the native Euler-angle dynamics directly (no quaternion round-trip)
         _, _, _, drpy_rates, _ = dynamics_rotation(
             pos=jnp.array([0.0, 0.0, 0.0]),
             rpy=rpy,
