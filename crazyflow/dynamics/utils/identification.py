@@ -10,14 +10,10 @@ import jax  # noqa: I001
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import numpy as np
-from jax.scipy.spatial.transform import Rotation as R  # noqa: F401
 from scipy.optimize import least_squares
 
 from crazyflow.dynamics.so_rpy_rotor_drag import dynamics as dynamics_so_rpy_rotor_drag
-from crazyflow.dynamics.utils.rotation import (  # noqa: F401
-    ang_vel_deriv2rpy_rates_deriv,
-    rpy_rates2ang_vel,
-)
+from crazyflow.dynamics.so_rpy_rotor_drag.dynamics import dynamics_euler
 
 if TYPE_CHECKING:
     from crazyflow._typing import Array  # To be changed to array_api_typing later
@@ -37,15 +33,13 @@ dynamics_translation = partial(
 )
 
 dynamics_rotation = partial(
-    dynamics_so_rpy_rotor_drag,
+    dynamics_euler,
     mass=0.1,
     gravity_vec=jnp.array([0, 0, -9.81]),
     thrust_time_coef=0.1,
     acc_coef=0.0,
     drag_matrix=jnp.zeros((3, 3)),
     cmd_f_coef=1.0,
-    J=jnp.zeros((3, 3)),
-    J_inv=jnp.zeros((3, 3)),
 )
 
 
@@ -338,23 +332,18 @@ def _simulate_system_rotation(cmd_rpy: Array, t: Array, params: Array) -> Array:
         cmd_rpy_coef = jnp.array([params[4], params[4], params[5]])
         rpy, rpy_rates = carry[0], carry[1]
 
-        ### Alternative 1: Using the actual dynamics (slower)
-        quat = R.from_euler("xyz", rpy).as_quat()
-        ang_vel = rpy_rates2ang_vel(quat, rpy_rates)
-        _, _, _, ang_acc, _ = dynamics_rotation(
+        # Evaluate the native Euler-angle dynamics directly (no quaternion round-trip)
+        _, _, _, drpy_rates, _ = dynamics_rotation(
             pos=jnp.array([0.0, 0.0, 0.0]),
-            quat=quat,
+            rpy=rpy,
             vel=jnp.array([0.0, 0.0, 0.0]),
-            ang_vel=ang_vel,
+            rpy_rates=rpy_rates,
             cmd=cmd,
             rotor_vel=jnp.array([0.0]),
             rpy_coef=rpy_coef,
             rpy_rates_coef=rpy_rates_coef,
             cmd_rpy_coef=cmd_rpy_coef,
         )
-        drpy_rates = ang_vel_deriv2rpy_rates_deriv(quat, ang_vel, ang_acc)
-        ### Alternative 2: Using the 2nd-order part directly (faster)
-        # drpy_rates = rpy_coef * rpy + rpy_rates_coef * rpy_rates + cmd_rpy_coef * cmd[:-1]
 
         ### Integration
         next_rpy = rpy + rpy_rates * dt_step
