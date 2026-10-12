@@ -1,7 +1,8 @@
-function initializeCarousel() {
-  const carouselContainer = document.querySelector(".carousel-container");
+const carousels = [];
+let focusedCarousel = null;
 
-  if (!carouselContainer || carouselContainer.dataset.carouselReady === "true") {
+function initializeCarousel(carouselContainer) {
+  if (carouselContainer.dataset.carouselReady === "true") {
     return;
   }
 
@@ -66,17 +67,12 @@ function initializeCarousel() {
     nextBtn.addEventListener("click", nextSlide);
   }
 
-  document.addEventListener("keydown", (event) => {
-    if (!document.querySelector(".carousel-container")) {
-      return;
-    }
-
-    if (event.key === "ArrowLeft") {
-      prevSlide();
-    } else if (event.key === "ArrowRight") {
-      nextSlide();
-    }
-  });
+  const api = { container: carouselContainer, nextSlide, prevSlide };
+  const focus = () => {
+    focusedCarousel = api;
+  };
+  carouselContainer.addEventListener("pointerenter", focus);
+  carouselContainer.addEventListener("focusin", focus);
 
   let touchStartX = 0;
   let touchEndX = 0;
@@ -84,9 +80,10 @@ function initializeCarousel() {
   carousel.addEventListener(
     "touchstart",
     (event) => {
+      focus();
       touchStartX = event.changedTouches[0].screenX;
     },
-    false
+    { passive: true }
   );
 
   carousel.addEventListener(
@@ -95,7 +92,7 @@ function initializeCarousel() {
       touchEndX = event.changedTouches[0].screenX;
       handleSwipe();
     },
-    false
+    { passive: true }
   );
 
   function handleSwipe() {
@@ -113,13 +110,37 @@ function initializeCarousel() {
     }
   }
 
+  carousels.push(api);
   goToSlide(0);
 }
 
+function initializeCarousels() {
+  for (let i = carousels.length - 1; i >= 0; i--) {
+    if (!carousels[i].container.isConnected) {
+      carousels.splice(i, 1);
+    }
+  }
+  document.querySelectorAll(".carousel-container").forEach(initializeCarousel);
+}
+
+document.addEventListener("keydown", (event) => {
+  if (carousels.length === 0 || (event.key !== "ArrowLeft" && event.key !== "ArrowRight")) {
+    return;
+  }
+
+  const target = carousels.includes(focusedCarousel) ? focusedCarousel : carousels[0];
+
+  if (event.key === "ArrowLeft") {
+    target.prevSlide();
+  } else {
+    target.nextSlide();
+  }
+});
+
 if (typeof document$ !== "undefined") {
-  document$.subscribe(initializeCarousel);
+  document$.subscribe(initializeCarousels);
 } else if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", initializeCarousel);
+  document.addEventListener("DOMContentLoaded", initializeCarousels);
 } else {
-  initializeCarousel();
+  initializeCarousels();
 }

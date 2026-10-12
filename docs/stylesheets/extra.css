@@ -102,6 +102,24 @@
   text-align: center;
 }
 
+.carousel-slide-image {
+  background: linear-gradient(180deg, #fafafa, #d9d9d9);
+}
+
+.carousel-slide img {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  padding: 1.5rem 1.5rem 3rem;
+  display: block;
+  object-fit: contain;
+}
+
+.carousel-slide-image .carousel-caption {
+  background: none;
+  color: #1a1a1a;
+}
+
 .carousel-btn {
   position: absolute;
   top: 50%;
@@ -217,16 +235,6 @@
   .carousel-btn-next {
     right: 0.5rem;
   }
-}
-
-/* Drone grid */
-.drone-grid table {
-  margin: 0 auto;
-}
-
-.drone-grid td {
-  vertical-align: middle;
-  text-align: center;
 }
 
 /* Example page media */

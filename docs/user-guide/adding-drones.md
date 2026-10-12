@@ -34,6 +34,8 @@ Add `[<name>.core]`, `[<name>.state2attitude]`, `[<name>.attitude2force_torque]`
 
 Add the platform to the table in [Parametrization](dynamics/parametrize.md#available-drone-configurations).
 
+The docs build renders every `Drone` member from its MJCF file, so a new drone gets an image at `img/drones/<name>.png` without further work. Add a slide for it to the carousel on the [home page](../index.md#supported-drones).
+
 ## 5. Run the tests
 
 The test suite parametrizes over `Drone` and over the supported drone-dynamics pairs, so the new drone is tested without any changes to the tests.

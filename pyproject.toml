@@ -105,7 +105,7 @@ exclude = [
     "dist",
     "site-packages",
     "venv",
-    "docs/conf.py",
+    "docs/conftest.py",
 ]
 
 line-length = 100
@@ -189,7 +189,7 @@ pytest-markdown-docs = "*"
 
 [tool.pixi.feature.tests.tasks]
 tests = { cmd = "pytest -v tests", description = "Run tests" }
-test-docs = { cmd = "pytest -v --markdown-docs --markdown-docs-syntax=superfences --doctest-glob='*.md' crazyflow/ docs/ --ignore=docs/gen_ref_pages.py", description = "Run doctests in docs and docstrings" }
+test-docs = { cmd = "pytest -v --markdown-docs --markdown-docs-syntax=superfences --doctest-glob='*.md' crazyflow/ docs/", description = "Run doctests in docs and docstrings" }
 
 [tool.pixi.feature.docs.dependencies]
 python = ">=3.10"
@@ -203,6 +203,11 @@ mkdocs-gen-files = ">=0.5.0"
 mkdocs-literate-nav = ">=0.6.0"
 mkdocs-section-index = ">=0.3.0"
 mkdocs-charts-plugin = ">=0.0.10"
+
+# Headless OpenGL for rendering the drone images during the docs build
+[tool.pixi.feature.docs.target.linux-64.dependencies]
+libegl = "*"
+mesalib = "*"
 
 [tool.pixi.feature.docs.tasks]
 docs-build = { cmd = "properdocs build --strict", description = "Build docs" }

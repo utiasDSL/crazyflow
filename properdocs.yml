@@ -90,6 +90,7 @@ plugins:
   - gen-files:
       scripts:
         - docs/gen_ref_pages.py
+        - docs/gen_drone_renders.py
   - literate-nav:
       nav_file: SUMMARY.md
   - section-index
