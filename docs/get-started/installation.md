@@ -75,7 +75,7 @@ Adds `pytest` and `pytest-markdown-docs` for running the test suite and doc snip
 
     ```bash
     uv run pytest -v tests  # unit and integration tests
-    uv run pytest -v --markdown-docs --markdown-docs-syntax=superfences crazyflow/ docs/ --ignore=docs/gen_ref_pages.py
+    uv run pytest -v --markdown-docs --markdown-docs-syntax=superfences crazyflow/ docs/
     ```
 
 ## Verify the installation

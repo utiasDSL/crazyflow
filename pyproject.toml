@@ -105,7 +105,7 @@ exclude = [
     "dist",
     "site-packages",
     "venv",
-    "docs/conf.py",
+    "docs/conftest.py",
 ]
 
 line-length = 100
@@ -189,7 +189,7 @@ pytest-markdown-docs = "*"
 
 [tool.pixi.feature.tests.tasks]
 tests = { cmd = "pytest -v tests", description = "Run tests" }
-test-docs = { cmd = "pytest -v --markdown-docs --markdown-docs-syntax=superfences --doctest-glob='*.md' crazyflow/ docs/ --ignore=docs/gen_ref_pages.py", description = "Run doctests in docs and docstrings" }
+test-docs = { cmd = "pytest -v --markdown-docs --markdown-docs-syntax=superfences --doctest-glob='*.md' crazyflow/ docs/", description = "Run doctests in docs and docstrings" }
 
 [tool.pixi.feature.docs.dependencies]
 python = ">=3.10"
