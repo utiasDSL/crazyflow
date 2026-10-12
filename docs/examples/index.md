@@ -163,7 +163,7 @@ python examples/plugins/derivatives.py
 
 ## IMU
 
-Simulating an IMU as a plugin. The accelerometer measures the specific force and the gyroscope the body rates, both with noise and a drifting gyroscope bias, while the drone flies loops of a figure-eight. The plot compares the readings with the true state, skipping the first loop.
+Simulating an IMU as a plugin. The accelerometer measures the specific force and the gyroscope the body rates, both with noise and drifting biases, while the drone flies loops of a figure-eight. The plot compares the readings with the true state, skipping the first loop.
 
 <!-- notest: imported script, covered by tests/integration/test_examples.py -->
 ```{ .python notest }

@@ -1,52 +1,128 @@
 """Example of a simulated IMU as a plugin.
 
-The IMU measures the specific force and the body rates with noise and a drifting gyroscope bias
-while the drone flies a figure-eight. The plot compares the readings with the true state.
+The IMU measures the specific force and the body rates with noise and drifting biases while the
+drone flies a figure-eight. The plot compares the readings with the true state.
 """
 
 from __future__ import annotations
 
 import os
-from typing import TYPE_CHECKING
+from functools import partial
+from typing import TYPE_CHECKING, Callable
 
 os.environ["SCIPY_ARRAY_API"] = "1"
 
 import jax
 import jax.numpy as jnp
 import numpy as np
+from flax.struct import dataclass, field
 from jax.scipy.spatial.transform import Rotation as R
 
 from crazyflow.sim import Sim
 from crazyflow.sim.pipeline import prepend_fn
+from crazyflow.sim.sim import select_dynamics_fn
+from crazyflow.utils import CORE_NDIM_KEY
 
 if TYPE_CHECKING:
-    from crazyflow.sim.data import SimData
+    from jax import Array, Device
+
+    from crazyflow.sim.data import SimData, SimStateDeriv
 
 ACCEL_STD = 0.03  # m/s^2
 GYRO_STD = 0.0025  # rad/s
+ACCEL_BIAS_WALK_STD = 1e-3  # m/s^2/sqrt(s)
 GYRO_BIAS_WALK_STD = 0.002  # rad/s/sqrt(s), inflated such that the bias walk is visible
 GYRO_BIAS_MAX = 0.01  # rad/s, the initial bias is uniform in [-max, max]
 DURATION = 20.0  # s, one loop of the figure-eight
 
 
-def simulate_imu(data: SimData) -> SimData:
-    """Sample the IMU from the true state."""
-    key, accel_key, gyro_key, walk_key = jax.random.split(data.core.rng_key, 4)
-    dt = 1 / data.core.freq
-    bias = data.plugins["imu_gyro_bias"]
-    bias = bias + jax.random.normal(walk_key, bias.shape) * GYRO_BIAS_WALK_STD * dt**0.5
+@dataclass
+class IMUData:
+    """IMU measurements, biases and noise parameters."""
+
+    accel: Array = field(metadata={CORE_NDIM_KEY: 1})  # (N, M, 3)
+    """Latest accelerometer measurement as specific force in the body frame."""
+    gyro: Array = field(metadata={CORE_NDIM_KEY: 1})  # (N, M, 3)
+    """Latest gyroscope measurement as angular velocity in the body frame."""
+    accel_bias: Array = field(metadata={CORE_NDIM_KEY: 1})  # (N, M, 3)
+    """Accelerometer bias."""
+    gyro_bias: Array = field(metadata={CORE_NDIM_KEY: 1})  # (N, M, 3)
+    """Gyroscope bias."""
+    accel_std: Array = field(metadata={CORE_NDIM_KEY: 1})  # (N, M, 1)
+    """Standard deviation of the accelerometer noise."""
+    gyro_std: Array = field(metadata={CORE_NDIM_KEY: 1})  # (N, M, 1)
+    """Standard deviation of the gyroscope noise."""
+    accel_bias_walk_std: Array = field(metadata={CORE_NDIM_KEY: 1})  # (N, M, 1)
+    """Standard deviation of the accelerometer bias random walk."""
+    gyro_bias_walk_std: Array = field(metadata={CORE_NDIM_KEY: 1})  # (N, M, 1)
+    """Standard deviation of the gyroscope bias random walk."""
+
+    @staticmethod
+    def create(
+        n_worlds: int,
+        n_drones: int,
+        accel_std: float,
+        gyro_std: float,
+        accel_bias_walk_std: float,
+        gyro_bias_walk_std: float,
+        device: Device,
+    ) -> IMUData:
+        """Create IMU data with zero measurements and biases."""
+        zeros = jnp.zeros((n_worlds, n_drones, 3), device=device)
+        std_shape = (n_worlds, n_drones, 1)
+        return IMUData(
+            accel=zeros,
+            gyro=zeros,
+            accel_bias=zeros,
+            gyro_bias=zeros,
+            accel_std=jnp.full(std_shape, accel_std, device=device),
+            gyro_std=jnp.full(std_shape, gyro_std, device=device),
+            accel_bias_walk_std=jnp.full(std_shape, accel_bias_walk_std, device=device),
+            gyro_bias_walk_std=jnp.full(std_shape, gyro_bias_walk_std, device=device),
+        )
+
+
+def simulate_imu(data: SimData, deriv_fn: Callable[[SimData], SimStateDeriv]) -> SimData:
+    """Sample the IMU at the current state."""
+    imu: IMUData = data.plugins["imu"]
+    key, accel_key, gyro_key, accel_walk_key, gyro_walk_key = jax.random.split(data.core.rng_key, 5)
+    sqrt_dt = (1 / data.core.freq) ** 0.5
+    accel_walk = jax.random.normal(accel_walk_key, imu.accel_bias.shape) * imu.accel_bias_walk_std
+    accel_bias = imu.accel_bias + accel_walk * sqrt_dt
+    gyro_walk = jax.random.normal(gyro_walk_key, imu.gyro_bias.shape) * imu.gyro_bias_walk_std
+    gyro_bias = imu.gyro_bias + gyro_walk * sqrt_dt
     # Accelerometers measure the specific force in the body frame, f_b = R_wb^T (a_w - g_w)
-    acc = (data.states.vel - data.plugins["imu_prev_vel"]) * data.core.freq
+    acc = deriv_fn(data).acc
     accel = R.from_quat(data.states.quat).apply(acc - data.params.gravity_vec, inverse=True)
-    accel = accel + jax.random.normal(accel_key, acc.shape) * ACCEL_STD
-    gyro = data.states.ang_vel + bias + jax.random.normal(gyro_key, acc.shape) * GYRO_STD
-    imu = {
-        "imu_accel": accel,
-        "imu_gyro": gyro,
-        "imu_gyro_bias": bias,
-        "imu_prev_vel": data.states.vel,
-    }
-    return data.replace(plugins=data.plugins | imu, core=data.core.replace(rng_key=key))
+    accel = accel + accel_bias + jax.random.normal(accel_key, acc.shape) * imu.accel_std
+    gyro = data.states.ang_vel + gyro_bias + jax.random.normal(gyro_key, acc.shape) * imu.gyro_std
+    imu = imu.replace(accel=accel, gyro=gyro, accel_bias=accel_bias, gyro_bias=gyro_bias)
+    return data.replace(plugins=data.plugins | {"imu": imu}, core=data.core.replace(rng_key=key))
+
+
+def add_imu(
+    sim: Sim,
+    accel_std: float = ACCEL_STD,
+    gyro_std: float = GYRO_STD,
+    accel_bias_walk_std: float = ACCEL_BIAS_WALK_STD,
+    gyro_bias_walk_std: float = GYRO_BIAS_WALK_STD,
+):
+    """Add the IMU data to the plugins and sample the IMU at the start of each step.
+
+    The caller rebuilds the default data and the step function.
+    """
+    imu = IMUData.create(
+        sim.n_worlds,
+        sim.n_drones,
+        accel_std,
+        gyro_std,
+        accel_bias_walk_std,
+        gyro_bias_walk_std,
+        sim.device,
+    )
+    sim.data = sim.data.replace(plugins=sim.data.plugins | {"imu": imu})
+    simulate_fn = partial(simulate_imu, deriv_fn=select_dynamics_fn(sim.dynamics))
+    prepend_fn(sim.step_pipeline, simulate_fn, name="simulate_imu")
 
 
 def trajectory(t: float) -> np.ndarray:
@@ -61,14 +137,17 @@ def trajectory(t: float) -> np.ndarray:
 def main(plot: bool = True):
     sim = Sim(control="state")
     states = sim.data.states.replace(pos=trajectory(0.0)[..., :3])
+    add_imu(sim)
+    imu: IMUData = sim.data.plugins["imu"]
     key, bias_key = jax.random.split(sim.data.core.rng_key)
-    zeros = jnp.zeros_like(states.vel)
-    bias = jax.random.uniform(bias_key, zeros.shape, minval=-GYRO_BIAS_MAX, maxval=GYRO_BIAS_MAX)
-    imu = {"imu_accel": zeros, "imu_gyro": zeros, "imu_gyro_bias": bias, "imu_prev_vel": states.vel}
-    sim.data = sim.data.replace(
-        states=states, plugins=sim.data.plugins | imu, core=sim.data.core.replace(rng_key=key)
+    bias = jax.random.uniform(
+        bias_key, imu.gyro_bias.shape, minval=-GYRO_BIAS_MAX, maxval=GYRO_BIAS_MAX
     )
-    prepend_fn(sim.step_pipeline, simulate_imu)
+    sim.data = sim.data.replace(
+        states=states,
+        plugins=sim.data.plugins | {"imu": imu.replace(gyro_bias=bias)},
+        core=sim.data.core.replace(rng_key=key),
+    )
     sim.build_default_data()
     sim.build_step_fn()
 
@@ -78,8 +157,8 @@ def main(plot: bool = True):
         sim.step(sim.freq // sim.control_freq)
         for key in ("vel", "quat", "ang_vel"):
             log[key].append(np.asarray(getattr(sim.data.states, key)[0, 0]))
-        log["accel"].append(np.asarray(sim.data.plugins["imu_accel"][0, 0]))
-        log["gyro"].append(np.asarray(sim.data.plugins["imu_gyro"][0, 0]))
+        log["accel"].append(np.asarray(sim.data.plugins["imu"].accel[0, 0]))
+        log["gyro"].append(np.asarray(sim.data.plugins["imu"].gyro[0, 0]))
     sim.close()
     log = {key: np.array(value) for key, value in log.items()}
     # Compare the accelerations without gravity, a_b = R_wb^T a_w, so that the noise is more visible
