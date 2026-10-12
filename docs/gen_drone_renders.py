@@ -6,7 +6,6 @@ and are never committed. Rendering is headless via EGL on Linux and CGL on macOS
 ``MUJOCO_GL`` is already set.
 """
 
-import logging
 import os
 import sys
 from pathlib import Path
@@ -23,87 +22,68 @@ if sys.platform == "linux":
 elif sys.platform == "darwin":
     os.environ.setdefault("MUJOCO_GL", "cgl")
 
-try:
-    import mkdocs_gen_files
-except ImportError:
-    pass  # not running in a docs environment — nothing to generate
-else:
-    import imageio.v3 as iio
-    import mujoco
-    import numpy as np
+import imageio.v3 as iio
+import mkdocs_gen_files
+import mujoco
+import numpy as np
 
-    from crazyflow.drones import Drone
+from crazyflow.drones import Drone
 
-    log = logging.getLogger("mkdocs.plugins.gen_drone_renders")
+DRONE_DIR = Path("crazyflow/drones")
+WIDTH, HEIGHT = 2000, 1500
+MARGIN = 80
 
-    DRONE_DIR = Path("crazyflow/drones")
-    WIDTH, HEIGHT = 2000, 1500
-    MARGIN = 80
 
-    def render(name: str) -> np.ndarray:
-        """Render a drone in front of a transparent background, cropped to its bounding box."""
-        spec = mujoco.MjSpec.from_file(str(DRONE_DIR / f"{name}.xml"))
-        for body in list(spec.worldbody.bodies):
-            if body.name != "drone":
-                spec.delete(body)
-        for material in spec.materials:
-            if 0 < material.rgba[3] < 1:
-                material.rgba[3] = 1
-        spec.visual.global_.offwidth = WIDTH
-        spec.visual.global_.offheight = HEIGHT
-        spec.visual.quality.shadowsize = 8192
-        spec.visual.quality.offsamples = 16
-        spec.visual.headlight.ambient = [0.35, 0.35, 0.35]
-        spec.visual.headlight.diffuse = [0.5, 0.5, 0.5]
-        spec.worldbody.add_light(
-            pos=[0.4, -0.3, 0.6], dir=[-0.55, 0.4, -0.8], diffuse=[0.6, 0.6, 0.6], castshadow=True
-        )
-        spec.worldbody.add_light(
-            pos=[-0.4, 0.3, 0.3], dir=[0.6, -0.45, -0.45], diffuse=[0.3, 0.3, 0.3], castshadow=False
-        )
-        model = spec.compile()
-        data = mujoco.MjData(model)
-        mujoco.mj_forward(model, data)
+def render(name: str) -> np.ndarray:
+    """Render a drone in front of a transparent background, cropped to its bounding box."""
+    spec = mujoco.MjSpec.from_file(str(DRONE_DIR / f"{name}.xml"))
+    for body in list(spec.worldbody.bodies):
+        if body.name != "drone":
+            spec.delete(body)
+    for material in spec.materials:
+        if 0 < material.rgba[3] < 1:
+            material.rgba[3] = 1
+    spec.visual.global_.offwidth = WIDTH
+    spec.visual.global_.offheight = HEIGHT
+    spec.visual.quality.shadowsize = 8192
+    spec.visual.quality.offsamples = 16
+    spec.visual.headlight.ambient = [0.35, 0.35, 0.35]
+    spec.visual.headlight.diffuse = [0.5, 0.5, 0.5]
+    spec.worldbody.add_light(
+        pos=[0.4, -0.3, 0.6], dir=[-0.55, 0.4, -0.8], diffuse=[0.6, 0.6, 0.6], castshadow=True
+    )
+    spec.worldbody.add_light(
+        pos=[-0.4, 0.3, 0.3], dir=[0.6, -0.45, -0.45], diffuse=[0.3, 0.3, 0.3], castshadow=False
+    )
+    model = spec.compile()
+    data = mujoco.MjData(model)
+    mujoco.mj_forward(model, data)
 
-        camera = mujoco.MjvCamera()
-        camera.lookat[:] = model.body("drone").pos
-        camera.distance = max(0.28, 1.1 * model.stat.extent)
-        camera.azimuth, camera.elevation = 135, -28
-        option = mujoco.MjvOption()
-        option.geomgroup[:] = 0
-        option.geomgroup[2] = 1
+    camera = mujoco.MjvCamera()
+    camera.lookat[:] = model.body("drone").pos
+    camera.distance = max(0.28, 1.1 * model.stat.extent)
+    camera.azimuth, camera.elevation = 135, -28
+    option = mujoco.MjvOption()
+    option.geomgroup[:] = 0
+    option.geomgroup[2] = 1
 
-        renderer = mujoco.Renderer(model, height=HEIGHT, width=WIDTH)
-        try:
-            renderer.update_scene(data, camera, option)
-            rgb = renderer.render()
-            renderer.enable_segmentation_rendering()
-            renderer.update_scene(data, camera, option)
-            mask = renderer.render()[..., 0] != -1
-        finally:
-            renderer.close()
+    renderer = mujoco.Renderer(model, height=HEIGHT, width=WIDTH)
+    try:
+        renderer.update_scene(data, camera, option)
+        rgb = renderer.render()
+        renderer.enable_segmentation_rendering()
+        renderer.update_scene(data, camera, option)
+        mask = renderer.render()[..., 0] != -1
+    finally:
+        renderer.close()
 
-        rows, cols = np.nonzero(mask)
-        y0, y1 = max(rows.min() - MARGIN, 0), min(rows.max() + MARGIN, HEIGHT)
-        x0, x1 = max(cols.min() - MARGIN, 0), min(cols.max() + MARGIN, WIDTH)
-        alpha = mask.astype(np.uint8) * 255
-        return np.dstack([rgb, alpha])[y0:y1, x0:x1]
+    rows, cols = np.nonzero(mask)
+    y0, y1 = max(rows.min() - MARGIN, 0), min(rows.max() + MARGIN, HEIGHT)
+    x0, x1 = max(cols.min() - MARGIN, 0), min(cols.max() + MARGIN, WIDTH)
+    alpha = mask.astype(np.uint8) * 255
+    return np.dstack([rgb, alpha])[y0:y1, x0:x1]
 
-    def gl_available() -> bool:
-        """Check for a usable OpenGL context, so an unusable one is reported only once."""
-        try:
-            mujoco.Renderer(mujoco.MjModel.from_xml_string("<mujoco/>"), 4, 4).close()
-        except Exception as e:
-            log.warning(f"Could not create an OpenGL context, skipping the drone renders: {e!r}")
-            return False
-        return True
 
-    if gl_available():
-        for drone in Drone:
-            try:
-                image = render(drone)
-            except Exception as e:
-                log.warning(f"Could not render drone '{drone}': {e!r}")
-                continue
-            with mkdocs_gen_files.open(f"img/drones/{drone}.png", "wb") as fd:
-                fd.write(iio.imwrite("<bytes>", image, extension=".png"))
+for drone in Drone:
+    with mkdocs_gen_files.open(f"img/drones/{drone}.png", "wb") as fd:
+        fd.write(iio.imwrite("<bytes>", render(drone), extension=".png"))
