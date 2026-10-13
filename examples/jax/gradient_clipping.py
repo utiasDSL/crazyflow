@@ -1,3 +1,17 @@
+"""Compare gradients through the rotor command clip with straight-through and no clipping.
+
+Hard clips such as the `clip_rotor_vel_cmd` stage zero the gradients while the command is
+saturated. This example ramps a motor command beyond the rotor limits and compares the rotor state
+and the gradient of the vertical acceleration w.r.t. the command for three options: the default
+clip, a straight-through clip (clipped forward pass, unclipped gradients), and no clip. Replacing
+the default clip with the straight-through variant can help gradient-based methods such as
+trajectory optimization or policy learning, which would otherwise receive zero gradients whenever
+the motors saturate.
+
+Run with `--plot` to plot the results, which requires matplotlib from the `tests` environment.
+"""
+
+import argparse
 from functools import partial
 
 import jax
@@ -112,4 +126,6 @@ def plot_results(
 
 
 if __name__ == "__main__":
-    main(plot=True)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--plot", action="store_true", help="Plot the results")
+    main(plot=parser.parse_args().plot)

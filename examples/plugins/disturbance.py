@@ -1,3 +1,11 @@
+"""Inject a random external force and torque into the step pipeline.
+
+The disturbance fires on every dynamics tick, so the drone fights wind-like perturbations.
+
+Run with `--plot` to plot the results, which requires matplotlib from the `tests` environment.
+"""
+
+import argparse
 import os
 
 import jax
@@ -100,4 +108,6 @@ def plot_results(
 
 
 if __name__ == "__main__":
-    main(plot=True)  # Default is False to disable plotting during testing
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--plot", action="store_true", help="Plot the results")
+    main(plot=parser.parse_args().plot)

@@ -1,6 +1,8 @@
-"""Example of how to extend the simulation data with custom plugins.
+"""Delay the attitude commands by 0.03 s with a plugin.
 
-Here, we implement an action delay of 0.03s in the attitude control loop.
+The plugin queues the staged attitude commands in the plugins dict and is prepended to the step
+pipeline. The drone flies the same trajectory with and without the delay, and the undelayed path
+is drawn for comparison.
 """
 
 from __future__ import annotations
@@ -22,7 +24,7 @@ if TYPE_CHECKING:
     from crazyflow.sim.data import SimData
 
 
-def control(t: float) -> np.ndarray:
+def trajectory(t: float) -> np.ndarray:
     cmd = np.zeros((1, 1, 16))
     cmd[..., 9:13] = R.from_euler("z", 0.0).as_quat()
     cmd[..., :3] = [np.cos(t) - 1, np.sin(t), 0.2 * t]
@@ -49,7 +51,7 @@ def main():
     states = []
     steps = 500
     for i in range(steps):
-        cmd = control(i / sim.control_freq)
+        cmd = trajectory(i / sim.control_freq)
         sim.state_control(cmd)
         sim.step(sim.freq // sim.control_freq)
         sim.render(camera="track_cam:0")
@@ -73,7 +75,7 @@ def main():
     # Run the simulation again, this time with an action delay. The states should be different
     delayed_states = []
     for i in range(steps):
-        cmd = control(i / sim.control_freq)
+        cmd = trajectory(i / sim.control_freq)
         sim.state_control(cmd)
         sim.step(sim.freq // sim.control_freq)
         draw_points(sim, states[i], size=0.02)

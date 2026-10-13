@@ -6,8 +6,6 @@ Querying contacts between drones and the scene, and choosing the collision geome
 
 ## Contact queries
 
-The default collision geometry is a sphere around the drone frame. `use_box_collision` replaces it with a tighter oriented box, useful for narrow-gap flight and accurate contact debugging.
-
 <div class="example-media-grid example-media-grid--contacts">
   <figure>
     <img src="../../img/examples/contact_sphere.png" alt="Contact query visualization using the default sphere collision geometry">
@@ -17,7 +15,10 @@ The default collision geometry is a sphere around the drone frame. `use_box_coll
   </figure>
 </div>
 
-<!-- notest: imported script, covered by tests/integration/test_examples.py -->
-```{ .python notest }
---8<-- "examples/contacts/contacts.py"
-```
+--8<-- example "examples/contacts/contacts.py"
+
+---
+
+## Crash detection
+
+--8<-- example "examples/contacts/crash.py"

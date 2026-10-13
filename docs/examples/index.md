@@ -1,6 +1,6 @@
 # Examples
 
-The runnable examples are grouped by topic, following the folders in `examples/`. Start with [hover](control.md#hover) if you're new, or jump to the group that matches your use case.
+The runnable examples are grouped by topic, following the folders in `examples/`. Start with [hover](control.md#hover) if you're new, or jump to the group that matches your use case. Run an example from the repository root with `python examples/<group>/<script>.py`.
 
 - [Control](control.md) — how to command the drones at different levels, such as positions, attitudes, or body rates, and how to build your own controllers on top
 - [JAX](jax.md) — how to use JAX transformations on the simulation, such as gradients through the dynamics or sharding across devices

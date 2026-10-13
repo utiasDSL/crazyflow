@@ -1,40 +1,28 @@
 # Plugin examples
 
-Extending the step and reset pipelines with custom stages for domain randomization, disturbances, aerodynamic effects, and additional outputs. See [Pipelines](../user-guide/pipelines.md) for how stages are composed.
+Extending the step and reset pipelines with custom stages for domain randomization, disturbances, action delays, aerodynamic effects, and additional outputs. See [Pipelines](../user-guide/pipelines.md) for how stages are composed.
 
 ---
 
 ## Domain randomization
 
-Randomizing mass, inertia and drag per drone, and thrust and torque curves, rotor dynamics, arm lengths and propeller inertias per motor through the reset pipeline, each by a uniform factor around its default value. An optional mask limits randomization to selected worlds.
-
-<!-- notest: imported script, covered by tests/integration/test_examples.py -->
-```{ .python notest }
---8<-- "examples/plugins/randomize.py"
-```
-
-```bash
-python examples/plugins/randomize.py
-```
+--8<-- example "examples/plugins/randomize.py"
 
 ---
 
 ## Disturbance injection
 
-Inserting a random external force and torque into the step pipeline. The disturbance fires on every dynamics tick, so the drone fights wind-like perturbations.
+--8<-- example "examples/plugins/disturbance.py"
 
-<!-- notest: imported script, covered by tests/integration/test_examples.py -->
-```{ .python notest }
---8<-- "examples/plugins/disturbance.py"
-```
+---
+
+## Action delay
+
+--8<-- example "examples/plugins/action_delay.py"
 
 ---
 
 ## Downwash
-
-Modeling downwash between identical Crazyflies with a far-field jet model. The plugin samples the flow at each target rotor and center of mass, computes rotor thrust loss and drag, and writes the resulting world-frame external force and torque.
-
-The demo holds one `cf21B_500` drone in hover while a second makes three passes underneath at different speeds and heights.
 
 <div class="example-media-grid example-media-grid--contacts">
   <figure class="example-media">
@@ -45,51 +33,22 @@ The demo holds one `cf21B_500` drone in hover while a second makes three passes 
   </figure>
 </div>
 
-```bash
-python examples/plugins/downwash.py
-```
+--8<-- example "examples/plugins/downwash.py"
 
 ---
 
 ## Ground effect
 
-Modeling the increase in thrust near the floor for a `cf21B_500` drone. The plugin computes nominal thrust from the rotor speeds, applies a height-dependent gain, and adds the extra thrust along the drone's body z-axis as a world-frame external force.
-
-<!-- notest: imported script -->
-```{ .python notest }
---8<-- "examples/plugins/ground_effect.py"
-```
-
-```bash
-python examples/plugins/ground_effect.py
-```
+--8<-- example "examples/plugins/ground_effect.py"
 
 ---
 
 ## State derivatives
 
-Adding the state derivatives, which are not stored by default, to the step pipeline with plugins. One plugin calls the dynamics at the end of each step, which gives the exact derivative at the current state. The other uses finite differences of the states, which give the exact average derivative from the last to the current step. Both store a `SimStateDeriv` in the plugins dict. The plot compares them while the drone flies a figure-eight.
-
-<!-- notest: imported script, covered by tests/integration/test_examples.py -->
-```{ .python notest }
---8<-- "examples/plugins/derivatives.py"
-```
-
-```bash
-python examples/plugins/derivatives.py
-```
+--8<-- example "examples/plugins/derivatives.py"
 
 ---
 
 ## IMU
 
-Simulating an IMU as a plugin. The accelerometer measures the specific force and the gyroscope the body rates, both with noise and drifting biases, while the drone flies loops of a figure-eight. The plot compares the readings with the true state, skipping the first loop.
-
-<!-- notest: imported script, covered by tests/integration/test_examples.py -->
-```{ .python notest }
---8<-- "examples/plugins/imu.py"
-```
-
-```bash
-python examples/plugins/imu.py
-```
+--8<-- example "examples/plugins/imu.py"

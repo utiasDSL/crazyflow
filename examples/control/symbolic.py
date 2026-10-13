@@ -1,3 +1,10 @@
+"""Create symbolic CasADi dynamics for model-based control.
+
+`symbolic_dynamics` returns the dynamics as CasADi expressions with the nominal parameters of the
+simulated drone, so they can be used in model-based controllers such as MPC. A CasADi integrator
+turns them into discrete-time dynamics at the simulation frequency.
+"""
+
 import casadi as cs
 import numpy as np
 

@@ -1,4 +1,8 @@
-"""Example on how to shard the simulation across devices."""
+"""Shard the simulation across devices.
+
+The host backend is asked for four logical devices, and the sharded results are compared against
+running on a single device.
+"""
 
 import os
 

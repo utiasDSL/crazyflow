@@ -1,3 +1,9 @@
+"""Run the reach-position Gymnasium environment with a constant action.
+
+The goal position is set through the reset options, and the `JaxToNumpy` wrapper converts between
+NumPy actions and JAX observations.
+"""
+
 import gymnasium
 import jax.numpy as jnp
 import numpy as np

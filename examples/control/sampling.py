@@ -1,4 +1,8 @@
-"""Track a Lissajous curve with a simple sampling-based MPC controller.
+"""Track a Lissajous curve with a sampling-based MPC while avoiding a grid of obstacles.
+
+The controller rolls out thousands of candidate control sequences in parallel using identified
+dynamics, then applies the first action from a cost-weighted update of the best samples. It uses a
+GPU when one is available and lowers the sample count on CPU.
 
 WARNING: This is an advanced example meant for advanced Crazyflow users.
 """
@@ -45,10 +49,10 @@ NOISE_SIGMA = jnp.array([0.10, 0.10, 0.0, 0.08], dtype=jnp.float32)
 ELITE_FRACTION = 0.01  # Fraction of samples in (0,1] to use for the mean update
 MAX_CMD_ANGLE = np.deg2rad(60.0)
 
-# Lissajous reference configuration
-REF_CENTER = jnp.array([0.0, 0.0, 1.0], dtype=jnp.float32)
-REF_SCALE = jnp.array([1.0, 0.75, 0.0], dtype=jnp.float32)
-REF_PERIOD = 6.0
+# Lissajous trajectory configuration
+TRAJ_CENTER = jnp.array([0.0, 0.0, 1.0], dtype=jnp.float32)
+TRAJ_SIZE = jnp.array([1.0, 0.75, 0.0], dtype=jnp.float32)
+TRAJ_PERIOD = 6.0
 
 # Visualization configuration
 HISTORY_DURATION = 1.0
@@ -64,19 +68,14 @@ DRONE_RADIUS = 0.12
 OBSTACLE_MARGIN = 0.02
 
 
-def lissajous_reference(t: Array | float) -> dict[str, Array]:
-    """Return position, velocity, and yaw references at time ``t``."""
-    t = jnp.asarray(t)
-    omega = 2.0 * jnp.pi / REF_PERIOD
-    pos_x = REF_CENTER[0] + REF_SCALE[0] * jnp.sin(omega * t)
-    pos_y = REF_CENTER[1] + REF_SCALE[1] * jnp.sin(2.0 * omega * t)
-    pos_z = jnp.broadcast_to(REF_CENTER[2], t.shape)
-    pos = jnp.stack((pos_x, pos_y, pos_z), axis=-1)
-    vel_x = REF_SCALE[0] * omega * jnp.cos(omega * t)
-    vel_y = 2.0 * REF_SCALE[1] * omega * jnp.cos(2.0 * omega * t)
-    vel_z = jnp.zeros_like(t)
-    vel = jnp.stack((vel_x, vel_y, vel_z), axis=-1)
-    return {"pos": pos, "vel": vel, "yaw": jnp.zeros_like(t)}
+def trajectory(t: Array | float) -> dict[str, Array]:
+    """Return the position, velocity, and yaw reference at time ``t``."""
+    omega = 2.0 * jnp.pi / TRAJ_PERIOD
+    phi = omega * jnp.asarray(t)
+    zero = jnp.zeros_like(phi)
+    pos = TRAJ_CENTER + TRAJ_SIZE * jnp.stack([jnp.sin(phi), jnp.sin(2.0 * phi), zero], axis=-1)
+    vel = TRAJ_SIZE * omega * jnp.stack([jnp.cos(phi), 2.0 * jnp.cos(2.0 * phi), zero], axis=-1)
+    return {"pos": pos, "vel": vel, "yaw": zero}
 
 
 def obstacle_grid() -> np.ndarray:
@@ -173,7 +172,7 @@ def update_controller(
 
     prediction_dt = T / N
     times = t + (jnp.arange(N) + 1) * prediction_dt
-    references = lissajous_reference(times)
+    references = trajectory(times)
     costs, positions = rollout_fn(obs, candidates.transpose(1, 0, 2), references)
 
     n_elites = max(1, int(N_SAMPLES * ELITE_FRACTION))
@@ -225,7 +224,7 @@ def main() -> None:
     sim = Sim(n_worlds=1, drone=DRONE, dynamics=Dynamics.first_principles, control=Control.attitude)
     sim.max_visual_geom = 100_000  # To be able to show all rollouts
     sim.reset()
-    start_pos = lissajous_reference(0.0)["pos"]
+    start_pos = trajectory(0.0)["pos"]
     drone_params = load_params(Dynamics.first_principles, DRONE)
     hover_thrust_value = np.asarray(drone_params["mass"] * 9.81, dtype=np.float32)
     hover_rotor_vel = motor_force2rotor_vel(
@@ -289,8 +288,8 @@ def main() -> None:
 
     # Plotting helpers
     position_history = deque(maxlen=max(2, round(HISTORY_DURATION * CTRL_FREQ)))
-    render_times = np.linspace(0.0, REF_PERIOD, round(REF_PERIOD * CTRL_FREQ) + 1)
-    reference = np.asarray(lissajous_reference(render_times)["pos"])
+    render_times = np.linspace(0.0, TRAJ_PERIOD, round(TRAJ_PERIOD * CTRL_FREQ) + 1)
+    reference = np.asarray(trajectory(render_times)["pos"])
 
     for step in range(int(DURATION * CTRL_FREQ)):
         t = step / CTRL_FREQ

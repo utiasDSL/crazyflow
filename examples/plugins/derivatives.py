@@ -1,14 +1,19 @@
-"""Example of adding the state derivatives to the step pipeline with plugins.
+"""Add the state derivatives, which are not stored by default, to the step pipeline.
 
 We compare two methods for the state derivatives: evaluating the dynamics and finite differences.
-The dynamics need the current state and input, so we evaluate them before integration. At the end of
-the step, they are the derivative at the previous state. Finite differences are taken after
+The dynamics need the current state and input, so we evaluate them before integration. At the end
+of the step, they are the derivative at the previous state. Finite differences are taken after
 integration and give the derivative from the previous to the current state. For Euler integration,
 both methods are identical up to numerical noise. Other integrators differ, as shown here for RK4.
+Both plugins store a `SimStateDeriv` in the plugins dict, and the plot compares them while the
+drone flies a figure-eight.
+
+Run with `--plot` to plot the results, which requires matplotlib from the `tests` environment.
 """
 
 from __future__ import annotations
 
+import argparse
 import os
 from typing import TYPE_CHECKING
 
@@ -58,7 +63,7 @@ def trajectory(t: float) -> np.ndarray:
     return cmd
 
 
-def main(plot: bool = True):
+def main(plot: bool = False):
     results = {}
     for integrator in ("euler", "rk4"):
         sim = Sim(dynamics="first_principles", control="state", integrator=integrator)
@@ -92,29 +97,35 @@ def main(plot: bool = True):
             print(f"{integrator} {name}: max relative difference {diff:.1e}")
 
     if plot:
-        import matplotlib.pyplot as plt
+        plot_results(results, sim.control_freq)
 
-        fig, axes = plt.subplots(2, 2, sharex=True, figsize=(12, 7))
-        quantities = (
-            ("acc", "Linear acceleration", "m/s$^2$"),
-            ("ang_acc", "Angular acceleration", "rad/s$^2$"),
-        )
-        for row, (integrator, (dynamics, fd)) in enumerate(results.items()):
-            for col, (name, title, unit) in enumerate(quantities):
-                x, x_fd = getattr(dynamics, name), getattr(fd, name)
-                t = np.arange(len(x)) / sim.control_freq
-                for i, axis in enumerate("xyz"):
-                    axes[row, col].plot(t, x_fd[:, i] - x[:, i], f"C{i}", lw=0.8, label=axis)
-                ylabel = f"Finite differences - dynamics [{unit}]"
-                axes[row, col].set(title=f"{title} ({integrator})", ylabel=ylabel)
-        for ax in axes[-1]:
-            ax.set(xlabel="Time [s]")
-        axes[0, 0].legend()
-        for ax in axes.flat:
-            ax.grid()
-        fig.tight_layout()
-        plt.show()
+
+def plot_results(results: dict[str, tuple[SimStateDeriv, SimStateDeriv]], freq: int):
+    import matplotlib.pyplot as plt
+
+    fig, axes = plt.subplots(2, 2, sharex=True, figsize=(12, 7))
+    quantities = (
+        ("acc", "Linear acceleration", "m/s$^2$"),
+        ("ang_acc", "Angular acceleration", "rad/s$^2$"),
+    )
+    for row, (integrator, (dynamics, fd)) in enumerate(results.items()):
+        for col, (name, title, unit) in enumerate(quantities):
+            x, x_fd = getattr(dynamics, name), getattr(fd, name)
+            t = np.arange(len(x)) / freq
+            for i, axis in enumerate("xyz"):
+                axes[row, col].plot(t, x_fd[:, i] - x[:, i], f"C{i}", lw=0.8, label=axis)
+            ylabel = f"Finite differences - dynamics [{unit}]"
+            axes[row, col].set(title=f"{title} ({integrator})", ylabel=ylabel)
+    for ax in axes[-1]:
+        ax.set(xlabel="Time [s]")
+    axes[0, 0].legend()
+    for ax in axes.flat:
+        ax.grid()
+    fig.tight_layout()
+    plt.show()
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--plot", action="store_true", help="Plot the results")
+    main(plot=parser.parse_args().plot)

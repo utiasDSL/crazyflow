@@ -1,11 +1,15 @@
-"""Example of a simulated IMU as a plugin.
+"""Simulate an IMU as a plugin.
 
-The IMU measures the specific force and the body rates with noise and drifting biases while the
-drone flies a figure-eight. The plot compares the readings with the true state.
+The accelerometer measures the specific force and the gyroscope the body rates, both with noise and
+drifting biases, while the drone flies two loops of a figure-eight. The plot compares the readings
+with the true state, skipping the first loop to remove initial transients.
+
+Run with `--plot` to plot the results, which requires matplotlib from the `tests` environment.
 """
 
 from __future__ import annotations
 
+import argparse
 import os
 from functools import partial
 from typing import TYPE_CHECKING, Callable
@@ -135,7 +139,7 @@ def trajectory(t: float) -> np.ndarray:
     return cmd
 
 
-def main(plot: bool = True):
+def main(plot: bool = False):
     sim = Sim(control="state")
     states = sim.data.states.replace(pos=trajectory(0.0)[..., :3])
     add_imu(sim)
@@ -202,4 +206,6 @@ def plot_results(log: dict[str, np.ndarray]):
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--plot", action="store_true", help="Plot the results")
+    main(plot=parser.parse_args().plot)

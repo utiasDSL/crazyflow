@@ -1,3 +1,13 @@
+"""Compare all dynamics models while tracking the same figure-eight with state control.
+
+Each model starts from the same reference state, and the position RMSE to the reference is
+printed for every model. The plot shows the x-z trajectories and the lateral positions against the
+reference.
+
+Run with `--plot` to plot the results, which requires matplotlib from the `tests` environment.
+"""
+
+import argparse
 import os
 
 os.environ["SCIPY_ARRAY_API"] = "1"
@@ -12,32 +22,26 @@ from crazyflow.sim import Dynamics, Sim
 
 DURATION = 5.0
 FPS = 60
-TRAJECTORY_CENTER = np.array([0.0, 0.0, 1.0])
-TRAJECTORY_SIZE = np.array([1.0, 0.0, 0.5])
+TRAJ_CENTER = np.array([0.0, 0.0, 1.0])
+TRAJ_SIZE = np.array([1.0, 0.0, 0.5])
 
 
-def figure_eight(t: float) -> np.ndarray:
+def trajectory(t: float) -> np.ndarray:
     """Return the position, velocity, and acceleration reference at time ``t``."""
     omega = 2.0 * np.pi / DURATION
-    phase = omega * t
+    phi = omega * t
     cmd = np.zeros((1, 1, 16))
     cmd[..., 9:13] = R.from_euler("z", 0.0).as_quat()
-    cmd[..., 0:3] = TRAJECTORY_CENTER + TRAJECTORY_SIZE * np.array(
-        [np.sin(phase), 0.0, np.sin(2.0 * phase)]
-    )
-    cmd[..., 3:6] = (
-        TRAJECTORY_SIZE * omega * np.array([np.cos(phase), 0.0, 2.0 * np.cos(2.0 * phase)])
-    )
-    cmd[..., 6:9] = (
-        -TRAJECTORY_SIZE * omega**2 * np.array([np.sin(phase), 0.0, 4.0 * np.sin(2.0 * phase)])
-    )
+    cmd[..., 0:3] = TRAJ_CENTER + TRAJ_SIZE * np.array([np.sin(phi), 0.0, np.sin(2.0 * phi)])
+    cmd[..., 3:6] = TRAJ_SIZE * omega * np.array([np.cos(phi), 0.0, 2.0 * np.cos(2.0 * phi)])
+    cmd[..., 6:9] = -TRAJ_SIZE * omega**2 * np.array([np.sin(phi), 0.0, 4.0 * np.sin(2.0 * phi)])
     return cmd
 
 
 def reset_sim(sim: Sim) -> None:
     """Reset a simulation to the initial reference state and hover rotor speed."""
     sim.reset()
-    initial_state = figure_eight(0.0)
+    initial_state = trajectory(0.0)
     hover_thrust = sim.data.params.mass * -sim.data.params.gravity_vec[-1]
 
     if sim.dynamics == Dynamics.first_principles:
@@ -70,21 +74,21 @@ def main(plot: bool = False, render: bool = False) -> None:
 
         n_steps = int(DURATION * sim.control_freq)
         times = np.arange(n_steps + 1) / sim.control_freq
-        commands = np.stack([figure_eight(t) for t in times])
+        commands = np.stack([trajectory(t) for t in times])
         reference = commands[:, 0, 0, 0:3]
-        trajectory = [np.asarray(sim.data.states.pos[0, 0])]
+        positions = [np.asarray(sim.data.states.pos[0, 0])]
 
         for i, cmd in enumerate(commands[1:]):
             sim.state_control(cmd)
             sim.step(sim.freq // sim.control_freq)
-            trajectory.append(np.asarray(sim.data.states.pos[0, 0]))
+            positions.append(np.asarray(sim.data.states.pos[0, 0]))
             if ((i * FPS) % sim.control_freq) < FPS and render:
                 sim.render()
 
         sim.close()
-        trajectory = np.asarray(trajectory)
-        trajectories[dynamics] = trajectory
-        rmses[dynamics] = np.sqrt(np.mean(np.sum((trajectory - reference) ** 2, axis=-1)))
+        positions = np.asarray(positions)
+        trajectories[dynamics] = positions
+        rmses[dynamics] = np.sqrt(np.mean(np.sum((positions - reference) ** 2, axis=-1)))
         print(f"{dynamics.value}: position RMSE = {rmses[dynamics]:.3f} m")
 
     if plot:
@@ -102,10 +106,10 @@ def plot_results(
     ax_xz.plot(reference[:, 0], reference[:, 2], "k--", linewidth=2, label="reference")
     times = np.linspace(0.0, DURATION, len(reference))
     ax_y.plot(times, reference[:, 1], "k--", linewidth=2, label="reference")
-    for dynamics, trajectory in trajectories.items():
+    for dynamics, positions in trajectories.items():
         label = f"{dynamics.value} (RMSE={rmses[dynamics] * 1_000:.0f}mm)"
-        ax_xz.plot(trajectory[:, 0], trajectory[:, 2], label=label)
-        ax_y.plot(times, trajectory[:, 1], label=label)
+        ax_xz.plot(positions[:, 0], positions[:, 2], label=label)
+        ax_y.plot(times, positions[:, 1], label=label)
 
     ax_xz.set_title("Figure-eight trajectory")
     ax_xz.set_xlabel("x (m)")
@@ -123,4 +127,6 @@ def plot_results(
 
 
 if __name__ == "__main__":
-    main(plot=True, render=False)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--plot", action="store_true", help="Plot the results")
+    main(plot=parser.parse_args().plot)

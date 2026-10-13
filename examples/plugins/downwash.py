@@ -1,7 +1,13 @@
-"""Minimal far-field downwash external-wrench plugin.
+"""Model the downwash between identical Crazyflies with a far-field external-wrench plugin.
 
-This models the downwash of identical Crazyflies using the far-field jet from
-[1] and the thrust-decay model of [2].
+The plugin uses the far-field jet from [1] and the thrust-decay model of [2]. It samples the flow
+at each target rotor and center of mass, computes rotor thrust loss and drag, and writes the
+resulting world-frame external force and torque.
+
+The demo holds one `cf21B_500` drone in hover while a second makes three passes underneath at
+different speeds and heights.
+
+Run with `--plot` to plot the results, which requires matplotlib from the `tests` environment.
 
 [1] Bauersfeld et al. https://arxiv.org/abs/2403.13321
 [2] Su et al. https://arxiv.org/abs/2207.09645
@@ -9,6 +15,7 @@ This models the downwash of identical Crazyflies using the far-field jet from
 
 from __future__ import annotations
 
+import argparse
 from typing import TYPE_CHECKING
 
 import jax.numpy as jnp
@@ -50,7 +57,7 @@ def downwash_speed(s: Array, r: Array, u_hover: Array) -> Array:
     # Keep the fit finite upstream, where its contribution is masked below.
     axial_distance = jnp.maximum(s_normalized - S0, 1e-6)
     half_width = S * axial_distance  # [1] Eq. (6)
-    centerline_speed = u_hover * BD / axial_distance  # [1] Eq. (2)
+    centerline_speed = u_hover * BD / axial_distance  # [1] Eq. (5)
     radial_ratio = r_normalized / half_width  # [1] Eq. (4)
 
     # [1] Eq. (3).
@@ -180,7 +187,7 @@ def plot_hover_velocity_field(source_positions: np.ndarray, data: SimData) -> No
     plt.show()
 
 
-def main(plot: bool = True) -> None:
+def main(plot: bool = False) -> None:
     """Hover drone 0 while drone 1 makes three downwash passes at different height and velocity."""
     sim = Sim(n_drones=2, drone="cf21B_500", control="state")
 
@@ -242,30 +249,51 @@ def main(plot: bool = True) -> None:
     sim.close()
 
     if plot:
-        import matplotlib.pyplot as plt
+        plot_results(
+            z_positions,
+            downwash_force_z,
+            downwash_pitch_torque,
+            upper_pos,
+            sim.data,
+            sim.control_freq,
+        )
 
-        t = np.arange(len(waypoints)) / sim.control_freq
-        z_positions = np.asarray(z_positions)
 
-        fig, axes = plt.subplots(3, 1, sharex=True)
+def plot_results(
+    z_positions: list[np.ndarray],
+    downwash_force_z: list[np.ndarray],
+    downwash_pitch_torque: list[np.ndarray],
+    upper_pos: np.ndarray,
+    data: SimData,
+    control_freq: int,
+) -> None:
+    """Plot the passes of the lower drone and the downwash field of the hovering drone."""
+    import matplotlib.pyplot as plt
 
-        axes[0].plot(t, z_positions[:, 0], label="upper drone")
-        axes[0].plot(t, z_positions[:, 1], label="lower drone")
-        axes[0].set_ylabel("z position (m)")
-        axes[0].legend()
+    t = np.arange(len(z_positions)) / control_freq
+    z_positions = np.asarray(z_positions)
 
-        axes[1].plot(t, downwash_force_z, label="lower drone")
-        axes[1].set_ylabel("downwash force z (N)")
-        axes[1].legend()
+    fig, axes = plt.subplots(3, 1, sharex=True)
 
-        axes[2].plot(t, downwash_pitch_torque, label="lower drone")
-        axes[2].set_xlabel("time (s)")
-        axes[2].set_ylabel("downwash pitch torque y (Nm)")
-        axes[2].legend()
+    axes[0].plot(t, z_positions[:, 0], label="upper drone")
+    axes[0].plot(t, z_positions[:, 1], label="lower drone")
+    axes[0].set_ylabel("z position (m)")
+    axes[0].legend()
 
-        plot_hover_velocity_field(np.asarray([upper_pos]), sim.data)
-        plt.show()
+    axes[1].plot(t, downwash_force_z, label="lower drone")
+    axes[1].set_ylabel("downwash force z (N)")
+    axes[1].legend()
+
+    axes[2].plot(t, downwash_pitch_torque, label="lower drone")
+    axes[2].set_xlabel("time (s)")
+    axes[2].set_ylabel("downwash pitch torque y (Nm)")
+    axes[2].legend()
+
+    plot_hover_velocity_field(np.asarray([upper_pos]), data)
+    plt.show()
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--plot", action="store_true", help="Plot the results")
+    main(plot=parser.parse_args().plot)

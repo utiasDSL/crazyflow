@@ -1,3 +1,8 @@
+"""Command collective thrust and body torques directly.
+
+The thrust slightly exceeds the weight of the drone, so it slowly accelerates upwards.
+"""
+
 import numpy as np
 
 from crazyflow.control import Control

@@ -1,3 +1,9 @@
+"""Command roll, pitch, yaw, and collective thrust directly.
+
+This level bypasses the Mellinger position loop and is typical for RL agents that output attitude
+targets.
+"""
+
 import os
 
 os.environ["SCIPY_ARRAY_API"] = "1"
@@ -12,8 +18,8 @@ from crazyflow.control.mellinger import state2attitude
 from crazyflow.sim import Sim
 
 
-def control(t: float, pos_start: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Compute the attitude command to track a circle with a slow climb."""
+def trajectory(t: float, pos_start: np.ndarray) -> np.ndarray:
+    """Compute the full state command of a circle with a slow climb."""
     cmd = np.zeros(16)
     cmd[:3] = pos_start + np.array([np.cos(t) - 1, np.sin(t), 0.2 * t])
     cmd[3:6] = np.array([-np.sin(t), np.cos(t), 0.2])
@@ -37,7 +43,7 @@ def main():
     for i in range(int(duration * sim.control_freq)):
         pos, quat = np.asarray(sim.data.states.pos[0, 0]), np.asarray(sim.data.states.quat[0, 0])
         vel = np.asarray(sim.data.states.vel[0, 0])
-        ref = control(i / sim.control_freq, pos_start)
+        ref = trajectory(i / sim.control_freq, pos_start)
         cmd[0, 0, :], pos_err_i = position_ctrl(pos, quat, vel, ref, pos_err_i)
         sim.attitude_control(cmd)
         sim.step(sim.freq // sim.control_freq)

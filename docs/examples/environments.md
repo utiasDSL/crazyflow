@@ -4,11 +4,12 @@ Running the Gymnasium environments that wrap `Sim` for reinforcement learning. S
 
 ---
 
-## Gymnasium environment
+## Figure-eight environment
 
-Evaluating a random policy in the figure-8 environment. The env wraps `Sim` behind the standard Gymnasium `VectorEnv` interface.
+--8<-- example "examples/environments/figure8.py"
 
-<!-- notest: imported script, covered by tests/integration/test_examples.py -->
-```{ .python notest }
---8<-- "examples/environments/figure8.py"
-```
+---
+
+## Reach-position environment
+
+--8<-- example "examples/environments/gymnasium_env.py"

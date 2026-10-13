@@ -1,24 +1,16 @@
-"""This example demonstrates persistent JAX function caching with the Sim class.
+"""Speed up the first simulation step with a persistent JAX compilation cache.
 
-When JAX functions decorated with @jit are first called, JAX traces and compiles them to XLA. This
-compilation is expensive but only needs to happen once. Subsequent calls reuse the compiled version.
-However, the cache is not persistent between Python sessions.
+JAX traces and compiles jitted functions to XLA on their first call. This is expensive, but later
+calls reuse the compiled version. `Sim` uses many jitted functions internally, and its first `step`
+compiles the whole chain of dynamics and control functions, so creating a `Sim` and stepping it
+for the first time is slow.
 
-The Sim class uses many jitted functions internally, particularly in the step() method which
-compiles a chain of dynamics and control functions. On the first step() call, the entire chain is
-compiled.
+The compiled functions are lost when the Python session ends. `enable_cache` stores them on disk
+instead, so later sessions load them rather than recompiling. Compilation then only happens once
+per machine, or again after the cache directory is deleted.
 
-After the Python session ends, the cached functions get lost. However, we can enable a persistent
-cache that is used when the function we are jit-compiling has been compiled before, which
-significantly speeds up the jit compile time at the first step.
-
-By enabling caching:
-1. The first run compiles and caches all jitted functions persistently
-2. The second run loads the cached compiled functions instead of recompiling
-3. This gives a significant speedup in initialization and first step times
-
-The cache persists between Python sessions, so compilation only needs to happen once on a machine,
-or when the cache directory is deleted.
+Run the script twice to compare. The first run compiles and fills the cache, the second loads it
+and deletes it again, so the runs alternate between slow and fast.
 """
 
 import shutil

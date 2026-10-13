@@ -1,11 +1,16 @@
 """Compare splat-rendered FPV gradients with known z-position and yaw gradients.
 
-A reference image is rendered once, then its photometric error is differentiated over independent
-z-position and yaw sweeps. Requires splax and a CUDA-capable GPU.
+Splat rendering is differentiable w.r.t. the camera pose. A reference FPV image is rendered at a
+baseline pose, and its photometric error is differentiated over small z and yaw offsets. The
+resulting gradients match the gradient of the squared pose error in sign and shape. Requires splax
+(`pip install "crazyflow[splats]"`) and a CUDA GPU.
+
+Run with `--plot` to plot the results, which requires matplotlib from the `tests` environment.
 """
 
 from __future__ import annotations
 
+import argparse
 import logging
 import os
 from functools import partial
@@ -16,7 +21,6 @@ os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 
 import jax
 import jax.numpy as jnp
-import matplotlib.pyplot as plt
 import mujoco
 import numpy as np
 import splax
@@ -98,10 +102,10 @@ def _build_renderer(sim: Sim) -> Callable[[Array, Array], Array]:
     return render_views
 
 
-def _plot_results(
-    experiments: tuple[tuple[NDArray, NDArray, NDArray, str, str], ...], show_plot: bool
-) -> None:
+def plot_results(experiments: tuple[tuple[NDArray, NDArray, NDArray, str, str], ...]) -> None:
     """Plot normalized gradient comparisons for both pose sweeps."""
+    import matplotlib.pyplot as plt
+
     fig, axes = plt.subplots(1, 2, figsize=(12, 4), constrained_layout=True)
     for axis, (x_values, image_gradient, pose_gradient, title, x_label) in zip(
         axes, experiments, strict=True
@@ -123,12 +127,10 @@ def _plot_results(
         "Differentiable FPV pose gradients\n"
         "Each gradient curve is normalized by its own maximum absolute value"
     )
-    if show_plot:
-        plt.show()
-    plt.close(fig)
+    plt.show()
 
 
-def main(show_plot: bool = False) -> None:
+def main(plot: bool = False) -> None:
     """Compare photometric and known pose gradients for independent z and yaw sweeps."""
     sim = Sim(n_worlds=1, n_drones=1, device="gpu")
     scene = fetch(f"{ASSETS_URL}/robot_hall.ply")
@@ -169,10 +171,13 @@ def main(show_plot: bool = False) -> None:
             "yaw offset from baseline (degrees)",
         ),
     )
-    _plot_results(experiments, show_plot)
+    if plot:
+        plot_results(experiments)
 
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     logging.getLogger("jax").setLevel(logging.WARNING)
-    main(show_plot=True)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--plot", action="store_true", help="Plot the results")
+    main(plot=parser.parse_args().plot)

@@ -1,3 +1,9 @@
+"""Fly a single drone to a fixed position and hold it with state control.
+
+This is the minimal end-to-end loop: create a `Sim`, reset it, apply a state command, and step
+forward.
+"""
+
 import os
 
 os.environ["SCIPY_ARRAY_API"] = "1"
