@@ -16,7 +16,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from flax.struct import dataclass, field
-from jax.scipy.spatial.transform import Rotation as R
+from scipy.spatial.transform import Rotation as R
 
 from crazyflow.sim import Sim
 from crazyflow.sim.pipeline import prepend_fn
@@ -33,7 +33,8 @@ GYRO_STD = 0.0025  # rad/s
 ACCEL_BIAS_WALK_STD = 1e-3  # m/s^2/sqrt(s)
 GYRO_BIAS_WALK_STD = 0.002  # rad/s/sqrt(s), inflated such that the bias walk is visible
 GYRO_BIAS_MAX = 0.01  # rad/s, the initial bias is uniform in [-max, max]
-DURATION = 20.0  # s, one loop of the figure-eight
+PERIOD = 20.0  # s, one loop of the figure-eight
+DURATION = 2 * PERIOD  # s, the first loop is dropped to remove initial transients
 
 
 @dataclass
@@ -127,7 +128,7 @@ def add_imu(
 
 def trajectory(t: float) -> np.ndarray:
     """Return a figure-eight position command."""
-    omega = 2 * np.pi / DURATION
+    omega = 2 * np.pi / PERIOD
     cmd = np.zeros((1, 1, 16))
     cmd[..., :3] = [np.sin(omega * t), 0.75 * np.sin(2 * omega * t), 1.0]
     cmd[..., 9:13] = R.from_euler("z", 0.0).as_quat()
@@ -152,21 +153,23 @@ def main(plot: bool = True):
     sim.build_step_fn()
 
     log = {key: [] for key in ("vel", "quat", "ang_vel", "accel", "gyro")}
-    for i in range(int(2 * DURATION * sim.control_freq)):
+    for i in range(int(DURATION * sim.control_freq)):
         sim.state_control(trajectory(i / sim.control_freq))
         sim.step(sim.freq // sim.control_freq)
-        for key in ("vel", "quat", "ang_vel"):
-            log[key].append(np.asarray(getattr(sim.data.states, key)[0, 0]))
-        log["accel"].append(np.asarray(sim.data.plugins["imu"].accel[0, 0]))
-        log["gyro"].append(np.asarray(sim.data.plugins["imu"].gyro[0, 0]))
+        log["vel"].append(sim.data.states.vel[0, 0])
+        log["quat"].append(sim.data.states.quat[0, 0])
+        log["ang_vel"].append(sim.data.states.ang_vel[0, 0])
+        log["accel"].append(sim.data.plugins["imu"].accel[0, 0])
+        log["gyro"].append(sim.data.plugins["imu"].gyro[0, 0])
     sim.close()
     log = {key: np.array(value) for key, value in log.items()}
     # Compare the accelerations without gravity, a_b = R_wb^T a_w, so that the noise is more visible
     rot = R.from_quat(log["quat"])
     acc = np.gradient(log["vel"], 1 / sim.control_freq, axis=0)
-    log["acc"] = np.asarray(rot.apply(acc, inverse=True))
-    log["accel"] = log["accel"] + np.asarray(rot.apply(sim.data.params.gravity_vec, inverse=True))
-    log = {key: value[len(value) // 2 :] for key, value in log.items()}  # Drop the first loop
+    log["acc"] = rot.apply(acc, inverse=True)
+    log["accel"] = log["accel"] + rot.apply(sim.data.params.gravity_vec, inverse=True)
+    # Drop the first loop
+    log = {key: value[int(PERIOD * sim.control_freq) :] for key, value in log.items()}
 
     accel_error = np.sqrt(np.mean(np.sum((log["accel"] - log["acc"]) ** 2, axis=-1)))
     gyro_error = np.sqrt(np.mean(np.sum((log["gyro"] - log["ang_vel"]) ** 2, axis=-1)))
@@ -182,7 +185,7 @@ def plot_results(log: dict[str, np.ndarray]):
     import matplotlib.pyplot as plt
 
     fig, (ax_accel, ax_gyro) = plt.subplots(1, 2, figsize=(11, 4.5))
-    t = np.linspace(0, DURATION, len(log["gyro"]))
+    t = np.linspace(0, PERIOD, len(log["gyro"]))
     sensors = (
         (ax_accel, log["acc"], log["accel"], "Accelerometer without gravity", "[m/s$^2$]"),
         (ax_gyro, log["ang_vel"], log["gyro"], "Gyroscope", "[rad/s]"),
