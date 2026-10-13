@@ -161,6 +161,21 @@ python examples/plugins/derivatives.py
 
 ---
 
+## IMU
+
+Simulating an IMU as a plugin. The accelerometer measures the specific force and the gyroscope the body rates, both with noise and drifting biases, while the drone flies loops of a figure-eight. The plot compares the readings with the true state, skipping the first loop.
+
+<!-- notest: imported script, covered by tests/integration/test_examples.py -->
+```{ .python notest }
+--8<-- "examples/plugins/imu.py"
+```
+
+```bash
+python examples/plugins/imu.py
+```
+
+---
+
 ## Cameras and RGBD
 
 Offscreen rendering returns RGB-D images on every frame. The FPV camera (`fpv_cam`) is attached to the drone and moves with it.

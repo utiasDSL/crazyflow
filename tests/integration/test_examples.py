@@ -42,6 +42,8 @@ def test_example_main(example_script: str):
     # Dynamically import the module
     spec = importlib.util.spec_from_file_location("example_module", example_script)
     example_module = importlib.util.module_from_spec(spec)
+    # dataclasses resolves string annotations through the module in sys.modules
+    sys.modules[spec.name] = example_module
     spec.loader.exec_module(example_module)
 
     # Ensure the script has a main function
@@ -53,3 +55,4 @@ def test_example_main(example_script: str):
 
     # Clean up sys.path
     sys.path.remove(str(EXAMPLES_DIR))
+    del sys.modules[spec.name]
