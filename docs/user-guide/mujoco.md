@@ -167,5 +167,5 @@ in_contact = check_contacts(sim.data, sim.mjx_data.mocap_pos)
 ## Next steps
 
 - [Pipelines](pipelines.md) — inserting custom stages into the step and reset pipelines
-- [Examples](../examples/index.md#cameras-and-rgbd) — FPV camera and RGBD rendering
-- [Examples](../examples/index.md#contact-queries) — contact detection with box collision geometry
+- [Examples](../examples/rendering.md#cameras-and-rgbd) — FPV camera and RGBD rendering
+- [Examples](../examples/contacts.md#contact-queries) — contact detection with box collision geometry

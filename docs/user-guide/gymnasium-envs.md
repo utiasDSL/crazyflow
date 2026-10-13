@@ -85,5 +85,5 @@ env.close()
 
 ## Next steps
 
-- [Examples](../examples/index.md) — figure-8 and RL training examples
+- [Examples](../examples/environments.md) — figure-8 and RL training examples
 - [Functional API](functional-api.md) — building fully jittable training loops with `jax.lax.scan`
