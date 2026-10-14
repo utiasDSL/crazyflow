@@ -32,7 +32,7 @@
     <mesh name="battery" file="cf2x/cf2x_battery.stl" scale="0.001 0.001 0.001"/>
     <mesh name="battery-holder" file="cf2x/cf2x_battery-holder.stl" scale="0.001 0.001 0.001"/>
     <mesh name="led-diffuser" file="cf21B/cf_led-diffuser.stl" scale="1e-3 1e-3 1e-3"/>
-    <mesh name="cf2x_fused" file="cf2x/cf2xT_fused.stl" scale="0.001 0.001 0.001"/>  
+    <mesh name="cf2x_fused" file="cf2x/cf2xT_fused.stl" scale="0.001 0.001 0.001" maxhullvert="32"/>  
   </asset>
 
   <default>
@@ -66,8 +66,10 @@
       <!-- Collision geometry is estimated based on the visual mesh. We use a sphere for maximum
        computational efficiency with larger swarms. Used by default-->
       <geom  name="col_sphere" type="sphere" size="0.0725" pos="0 0 0.01" class="collision" contype="1" conaffinity="1" />
-      <!-- For higher accuracy with lower performance, you can use a box. By default off. -->
+      <!-- For higher accuracy with lower performance, you can use a box or the convex hull of the
+       drone mesh. By default off. -->
       <geom  name="col_box" type="box" size="0.0575 0.0575 0.02" class="collision" rgba="0.5 0.5 0.5 0" contype="0" conaffinity="0" />
+      <geom name="col_hull" type="mesh" mesh="cf2x_fused" class="collision" rgba="0.5 0.5 0.5 0" contype="0" conaffinity="0" />
 
       <!-- Motors and Propellers -->
       <site name="motor0" pos="0.0325 -0.0325 0.0" />
@@ -97,6 +99,7 @@
       <geom mesh="cf2x_fused" material="" class="visual" />
       <geom name="col_sphere_fused" type="sphere" size="0.0725" pos="0 0 0.01" class="collision" contype="1" conaffinity="1" />
       <geom name="col_box_fused" type="box" size="0.0575 0.0575 0.02" class="collision" rgba="0.5 0.5 0.5 0" contype="0" conaffinity="0" />
+      <geom name="col_hull_fused" type="mesh" mesh="cf2x_fused" class="collision" rgba="0.5 0.5 0.5 0" contype="0" conaffinity="0" />
     </body>
   </worldbody>
 

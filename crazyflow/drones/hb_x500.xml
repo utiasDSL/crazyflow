@@ -49,7 +49,7 @@
          https://www.ardusimple.com/wp-content/uploads/2021/02/helical3b_dimensions.jpg -->
     <mesh name="gps_antenna" file="hb_x500/hb_x500_gps_antenna.stl" scale="1e-3 1e-3 1e-3" smoothnormal="true"/>
     <!-- The whole `drone` body fused into one mesh with transforms baked in (123408 faces) -->
-    <mesh name="hb_x500_fused" file="hb_x500/hb_x500_fused.stl" scale="1e-3 1e-3 1e-3"/>
+    <mesh name="hb_x500_fused" file="hb_x500/hb_x500_fused.stl" scale="1e-3 1e-3 1e-3" maxhullvert="32"/>
   </asset>
 
   <default>
@@ -84,8 +84,10 @@
       <!-- Collision geometry is estimated based on the visual mesh. We use a sphere for maximum
        computational efficiency with larger swarms. Used by default-->
       <geom  name="col_sphere" type="sphere" size="0.41" pos="0 0 0.071" class="collision" contype="1" conaffinity="1" />
-      <!-- For higher accuracy with lower performance, you can use a box. By default off. -->
+      <!-- For higher accuracy with lower performance, you can use a box or the convex hull of the
+       drone mesh. By default off. -->
       <geom  name="col_box" type="box" size="0.327 0.327 0.1675" pos="0 0 0.0875" class="collision" rgba="0.5 0.5 0.5 0" contype="0" conaffinity="0" />
+      <geom name="col_hull" type="mesh" mesh="hb_x500_fused" class="collision" rgba="0.5 0.5 0.5 0" contype="0" conaffinity="0" />
 
       <!-- Motors and Propellers. Motor centres: 176.78 mm on both axes (500 mm wheelbase).
            Hub underside is 4.5 mm below its origin and seats on the shaft shoulder at 64.5 mm. -->
@@ -180,6 +182,7 @@
       <geom mesh="hb_x500_fused" material="dark-gray" class="visual" />
       <geom name="col_sphere_fused" type="sphere" size="0.41" pos="0 0 0.071" class="collision" contype="1" conaffinity="1" />
       <geom name="col_box_fused" type="box" size="0.327 0.327 0.1675" pos="0 0 0.0875" class="collision" rgba="0.5 0.5 0.5 0" contype="0" conaffinity="0" />
+      <geom name="col_hull_fused" type="mesh" mesh="hb_x500_fused" class="collision" rgba="0.5 0.5 0.5 0" contype="0" conaffinity="0" />
     </body>
   </worldbody>
 

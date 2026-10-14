@@ -216,7 +216,7 @@ python examples/rendering/led_deck.py
 
 ## Contact queries
 
-The default collision geometry is a sphere around the drone frame. `use_box_collision` replaces it with a tighter oriented box, useful for narrow-gap flight and accurate contact debugging.
+The default collision geometry is a sphere around the drone frame. `select_collision_type` switches to a tighter oriented box or to the convex hull of the drone mesh, useful for narrow-gap flight and accurate contact debugging. Hull contacts are cheap on GPU but slow down significantly on CPU for swarms with many drones.
 
 <div class="example-media-grid example-media-grid--contacts">
   <figure>

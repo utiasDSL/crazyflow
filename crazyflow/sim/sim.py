@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import warnings
 import xml.etree.ElementTree as ET
 from collections import OrderedDict
 from functools import partial, wraps
@@ -30,6 +31,7 @@ from crazyflow.drones import Drone
 from crazyflow.dynamics import Dynamics
 from crazyflow.dynamics import load_params as load_dynamics_params
 from crazyflow.exception import ConfigError, NotInitializedError
+from crazyflow.sim import CollisionType
 from crazyflow.sim.data import SimControls, SimCore, SimData, SimParams, SimState, SimStateDeriv
 from crazyflow.sim.dynamics import (
     first_principles_dynamics,
@@ -345,6 +347,8 @@ class Sim:
                 asset.append(clone)
         new_spec = mujoco.MjSpec.from_string(ET.tostring(root, encoding="unicode"))
         new_spec.copy_during_attach = True  # write-only, re-apply after from_string() drops it
+        for mesh in spec.meshes:  # to_xml() drops maxhullvert before MuJoCo 3.16, re-apply it
+            new_spec.mesh(mesh.name).maxhullvert = mesh.maxhullvert
         return new_spec
 
     def build_mjx_model(self, spec: mujoco.MjSpec) -> tuple[Any, Any, Model, Data]:
@@ -509,6 +513,8 @@ class Sim:
             self.viewer = None
         self.spec.numeric("max_geom_pairs").data = [self.max_geom_pairs]
         self.mj_model, self.mj_data, self.mjx_model, self.mjx_data = self.build_mjx_model(self.spec)
+        core = self.data.core.replace(mjx_synced=jnp.zeros_like(self.data.core.mjx_synced))
+        self.data = self.data.replace(core=core)
 
     def init_data(
         self,
@@ -764,26 +770,30 @@ def seed_sim(data: SimData, seed: int, device: Device) -> SimData:
     return data.replace(core=data.core.replace(rng_key=rng_key))
 
 
-def use_box_collision(sim: Sim, enable: bool = True):
-    """Changes the collision geometry to use boxes or spheres (default).
+def select_collision_type(sim: Sim, collision_type: CollisionType = CollisionType.default):
+    """Select the collision geometry of all drones and rebuild the MJX model.
 
     Args:
         sim: The simulation instance.
-        enable: If True, use box collision geometry. If False, use sphere collision geometry.
+        collision_type: ``sphere`` (default) is a bounding sphere, ``box`` an oriented bounding box
+            and ``hull`` the convex hull of the drone mesh, limited to 32 vertices. The selected
+            geometry is in geom group 3, which the viewer hides by default (toggle with key 3).
 
     Warning:
-        Using box collision geometry is more computationally expensive than sphere collision
-        geometry, especially for larger swarms. It is recommended to only enable box collision
-        geometry for small swarms or when high accuracy is required.
+        Box and hull collisions are more expensive than spheres. MJX tests all edge pairs of two
+        hulls, which is cheap on GPU but slows down ``Sim.contacts()`` significantly on CPU for
+        swarms with many drone pairs.
     """
+    if collision_type == CollisionType.hull and sim.device.platform == "cpu" and sim.n_drones > 16:
+        warnings.warn(
+            f"Hull collision with {sim.n_drones} drones slows down `Sim.contacts()` significantly "
+            "on CPU. Use a GPU or the sphere/box collision type for large swarms."
+        )
     for geom in sim.spec.geoms:
-        if geom.name.startswith("col_sphere"):
-            geom.contype = 1 * (not enable)
-            geom.conaffinity = 1 * (not enable)
-            geom.rgba[3] = 1 * (not enable)
-        if geom.name.startswith("col_box"):
-            geom.contype = 1 * enable
-            geom.conaffinity = 1 * enable
-            geom.rgba[3] = 1 * enable
-
+        if not geom.name.startswith(("col_sphere", "col_box", "col_hull")):
+            continue
+        enable = geom.name.startswith(f"col_{collision_type}")
+        geom.contype = 1 * enable
+        geom.conaffinity = 1 * enable
+        geom.rgba[3] = 1 * enable
     sim.build_mjx()

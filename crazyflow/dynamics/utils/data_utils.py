@@ -5,7 +5,7 @@ Contains helpers to filter states and compute derivatives using State Variable F
 
 from __future__ import annotations
 
-import logging
+import warnings
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -18,8 +18,6 @@ from crazyflow.dynamics.utils.rotation import rpy_rates2ang_vel
 
 if TYPE_CHECKING:
     from crazyflow._typing import Array  # To be changed to array_api_typing later
-
-logger = logging.getLogger(__name__)
 
 
 def preprocessing(data: dict[str, Array]) -> dict[str, Array]:
@@ -54,7 +52,7 @@ def preprocessing(data: dict[str, Array]) -> dict[str, Array]:
     # TODO also check quat for outliers!
 
     if n_outliers > 0:
-        logger.warning(f"{n_outliers} outliers detected. Interpolating")
+        warnings.warn(f"{n_outliers} outliers detected. Interpolating")
         time_good = data["time"][~is_outlier]
         pos_good = data["pos"][~is_outlier]
         quat_good = data["quat"][~is_outlier]
