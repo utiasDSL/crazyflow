@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from typing import TYPE_CHECKING
 
 import jax
@@ -16,10 +17,10 @@ from scipy.spatial.transform import Rotation as R
 from crazyflow.control import Control
 from crazyflow.dynamics import supported_dynamics
 from crazyflow.exception import ConfigError
-from crazyflow.sim import Dynamics, Sim
+from crazyflow.sim import CollisionType, Dynamics, Sim
 from crazyflow.sim.data import ControlData, SimData
 from crazyflow.sim.integration import Integrator
-from crazyflow.sim.sim import rotor_vel_limits, sync_sim2mjx, use_box_collision
+from crazyflow.sim.sim import rotor_vel_limits, select_collision_type, sync_sim2mjx
 from crazyflow.sim.visualize import change_material
 
 if TYPE_CHECKING:
@@ -514,17 +515,16 @@ def test_contacts(dynamics: Dynamics):
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("box_collision", [False, True])
-def test_contacts_between_drones(box_collision: bool):
-    """Two overlapping drones must register a contact.
+@pytest.mark.parametrize("collision_type", CollisionType)
+def test_contacts_between_drones(collision_type: CollisionType):
+    """Two overlapping drones must register a contact with every collision geometry.
 
     Drones are mocap bodies that are all welded to the world. MuJoCo/MJX filter out collisions
     between geoms welded into the same kinematic tree, so without explicit contact pairs no
     drone-drone contact is ever generated.
     """
     sim = Sim(n_drones=2, control=Control.attitude, freq=500, device="cpu")
-    if box_collision:
-        use_box_collision(sim, True)
+    select_collision_type(sim, collision_type)
     sim.reset()
     states = sim.data.states
     # Place both drones at the same position above the floor
@@ -533,6 +533,23 @@ def test_contacts_between_drones(box_collision: bool):
     sim.data = sim.data.replace(core=sim.data.core.replace(mjx_synced=False))
     assert jnp.any(sim.contacts("drone:0")), "Overlapping drones should be in contact"
     assert jnp.any(sim.contacts("drone:1")), "Overlapping drones should be in contact"
+    sim.close()
+
+
+@pytest.mark.unit
+def test_hull_collision_warns_on_cpu():
+    """Hull collision for large swarms on CPU must warn, smaller swarms and other types must not."""
+    sim = Sim(n_drones=17, device="cpu")
+    with pytest.warns(UserWarning, match="significantly"):
+        select_collision_type(sim, CollisionType.hull)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        select_collision_type(sim, CollisionType.box)
+    sim.close()
+    sim = Sim(n_drones=16, device="cpu")
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        select_collision_type(sim, CollisionType.hull)
     sim.close()
 
 
