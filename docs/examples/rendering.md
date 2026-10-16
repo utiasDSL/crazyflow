@@ -58,28 +58,16 @@ Viewing the simulation as gaussian splats, rendering RGB-D images from the drone
 
 ### Splat camera
 
-<figure class="example-media example-media--compact">
-  <video src="../../img/examples/splat_camera.mp4" autoplay loop muted playsinline aria-label="Gaussian splat FPV camera views of two drones circling in a flight hall"></video>
-</figure>
-
 --8<-- example "examples/rendering/splat_camera.py"
 
 ---
 
 ### Splat depth camera
 
-<figure class="example-media example-media--compact">
-  <video src="../../img/examples/splat_depth.mp4" autoplay loop muted playsinline aria-label="Gaussian splat depth camera of a drone flying a lap through a flight hall"></video>
-</figure>
-
 --8<-- example "examples/rendering/splat_depth.py"
 
 ---
 
 ### Differentiable splat rendering
-
-<figure class="example-media">
-  <img src="../../img/examples/splat_gradients.png" alt="Photometric splat gradients compared with known pose gradients for z and yaw offsets">
-</figure>
 
 --8<-- example "examples/rendering/splat_gradients.py"
