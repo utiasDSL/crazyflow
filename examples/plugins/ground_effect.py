@@ -1,7 +1,15 @@
-"""External-force implementation of the ground effect in Eq. (15) of Shi et al arXiv:1811.08027v."""
+"""Model the ground effect of a `cf21B_500` drone as an external force.
+
+The plugin implements Eq. (15) of Shi et al., arXiv:1811.08027. It computes the nominal thrust
+from the rotor speeds, applies a height-dependent gain, and adds the extra thrust along the drone's
+body z-axis as a world-frame external force.
+
+Run with `--plot` to plot the results, which requires matplotlib from the `tests` environment.
+"""
 
 from __future__ import annotations
 
+import argparse
 import os
 from typing import TYPE_CHECKING
 
@@ -52,7 +60,7 @@ def ground_effect_fn(data: SimData) -> SimData:
 
 def measure_hover_points(
     sim: Sim, heights: np.ndarray, render: bool = False
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[list[float], list[float]]:
     """Hold at each setpoint and return the mean measured height and thrust command."""
     command = np.zeros((sim.n_worlds, sim.n_drones, 16))
     command[..., 9:13] = R.from_euler("z", 0.0).as_quat()
@@ -82,10 +90,10 @@ def measure_hover_points(
         hover_heights.append(np.mean(height_samples))
         hover_thrusts.append(np.mean(thrust_samples))
 
-    return np.asarray(hover_heights), np.asarray(hover_thrusts)
+    return hover_heights, hover_thrusts
 
 
-def main(plot: bool = True, render: bool = False) -> None:
+def main(plot: bool = False, render: bool = False) -> None:
 
     sim = Sim(n_drones=1, drone="cf21B_500", control="state")
 
@@ -101,14 +109,20 @@ def main(plot: bool = True, render: bool = False) -> None:
     sim.close()
 
     if plot:
-        import matplotlib.pyplot as plt
+        plot_results(hover_heights, hover_thrusts)
 
-        plt.scatter(hover_heights, hover_thrusts)
-        plt.xlabel("Measured hover height (m)")
-        plt.ylabel("Commanded collective thrust (N)")
-        plt.grid()
-        plt.show()
+
+def plot_results(hover_heights: list[float], hover_thrusts: list[float]):
+    import matplotlib.pyplot as plt
+
+    plt.scatter(hover_heights, hover_thrusts)
+    plt.xlabel("Measured hover height (m)")
+    plt.ylabel("Commanded collective thrust (N)")
+    plt.grid()
+    plt.show()
 
 
 if __name__ == "__main__":
-    main(render=True)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--plot", action="store_true", help="Plot the results")
+    main(plot=parser.parse_args().plot, render=True)

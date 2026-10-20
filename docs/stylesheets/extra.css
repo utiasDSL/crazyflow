@@ -248,6 +248,7 @@
 }
 
 .example-media img,
+.example-media video,
 .example-media-grid img {
   display: block;
   width: 100%;
@@ -255,7 +256,8 @@
   border-radius: 8px;
 }
 
-.example-media--compact img {
+.example-media--compact img,
+.example-media--compact video {
   max-width: 720px;
   margin: 0 auto;
 }

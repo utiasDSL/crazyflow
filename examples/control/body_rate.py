@@ -1,3 +1,10 @@
+"""Command body-frame angular rates and collective thrust.
+
+The body rate controller keeps the attitude terms of the Mellinger controller, which level the
+drone at its current yaw and counteract the commanded rates. The example sets their `kR` and `ki_m`
+gains to zero to freely track the body rates.
+"""
+
 import os
 
 os.environ["SCIPY_ARRAY_API"] = "1"
@@ -33,8 +40,8 @@ def control(quat: np.ndarray, rpyt: np.ndarray) -> np.ndarray:
 
 def main():
     sim = Sim(control=Control.body_rate, body_rate_freq=250)
-    # The firmware has no dedicated body rate mode. Its attitude terms level the drone at the
-    # current yaw and would counteract the commanded rates. Disable them to track body rates.
+    # The attitude terms of the body rate controller level the drone at the current yaw and would
+    # counteract the commanded rates. Disable them to track body rates.
     body_rate = sim.data.controls.body_rate
     params = body_rate.params | {"kR": jnp.zeros(3), "ki_m": jnp.zeros(3)}
     controls = sim.data.controls.replace(body_rate=body_rate.replace(params=params))
@@ -49,7 +56,7 @@ def main():
     position_ctrl = partial(parametrize(state2attitude, sim.drone), ctrl_freq=sim.control_freq)
     pos_err_i = np.zeros(3)
     cmd = np.zeros((sim.n_worlds, sim.n_drones, 4))  # [wx, wy, wz, thrust]
-    pos_start = np.asarray(sim.data.states.pos[0, 0])
+    pos_start = sim.data.states.pos[0, 0]
     for i in range(int(duration * sim.control_freq)):
         pos, quat = np.asarray(sim.data.states.pos[0, 0]), np.asarray(sim.data.states.quat[0, 0])
         vel = np.asarray(sim.data.states.vel[0, 0])

@@ -1,3 +1,9 @@
+"""Control the LED decks of a drone swarm through their materials.
+
+`change_material` updates the RGBA colour and emission of any named material on any subset of
+drones at runtime.
+"""
+
 import os
 import tempfile
 from pathlib import Path

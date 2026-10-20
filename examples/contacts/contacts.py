@@ -1,3 +1,9 @@
+"""Query contacts between drones and the scene with box collision geometry.
+
+The default collision geometry is a sphere around the drone frame. `use_box_collision` replaces it
+with a tighter oriented box, useful for narrow-gap flight and accurate contact debugging.
+"""
+
 import numpy as np
 
 from crazyflow.sim import Dynamics, Sim

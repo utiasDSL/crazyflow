@@ -1,4 +1,8 @@
-"""Simple example on how to change the camera configuration for rendering."""
+"""Change the viewer camera with a camera configuration.
+
+The script renders the same flight twice, first with the default camera and then with a camera
+that looks at the origin from a fixed distance, elevation, and azimuth.
+"""
 
 import os
 

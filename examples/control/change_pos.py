@@ -1,3 +1,9 @@
+"""Overwrite the state of a drone before flying it to a setpoint.
+
+JAX arrays are immutable, so `sim.data` cannot be changed in place. Instead, `replace` creates a
+new `sim.data` with the position and rotor velocities of the drone set to new values.
+"""
+
 import os
 
 os.environ["SCIPY_ARRAY_API"] = "1"

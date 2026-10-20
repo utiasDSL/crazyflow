@@ -1,3 +1,8 @@
+"""Detect a crash with the floor through contact queries.
+
+The drone hovers for three seconds and is then commanded below the floor.
+"""
+
 import os
 
 os.environ["SCIPY_ARRAY_API"] = "1"

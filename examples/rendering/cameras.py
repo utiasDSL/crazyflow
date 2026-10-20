@@ -1,14 +1,20 @@
-"""Example showing how to change the used camera and how to extract the pixel information."""
+"""Render RGB-D images offscreen from the drone's FPV camera.
 
+Offscreen rendering returns RGB-D images on every frame. The FPV camera (`fpv_cam`) is attached to
+the drone and moves with it. Other cameras are selected by name or id in `sim.render`.
+
+Run with `--plot` to animate the images or `--save` to save them as cameras.gif, which requires
+matplotlib from the `tests` environment.
+"""
+
+import argparse
 import os
 import time
 
 os.environ["SCIPY_ARRAY_API"] = "1"
 
-import matplotlib.pyplot as plt
 import mujoco
 import numpy as np
-from matplotlib import animation
 from scipy.spatial.transform import Rotation as R
 
 from crazyflow.control import Control
@@ -17,7 +23,7 @@ from crazyflow.sim import Sim
 from crazyflow.sim.integration import Integrator
 
 
-def control(t: float, t_tot: float) -> np.ndarray:
+def trajectory(t: float, t_tot: float) -> np.ndarray:
     phi = 2 * np.pi * t / t_tot + np.pi
     circle = np.array([np.cos(phi), np.sin(phi)])
     yaw = 2 * np.pi * t / t_tot
@@ -63,8 +69,8 @@ def add_smiley(sim: Sim):
     sim.build_reset_fn()
 
 
-def main(show_plot: bool = False, save_plot: bool = False):
-    """Example showing the rendering feature and saving a gif via FuncAnimation."""
+def main(plot: bool = False, save: bool = False):
+    """Render RGB-D images from the fpv camera and optionally animate or save them."""
     # Setup sim
     sim = Sim(
         n_drones=1,
@@ -80,25 +86,12 @@ def main(show_plot: bool = False, save_plot: bool = False):
     sim.data = sim.data.replace(states=states)
     duration = 5
     fps = 50
-    timings = []
-
-    # Set up matplotlib rendering
     resolution = (160, 120)
-    rgb = np.zeros((resolution[1], resolution[0], 3))
-    d = np.zeros((resolution[1], resolution[0]))
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 5))
-    im1 = ax1.imshow(rgb)
-    ax1.set_title("RGB")
-    ax1.axis("off")
-    im2 = ax2.imshow(d, cmap="viridis")
-    ax2.set_title("Depth")
-    ax2.axis("off")
-    fig.tight_layout()
+    timings, frames = [], []
 
-    # Animation setup
-    def update_frame(_):  # noqa: ANN202
+    for _ in range(int(duration * fps)):
         t = sim.data.core.steps[0, 0] / sim.freq
-        sim.state_control(control(t, duration))
+        sim.state_control(trajectory(t, duration))
         sim.step(sim.freq // fps)
 
         t1 = time.perf_counter()
@@ -113,28 +106,51 @@ def main(show_plot: bool = False, save_plot: bool = False):
         )
         t2 = time.perf_counter()
         timings.append(t2 - t1)
-        if rgbd is None:
-            return im1, im2
-        rgb, depth = rgbd
-        im1.set_data(rgb)
-        im2.set_data(depth)
-        im2.set_clim(np.nanmin(depth), np.nanmax(depth))
-        return im1, im2
-
-    anim = animation.FuncAnimation(
-        fig, update_frame, frames=int(duration * fps), interval=1000 / fps, blit=True, repeat=False
-    )
-    if show_plot:
-        plt.show()
-    if save_plot:
-        anim.save("cameras.gif", writer="pillow", fps=fps)
+        if rgbd is not None:
+            frames.append(rgbd)
 
     sim.close()
 
     t_mean = np.mean(timings)
     print(f"Average render time {t_mean * 1000:.2f}ms, eqivalent to {1 / t_mean:.2f}fps")
     print("For more optimized depth rendering, check out the raycasting.py example.")
+    if plot or save:
+        plot_results(frames, fps, show=plot, save=save)
+
+
+def plot_results(frames: list[tuple[np.ndarray, np.ndarray]], fps: int, show: bool, save: bool):
+    """Animate the RGB and depth frames and optionally save them as cameras.gif."""
+    import matplotlib.pyplot as plt
+    from matplotlib import animation
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 5))
+    im1 = ax1.imshow(frames[0][0])
+    ax1.set_title("RGB")
+    ax1.axis("off")
+    im2 = ax2.imshow(frames[0][1], cmap="viridis")
+    ax2.set_title("Depth")
+    ax2.axis("off")
+    fig.tight_layout()
+
+    def update_frame(i: int):  # noqa: ANN202
+        rgb, depth = frames[i]
+        im1.set_data(rgb)
+        im2.set_data(depth)
+        im2.set_clim(np.nanmin(depth), np.nanmax(depth))
+        return im1, im2
+
+    anim = animation.FuncAnimation(
+        fig, update_frame, frames=len(frames), interval=1000 / fps, blit=True, repeat=False
+    )
+    if save:
+        anim.save("cameras.gif", writer="pillow", fps=fps)
+    if show:
+        plt.show()
 
 
 if __name__ == "__main__":
-    main(show_plot=True, save_plot=False)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--plot", action="store_true", help="Animate the images")
+    parser.add_argument("--save", action="store_true", help="Save the images as cameras.gif")
+    args = parser.parse_args()
+    main(plot=args.plot, save=args.save)

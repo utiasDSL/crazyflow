@@ -257,7 +257,7 @@ sim.build_reset_fn()
 sim.reset()  # randomizes every world
 ```
 
-Passing a boolean mask to `sim.reset(mask=mask)` randomizes only the worlds being reset. Every parameter of every dynamics model can be randomized per world this way. See [Randomization and disturbances](pipelines.md#randomization-and-disturbances) for the details and the recompilation this might cause, and the [domain randomization example](../examples/index.md#domain-randomization) for a complete simulation.
+Passing a boolean mask to `sim.reset(mask=mask)` randomizes only the worlds being reset. Every parameter of every dynamics model can be randomized per world this way. See [Randomization and disturbances](pipelines.md#randomization-and-disturbances) for the details and the recompilation this might cause, and the [domain randomization example](../examples/plugins.md#domain-randomization) for a complete simulation.
 
 ## Next steps
 

@@ -67,7 +67,7 @@ sim.build_step_fn()  # recompile
 !!! warning
     Always call `sim.build_step_fn()` after modifying `sim.step_pipeline`. Without it, `sim.step()` still runs the previously compiled kernel and silently ignores your changes.
 
-To see how to modify the step pipeline with a stochastic disturbance, see the [Disturbance injection example](../examples/index.md#disturbance-injection).
+To see how to modify the step pipeline with a stochastic disturbance, see the [Disturbance injection example](../examples/plugins.md#disturbance-injection).
 
 ## Modifying the reset pipeline
 
@@ -193,7 +193,7 @@ assert sim.data.params.rpm2thrust.shape == (4, 1, 4, 3)
 !!! warning "Split and update the rng key"
     JAX random keys are stateless: drawing from the same key always produces the same numbers. Every stage that samples must split `data.core.rng_key`, draw from the new subkey, and write the other half back with `data.core.replace(rng_key=key)`. The reset stage restores everything except the rng key, so the key keeps advancing across resets.
 
-A masked reset first restores the parameters of the selected worlds to their defaults and then runs the randomization on them, while the other worlds keep their values. See the [domain randomization example](../examples/index.md#domain-randomization) for a randomization of every parameter of the first-principles model, and [The world axis](world-axis.md) for how per-world arrays are told apart from shared ones.
+A masked reset first restores the parameters of the selected worlds to their defaults and then runs the randomization on them, while the other worlds keep their values. See the [domain randomization example](../examples/plugins.md#domain-randomization) for a randomization of every parameter of the first-principles model, and [The world axis](world-axis.md) for how per-world arrays are told apart from shared ones.
 
 !!! note "Recompilation"
     The compiled step and reset functions are specialized on the shapes in `SimData`. The first randomization that turns a shared `(1, 3)` parameter into a `(n_worlds, n_drones, 4, 3)` array changes those shapes, so the following `sim.step()` and `sim.reset()` calls recompile once. The shapes are stable afterwards, unless something restores the shared shape again, e.g. a reset with a pipeline that no longer randomizes the parameter, which triggers another recompilation.
@@ -235,11 +235,11 @@ sim.build_step_fn()
 sim.step()
 ```
 
-See the [disturbance injection example](../examples/index.md#disturbance-injection) for a full run comparing disturbed and undisturbed trajectories.
+See the [disturbance injection example](../examples/plugins.md#disturbance-injection) for a full run comparing disturbed and undisturbed trajectories.
 
-Aerodynamic effects such as [downwash](../examples/index.md#downwash) and [ground effect](../examples/index.md#ground-effect) use the same approach: insert a stage before `integration` that updates the external force or torque fields.
+Aerodynamic effects such as [downwash](../examples/plugins.md#downwash) and [ground effect](../examples/plugins.md#ground-effect) use the same approach: insert a stage before `integration` that updates the external force or torque fields.
 
 ## Next steps
 
 - [Functional API](functional-api.md) — how `build_step_fn` fits into a compiled training loop
-- [Examples](../examples/index.md) — disturbance injection and domain randomization scripts
+- [Examples](../examples/plugins.md) — disturbance injection and domain randomization scripts

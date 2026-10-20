@@ -1,4 +1,8 @@
-"""Example on how to shard the simulation across devices."""
+"""Shard the simulation across devices.
+
+The host backend is asked for four logical devices, and the sharded results are compared against
+running on a single device.
+"""
 
 import os
 
@@ -15,7 +19,7 @@ def main():
     devices = jax.devices("cpu")
     sim = Sim(n_worlds=4 * len(devices), device="cpu")  # Worlds must be divisible by n_devices
     sim.step(10)
-    single_device_pos = np.asarray(sim.data.states.pos)
+    single_device_pos = sim.data.states.pos
 
     sim.reset()
     sim.shard(world_mesh(devices))
@@ -31,7 +35,7 @@ def main():
     for shard in pos.addressable_shards:
         print(f"    {shard.device}  {shard.data.shape[0]} worlds")
 
-    assert np.allclose(np.asarray(pos), single_device_pos, atol=1e-6)
+    assert np.allclose(pos, single_device_pos, atol=1e-6)
     sim.close()
 
 

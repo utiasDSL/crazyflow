@@ -1,8 +1,10 @@
-"""Example showing how to randomize parameters of the simulation.
+"""Randomize the drone parameters in the reset pipeline.
 
-All shown parameters can be randomized per world and per drone. All randomizations scale each
-element of the default parameters by an independent uniform factor in [1 - x, 1 + x]. Using the
-default parameters as the base value ensures that repeated resets do not compound.
+Mass, inertia and drag are randomized per drone, and thrust and torque curves, rotor dynamics, arm
+lengths and propeller inertias per motor. Each element of the default parameters is scaled by an
+independent uniform factor in [1 - x, 1 + x]. Using the default parameters as the base value
+ensures that repeated resets do not compound. An optional mask limits randomization to selected
+worlds.
 """
 
 import os

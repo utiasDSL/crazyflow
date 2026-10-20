@@ -98,7 +98,7 @@ sim.step(sim.freq // sim.control_freq)
 
 ## Body rate control
 
-Commands body-frame angular rates and a collective thrust. The Mellinger controller tracks the rates with the same gains as in attitude control. As in the firmware, its attitude terms level the drone at the current yaw. Set the `kR` and `ki_m` parameters of the body rate controller to zero to track body rates without the levelling terms, see the [body rate example](../../examples/index.md#body-rate-control). Requires `Dynamics.first_principles`.
+Commands body-frame angular rates and a collective thrust. The Mellinger controller tracks the rates with the same gains as in attitude control. As in the firmware, its attitude terms level the drone at the current yaw. Set the `kR` and `ki_m` parameters of the body rate controller to zero to track body rates without the levelling terms, see the [body rate example](../../examples/control.md#body-rate-control). Requires `Dynamics.first_principles`.
 
 ```python
 from crazyflow.sim import Sim, Dynamics

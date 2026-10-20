@@ -1,4 +1,4 @@
-# Visualization
+# MuJoCo Rendering
 
 Crazyflow supports onscreen interactive rendering and offscreen RGB/depth capture through MuJoCo's renderer. Rendering is fully decoupled from the dynamics step: call `sim.render()` at any frequency independently of how fast the simulation runs.
 
@@ -94,6 +94,6 @@ Rendering triggers an implicit synchronization between the JAX dynamics state (`
 ## Next steps
 
 - [MuJoCo Integration](mujoco.md) — how the scene is built, how to add objects, and sync internals
-- [Examples](../examples/index.md#cameras-and-rgbd) — FPV camera and RGBD capture
-- [Examples](../examples/index.md#raycasting-and-depth-sensing) — compiled depth renderer
-- [Examples](../examples/index.md#led-deck-and-materials) — per-drone colour control
+- [Examples](../examples/rendering.md#cameras-and-rgbd) — FPV camera and RGBD capture
+- [Examples](../examples/rendering.md#raycasting-and-depth-sensing) — compiled depth renderer
+- [Examples](../examples/rendering.md#led-deck-and-materials) — per-drone colour control

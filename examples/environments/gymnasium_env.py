@@ -1,3 +1,8 @@
+"""Run the reach-position Gymnasium environment with a constant action.
+
+The `JaxToNumpy` wrapper converts between NumPy actions and JAX observations.
+"""
+
 import gymnasium
 import jax.numpy as jnp
 import numpy as np

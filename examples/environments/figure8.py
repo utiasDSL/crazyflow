@@ -1,3 +1,8 @@
+"""Run the figure-eight Gymnasium environment with a constant upward attitude command.
+
+The env wraps `Sim` behind the standard Gymnasium `VectorEnv` interface.
+"""
+
 import gymnasium
 import jax.numpy as jnp
 import numpy as np

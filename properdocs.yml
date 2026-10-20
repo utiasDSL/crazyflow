@@ -74,11 +74,18 @@ nav:
     - Pipelines: user-guide/pipelines.md
     - The world axis: user-guide/world-axis.md
     - Sharding: user-guide/sharding.md
-    - Visualization: user-guide/visualization.md
-    - Gaussian Splat Rendering: user-guide/splats.md
+    - MuJoCo Rendering: user-guide/mujoco-rendering.md
+    - Gaussian Splat Rendering: user-guide/splat-rendering.md
     - MuJoCo Integration: user-guide/mujoco.md
     - Gymnasium Environments: user-guide/gymnasium-envs.md
-  - Examples: examples/index.md
+  - Examples:
+    - examples/index.md
+    - Control: examples/control.md
+    - JAX: examples/jax.md
+    - Plugins: examples/plugins.md
+    - Rendering: examples/rendering.md
+    - Contacts: examples/contacts.md
+    - Environments: examples/environments.md
   - Projects: projects.md
   - API Reference: api/
   - Cite: cite.md
@@ -150,6 +157,9 @@ extra:
   social:
     - icon: fontawesome/brands/github
       link: https://github.com/learnsyslab/crazyflow
+
+hooks:
+  - docs/hooks.py
 
 watch:
   - crazyflow/

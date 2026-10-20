@@ -57,8 +57,6 @@ for _ in range(500):
 viewer.close()
 ```
 
-See `examples/rendering/splat_viewer.py` for a complete viewer demo.
-
 ## Camera sensor
 
 `render_splat_rgb` from `crazyflow.sim.sensors.splat` renders RGB images from any model camera, batched over all worlds and drones. It uses splax's CUDA rasterizer, so the simulation must run on the GPU. Scene gaussians stay static. Each drone's gaussians follow its current pose via splax's dynamic transforms, without copying the splat buffer.
@@ -80,8 +78,6 @@ imgs = render_fn(sim.data)
 
 `exclude_self=True` hides each drone's own splat from its own camera, so a drone sees the others but not itself.
 
-See `examples/rendering/splat_camera.py` for a matplotlib-based camera sensor demo.
-
 ## Depth sensor
 
 `render_splat_rgbd` adds depth as a fourth channel.
@@ -102,4 +98,9 @@ Gaussians are semi-transparent, so a pixel only carries a usable depth once enou
 
 The values are depth along the camera's optical axis in meters. `render_depth` from `crazyflow.sim.sensors.depth` raycasts the MuJoCo geometry instead and returns ray distances, so the two are not interchangeable.
 
-See `examples/rendering/splat_depth.py` for a depth camera flying a lap around the hall.
+## Next steps
+
+- [Examples](../examples/rendering.md#splat-viewer) — web-based splat viewer
+- [Examples](../examples/rendering.md#splat-camera) — batched FPV cameras across worlds and drones
+- [Examples](../examples/rendering.md#splat-depth-camera) — compiled RGB-D renderer
+- [Examples](../examples/rendering.md#differentiable-splat-rendering) — photometric pose gradients
