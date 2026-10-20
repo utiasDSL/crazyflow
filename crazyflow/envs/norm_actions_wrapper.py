@@ -1,6 +1,6 @@
 import jax
 import jax.numpy as jnp
-import numpy as np
+from gymnasium import spaces
 from gymnasium.vector import VectorWrapper
 from gymnasium.vector.utils import batch_space
 from jax import Array
@@ -18,8 +18,8 @@ class NormalizeActions(VectorWrapper):
     def __init__(self, env: DroneEnv):
         super().__init__(env)
         # Simulation action space bounds
-        self.action_sim_low = self.single_action_space.low
-        self.action_sim_high = self.single_action_space.high
+        self.action_sim_low = env.single_action_space.low
+        self.action_sim_high = env.single_action_space.high
 
         # Compute scale and mean for rescaling
         device = env.device
@@ -27,8 +27,7 @@ class NormalizeActions(VectorWrapper):
         self._mean = jnp.array((self.action_sim_high + self.action_sim_low) / 2.0, device=device)
 
         # Modify the wrapper's action space to [-1, 1]
-        self.single_action_space.low = -np.ones_like(self.action_sim_low)
-        self.single_action_space.high = np.ones_like(self.action_sim_high)
+        self.single_action_space = spaces.Box(-1.0, 1.0, shape=env.single_action_space.shape)
         self.action_space = batch_space(self.single_action_space, self.num_envs)
 
     def step(self, actions: Array) -> tuple[dict, Array, Array, Array, dict]:

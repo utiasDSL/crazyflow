@@ -58,6 +58,9 @@ class DroneEnv(VectorEnv):
     """
 
     metadata = {"autoreset_mode": AutoresetMode.NEXT_STEP}
+    # gymnasium declares spaces as mutable `Space`
+    single_action_space: spaces.Box  # ty: ignore[invalid-mutable-override]
+    single_observation_space: spaces.Dict  # ty: ignore[invalid-mutable-override]
 
     def __init__(
         self,
@@ -129,7 +132,7 @@ class DroneEnv(VectorEnv):
         return self.obs(), self.reward(), terminated, truncated, {}
 
     def _apply_action(self, action: Array):
-        low, high = self.action_space.low, self.action_space.high
+        low, high = self.single_action_space.low, self.single_action_space.high
         action = self._sanitize_action(action, low, high, self.sim.n_worlds, self.sim.device)
         match self.sim.control:
             case Control.state:
