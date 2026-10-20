@@ -1,0 +1,24 @@
+name: Typecheck
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Pixi
+        uses: prefix-dev/setup-pixi@v0.11.2
+        with:
+          pixi-version: v0.82.0
+          cache: true
+          cache-write: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+          environments: typecheck
+          activate-environment: false
+          locked: true
+
+      - name: Run type checks
+        run: pixi run -e typecheck typecheck

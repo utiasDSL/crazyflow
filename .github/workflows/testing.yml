@@ -10,13 +10,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install submodules
-        run: git submodule update --init --recursive
-
       - name: Setup Pixi
-        uses: prefix-dev/setup-pixi@v0.9.3
+        uses: prefix-dev/setup-pixi@v0.11.2
         with:
-          pixi-version: v0.76.0
+          pixi-version: v0.82.0
           cache: true
           cache-write: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
           environments: tests
@@ -33,13 +30,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install submodules
-        run: git submodule update --init --recursive
-
       - name: Setup Pixi
-        uses: prefix-dev/setup-pixi@v0.9.3
+        uses: prefix-dev/setup-pixi@v0.11.2
         with:
-          pixi-version: v0.76.0
+          pixi-version: v0.82.0
           cache: true
           cache-write: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
           environments: tests
