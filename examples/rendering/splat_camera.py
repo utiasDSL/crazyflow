@@ -73,7 +73,7 @@ def main(plot: bool = False):
         sim.state_control(trajectory(t, sim.n_worlds, sim.n_drones))
         sim.step(sim.freq // fps)
         # Render each drone's fpv across all worlds, hiding each drone from its own view.
-        views = np.asarray(render_splat_rgb(sim, resolution=resolution))
+        views = render_splat_rgb(sim, resolution=resolution)
         if plot:
             update_plot(views)
     sim.close()

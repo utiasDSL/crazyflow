@@ -226,7 +226,7 @@ def main() -> None:
     sim.reset()
     start_pos = trajectory(0.0)["pos"]
     drone_params = load_params(Dynamics.first_principles, DRONE)
-    hover_thrust_value = np.asarray(drone_params["mass"] * 9.81, dtype=np.float32)
+    hover_thrust_value = drone_params["mass"] * 9.81
     hover_rotor_vel = motor_force2rotor_vel(
         np.full(4, hover_thrust_value / 4.0, dtype=np.float32), drone_params["rpm2thrust"]
     )
@@ -259,7 +259,7 @@ def main() -> None:
     action_low = jax.device_put(
         jnp.array([-MAX_CMD_ANGLE, -MAX_CMD_ANGLE, 0.0, 0.0], dtype=jnp.float32), controller_device
     )
-    max_thrust_value = np.asarray(4.0 * drone_params["thrust_max"], dtype=np.float32)
+    max_thrust_value = 4.0 * drone_params["thrust_max"]
     action_high = jax.device_put(
         jnp.array([MAX_CMD_ANGLE, MAX_CMD_ANGLE, 0.0, max_thrust_value], dtype=jnp.float32),
         controller_device,
@@ -307,7 +307,7 @@ def main() -> None:
         thrust_estimate += thrust_dyn_coef * (action[3] - thrust_estimate) / CTRL_FREQ
         sim.attitude_control(action[None, None])
         sim.step(sim.freq // CTRL_FREQ)
-        position_history.append(np.asarray(sim.data.states.pos[0, 0]))
+        position_history.append(sim.data.states.pos[0, 0])
 
         if RENDER and ((step * FPS) % CTRL_FREQ) < FPS:
             col_ref = np.array([0.0, 0.1, 1.0, 1.0])

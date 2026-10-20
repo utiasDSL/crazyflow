@@ -39,7 +39,7 @@ def main():
     position_ctrl = partial(parametrize(state2attitude, sim.drone), ctrl_freq=sim.control_freq)
     pos_err_i = np.zeros(3)
     cmd = np.zeros((sim.n_worlds, sim.n_drones, 4))  # [roll, pitch, yaw, thrust]
-    pos_start = np.asarray(sim.data.states.pos[0, 0])
+    pos_start = sim.data.states.pos[0, 0]
     for i in range(int(duration * sim.control_freq)):
         pos, quat = np.asarray(sim.data.states.pos[0, 0]), np.asarray(sim.data.states.quat[0, 0])
         vel = np.asarray(sim.data.states.vel[0, 0])

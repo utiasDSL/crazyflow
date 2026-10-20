@@ -86,7 +86,7 @@ def main(plot: bool = False):
             sim.state_control(trajectory(i / sim.control_freq))
             sim.step(sim.freq // sim.control_freq)
             for key in log:
-                log[key].append(jax.tree.map(lambda x: np.asarray(x[0, 0]), sim.data.plugins[key]))
+                log[key].append(jax.tree.map(lambda x: x[0, 0], sim.data.plugins[key]))
         sim.close()
 
         dynamics, fd = (jax.tree.map(lambda *x: np.stack(x), *log[key]) for key in log)

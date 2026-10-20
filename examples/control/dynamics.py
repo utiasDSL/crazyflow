@@ -76,12 +76,12 @@ def main(plot: bool = False, render: bool = False) -> None:
         times = np.arange(n_steps + 1) / sim.control_freq
         commands = np.stack([trajectory(t) for t in times])
         reference = commands[:, 0, 0, 0:3]
-        positions = [np.asarray(sim.data.states.pos[0, 0])]
+        positions = [sim.data.states.pos[0, 0]]
 
         for i, cmd in enumerate(commands[1:]):
             sim.state_control(cmd)
             sim.step(sim.freq // sim.control_freq)
-            positions.append(np.asarray(sim.data.states.pos[0, 0]))
+            positions.append(sim.data.states.pos[0, 0])
             if ((i * FPS) % sim.control_freq) < FPS and render:
                 sim.render()
 

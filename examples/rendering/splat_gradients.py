@@ -152,19 +152,17 @@ def main(plot: bool = False) -> None:
     _, yaw_gradient = pose_gradient(zeros, yaw_angles)
     sim.close()
 
-    z_offsets = np.asarray(z_offsets)
-    yaw_angles = np.asarray(yaw_angles)
     experiments = (
         (
             100.0 * z_offsets,
-            np.asarray(z_gradient),
+            z_gradient,
             z_offsets,
             "Z translation only",
             "z offset from baseline (cm)",
         ),
         (
             np.rad2deg(yaw_angles),
-            np.asarray(yaw_gradient),
+            yaw_gradient,
             yaw_angles,
             "Yaw rotation only",
             "yaw offset from baseline (degrees)",

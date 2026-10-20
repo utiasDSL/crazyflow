@@ -60,7 +60,7 @@ def ground_effect_fn(data: SimData) -> SimData:
 
 def measure_hover_points(
     sim: Sim, heights: np.ndarray, render: bool = False
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[list[float], list[float]]:
     """Hold at each setpoint and return the mean measured height and thrust command."""
     command = np.zeros((sim.n_worlds, sim.n_drones, 16))
     command[..., 9:13] = R.from_euler("z", 0.0).as_quat()
@@ -90,7 +90,7 @@ def measure_hover_points(
         hover_heights.append(np.mean(height_samples))
         hover_thrusts.append(np.mean(thrust_samples))
 
-    return np.asarray(hover_heights), np.asarray(hover_thrusts)
+    return hover_heights, hover_thrusts
 
 
 def main(plot: bool = False, render: bool = False) -> None:
@@ -112,7 +112,7 @@ def main(plot: bool = False, render: bool = False) -> None:
         plot_results(hover_heights, hover_thrusts)
 
 
-def plot_results(hover_heights: np.ndarray, hover_thrusts: np.ndarray):
+def plot_results(hover_heights: list[float], hover_thrusts: list[float]):
     import matplotlib.pyplot as plt
 
     plt.scatter(hover_heights, hover_thrusts)

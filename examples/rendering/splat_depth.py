@@ -68,7 +68,7 @@ def main(plot: bool = False):
     for i in range(DURATION * FPS):
         sim.state_control(trajectory(i / FPS))
         sim.step(sim.freq // FPS)
-        depth = np.asarray(render(sim.data))[0, 0, ..., 3]
+        depth = render(sim.data)[0, 0, ..., 3]
         if plot:
             update_plot(depth)
     sim.close()

@@ -171,7 +171,7 @@ def plot_hover_velocity_field(source_positions: np.ndarray, data: SimData) -> No
         source_to_point = source_pos - points
         s = source_to_point[..., 2]
         r = np.linalg.vector_norm(source_to_point[..., :2], axis=-1)
-        u_downwash += np.asarray(downwash_speed(jnp.asarray(s), jnp.asarray(r), u_hover))
+        u_downwash += downwash_speed(jnp.asarray(s), jnp.asarray(r), u_hover)
 
     fig, ax = plt.subplots(figsize=(6, 4.5), layout="constrained")
     image = ax.pcolormesh(X, Z, u_downwash, shading="auto", cmap="viridis")
@@ -241,9 +241,9 @@ def main(plot: bool = False) -> None:
         sim.state_control(command)
         sim.step(sim.freq // sim.control_freq)
 
-        z_positions.append(np.asarray(sim.data.states.pos[0, :, 2]))
-        downwash_force_z.append(np.asarray(sim.data.states.force[0, 1, 2]))
-        downwash_pitch_torque.append(np.asarray(sim.data.states.torque[0, 1, 1]))
+        z_positions.append(sim.data.states.pos[0, :, 2])
+        downwash_force_z.append(sim.data.states.force[0, 1, 2])
+        downwash_pitch_torque.append(sim.data.states.torque[0, 1, 1])
         sim.render()
 
     sim.close()
@@ -260,9 +260,9 @@ def main(plot: bool = False) -> None:
 
 
 def plot_results(
-    z_positions: list[np.ndarray],
-    downwash_force_z: list[np.ndarray],
-    downwash_pitch_torque: list[np.ndarray],
+    z_positions: list[Array],
+    downwash_force_z: list[Array],
+    downwash_pitch_torque: list[Array],
     upper_pos: np.ndarray,
     data: SimData,
     control_freq: int,
@@ -289,7 +289,7 @@ def plot_results(
     axes[2].set_ylabel("downwash pitch torque y (Nm)")
     axes[2].legend()
 
-    plot_hover_velocity_field(np.asarray([upper_pos]), data)
+    plot_hover_velocity_field(upper_pos[None], data)
     plt.show()
 
 
