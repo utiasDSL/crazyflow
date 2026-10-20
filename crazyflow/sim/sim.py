@@ -329,8 +329,12 @@ class Sim:
         root = ET.fromstring(spec.to_xml())
         asset = root.find("asset")
         body0 = root.find(f".//body[@name='{drone0_body}']")
+        assert asset is not None, "Drone XML has no <asset> element"
+        assert body0 is not None, f"Drone XML has no <body> element named {drone0_body}"
         frame = next(p for p in root.iter() if body0 in p)  # the body lives under the attach frame
-        dynamic = [m for m in asset.findall("material") if m.get("name").startswith(_DYN_MATERIAL)]
+        dynamic = [
+            m for m in asset.findall("material") if m.attrib["name"].startswith(_DYN_MATERIAL)
+        ]
         for i in range(1, self.n_drones):
             body = copy.deepcopy(body0)
             for el in body.iter():  # suffix unique names + dynamic-material refs. keep shared refs
@@ -341,7 +345,7 @@ class Sim:
             frame.append(body)
             for material in dynamic:
                 clone = copy.deepcopy(material)
-                clone.set("name", f"{material.get('name')[:-2]}:{i}")
+                clone.set("name", f"{material.attrib['name'][:-2]}:{i}")
                 asset.append(clone)
         new_spec = mujoco.MjSpec.from_string(ET.tostring(root, encoding="unicode"))
         new_spec.copy_during_attach = True  # write-only, re-apply after from_string() drops it
