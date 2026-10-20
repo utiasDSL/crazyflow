@@ -16,7 +16,7 @@ from flax.struct import PyTreeNode
 from jax import Array
 
 if TYPE_CHECKING:
-    from types import ModuleType
+    from types import FunctionType, ModuleType
 
 CORE_NDIM_KEY = "core_ndim"
 """Metadata key for the number of dimensions a dataclass field has without any batch axes."""
@@ -168,7 +168,7 @@ def parametrize(
     return partial(fn, **kwargs)
 
 
-def filter_to_signature(params: dict, fn: Callable) -> dict:
+def filter_to_signature(params: dict, fn: FunctionType) -> dict:
     """Keep only the params accepted by ``fn``.
 
     Asserts that every keyword-only parameter of ``fn`` (the injectable params, as opposed to the

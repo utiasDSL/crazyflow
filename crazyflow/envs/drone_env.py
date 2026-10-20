@@ -71,7 +71,7 @@ class DroneEnv(VectorEnv):
         drone: Drone = Drone.cf2x_L250,
         freq: int = 500,
         device: str = "cpu",
-        reset_randomization: Callable[[SimData, Array], SimData] | None = None,
+        reset_randomization: Callable[[SimData, SimData, Array | None], SimData] | None = None,
     ):
         """Initialize the CrazyflowEnv.
 
@@ -206,7 +206,7 @@ class DroneEnv(VectorEnv):
         return {k: v[:, 0, :] for k, v in obs.items()}
 
     @staticmethod
-    def _reset_randomization(data: SimData, _: SimData, mask: Array) -> SimData:
+    def _reset_randomization(data: SimData, _: SimData, mask: Array | None = None) -> SimData:
         """Randomize the initial position and velocity of the drones.
 
         This function will get compiled into the reset function of the simulation. Therefore, it

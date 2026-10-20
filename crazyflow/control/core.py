@@ -14,7 +14,7 @@ from crazyflow.utils import filter_to_signature, to_xp
 from crazyflow.utils import parametrize as _parametrize
 
 if TYPE_CHECKING:
-    from types import ModuleType
+    from types import FunctionType, ModuleType
 
     from crazyflow._typing import Array  # To be changed to array_api_typing later
     from crazyflow.drones import Drone
@@ -123,7 +123,7 @@ def load_params(
 
 
 def load_fn_params(
-    fn: Callable, drone: Drone, xp: ModuleType | None = None, device: str | None = None
+    fn: FunctionType, drone: Drone, xp: ModuleType | None = None, device: str | None = None
 ) -> dict[str, Array]:
     """Load the parameters a controller function accepts.
 

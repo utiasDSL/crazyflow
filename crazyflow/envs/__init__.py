@@ -8,10 +8,13 @@ from crazyflow.envs.reach_vel_env import ReachVelEnv
 
 __all__ = ["ReachPosEnv", "ReachVelEnv", "LandingEnv", "NormalizeActions", "FigureEightEnv"]
 
-register(id="DroneReachPos-v0", vector_entry_point=ReachPosEnv)
+register(id="DroneReachPos-v0", vector_entry_point="crazyflow.envs.reach_pos_env:ReachPosEnv")
 
-register(id="DroneReachVel-v0", vector_entry_point=ReachVelEnv)
+register(id="DroneReachVel-v0", vector_entry_point="crazyflow.envs.reach_vel_env:ReachVelEnv")
 
-register(id="DroneLanding-v0", vector_entry_point=LandingEnv)
+register(id="DroneLanding-v0", vector_entry_point="crazyflow.envs.landing_env:LandingEnv")
 
-register(id="DroneFigureEightTrajectory-v0", vector_entry_point=FigureEightEnv)
+register(
+    id="DroneFigureEightTrajectory-v0",
+    vector_entry_point="crazyflow.envs.figure_8_env:FigureEightEnv",
+)

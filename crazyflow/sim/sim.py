@@ -5,7 +5,7 @@ import xml.etree.ElementTree as ET
 from collections import OrderedDict
 from functools import partial, wraps
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, ParamSpec, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, Concatenate, ParamSpec, TypeVar
 
 import jax
 import jax.numpy as jnp
@@ -29,7 +29,7 @@ from crazyflow.control.transform import motor_force2rotor_vel
 from crazyflow.drones import Drone
 from crazyflow.dynamics import Dynamics
 from crazyflow.dynamics import load_params as load_dynamics_params
-from crazyflow.exception import ConfigError, NotInitializedError
+from crazyflow.exception import ConfigError
 from crazyflow.sim.data import SimControls, SimCore, SimData, SimParams, SimState, SimStateDeriv
 from crazyflow.sim.dynamics import (
     first_principles_dynamics,
@@ -51,11 +51,13 @@ Params = ParamSpec("Params")  # Represents arbitrary parameters
 Return = TypeVar("Return")  # Represents the return type
 
 
-def requires_mujoco_sync(fn: Callable[Params, Return]) -> Callable[Params, Return]:
+def requires_mujoco_sync(
+    fn: Callable[Concatenate[Sim, Params], Return],
+) -> Callable[Concatenate[Sim, Params], Return]:
     """Decorator to ensure that the simulation data is synchronized with the MuJoCo mjx data."""
 
     @wraps(fn)
-    def wrapper(sim: Sim, *args: Any, **kwargs: Any) -> SimData:
+    def wrapper(sim: Sim, *args: Params.args, **kwargs: Params.kwargs) -> Return:
         if not sim.data.core.mjx_synced:
             sim.data, sim.mjx_data = sync_sim2mjx(sim.data, sim.mjx_data, sim.mjx_model)
         return fn(sim, *args, **kwargs)
@@ -75,6 +77,11 @@ class Sim:
     ``(n_worlds, n_drones, ...)`` shape, even for a single world and drone. ``n_worlds`` indexes
     parallel copies of the scene and ``n_drones`` the drones within each world.
     """
+
+    _reset: Callable[[SimData, SimData, Array | None], SimData]
+    """Reset function built from the reset pipeline to reset the simulation data."""
+    _step: Callable[[SimData, int], SimData]
+    """Step function built from the step pipeline to advance the simulation by N steps."""
 
     def __init__(
         self,
@@ -151,9 +158,9 @@ class Sim:
             self.data = build_sharded_data(partial(self.init_data, *freqs), rng_key, mesh)
         self.default_data: SimData = self.build_default_data()
 
-        # Build the simulation pipeline and overwrite the default _step implementation with it
+        # Build the simulation pipeline into _step and _reset
         self.reset_pipeline: OrderedDict[
-            str, Callable[[SimData, SimData, Array[bool] | None], SimData]
+            str, Callable[[SimData, SimData, Array | None], SimData]
         ] = OrderedDict()
         append_fn(self.reset_pipeline, reset)
 
@@ -190,7 +197,7 @@ class Sim:
     def step(self, n_steps: int = 1):
         """Simulate all drones in all worlds for n time steps."""
         assert n_steps > 0, "Number of steps must be positive"
-        self.data = self._step(self.data, n_steps=n_steps)
+        self.data = self._step(self.data, n_steps)
 
     def state_control(self, controls: Array):
         """Set the desired state for all drones in all worlds."""
@@ -610,14 +617,6 @@ class Sim:
         geom_start = self.mj_model.body_geomadr[body_id]
         geom_count = self.mj_model.body_geomnum[body_id]
         return contacts(geom_start, geom_count, self.mjx_data)
-
-    @staticmethod
-    def _reset(data: SimData, default_data: SimData, mask: Array | None = None) -> SimData:
-        raise NotInitializedError("_reset call before building the simulation pipeline.")
-
-    @staticmethod
-    def _step(data: SimData, n_steps: int) -> SimData:
-        raise NotInitializedError("_step call before building the simulation pipeline.")
 
 
 def build_control_fns(
