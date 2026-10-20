@@ -119,8 +119,8 @@ class DroneEnv(VectorEnv):
         )
         self.observation_space = batch_space(self.single_observation_space, self.sim.n_worlds)
 
-    def step(self, action: Array) -> tuple[Array, Array, Array, Array, dict]:
-        self._apply_action(action)
+    def step(self, actions: Array) -> tuple[Array, Array, Array, Array, dict]:
+        self._apply_action(actions)
         self.sim.step(self.n_substeps)
         # Reset all environments which terminated or were truncated in the last step
         self._reset(mask=self._marked_for_reset)
@@ -167,7 +167,7 @@ class DroneEnv(VectorEnv):
     def render(self):
         self.sim.render()
 
-    def close(self):
+    def close_extras(self):
         self.sim.close()
 
     def _reset(self, mask: Array | None = None, options: dict | None = None) -> None:
@@ -181,9 +181,6 @@ class DroneEnv(VectorEnv):
 
     def truncated(self) -> Array:
         return self._truncated(self.sim.time[..., 0], self.max_episode_time)
-
-    def _reward():
-        raise NotImplementedError
 
     @staticmethod
     @jax.jit

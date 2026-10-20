@@ -32,7 +32,7 @@ class ReachPosEnv(DroneEnv):
         pos_min = jnp.array([-1.0, -1.0, 1.0]) if pos_min is None else pos_min
         pos_max = jnp.array([1.0, 1.0, 2.0]) if pos_max is None else pos_max
         reset_randomization = partial(
-            self._reset_randomization, pmin=pos_min, pmax=pos_max, vmin=vel_min, vmax=vel_max
+            self._randomize_pos_vel, pmin=pos_min, pmax=pos_max, vmin=vel_min, vmax=vel_max
         )
         super().__init__(
             num_envs=num_envs,
@@ -99,7 +99,7 @@ class ReachPosEnv(DroneEnv):
         return new_goal
 
     @staticmethod
-    def _reset_randomization(
+    def _randomize_pos_vel(
         data: SimData, _: SimData, mask: Array, pmin: Array, pmax: Array, vmin: float, vmax: float
     ) -> SimData:
         shape = (data.core.n_worlds, data.core.n_drones, 3)
