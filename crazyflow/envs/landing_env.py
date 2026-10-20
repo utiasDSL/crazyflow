@@ -38,6 +38,7 @@ class LandingEnv(DroneEnv):
 
     def render(self):
         if self.sim.viewer is not None:
+            assert self.sim.viewer.viewer is not None, "The viewer has not opened a window yet"
             self.sim.viewer.viewer.add_marker(
                 type=mujoco.mjtGeom.mjGEOM_SPHERE,
                 size=np.array([0.02, 0.02, 0.02]),

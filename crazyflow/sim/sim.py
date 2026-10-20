@@ -260,6 +260,7 @@ class Sim:
             if mode == "human" and cam_id > -1:
                 # Render one frame to force mj to create the viewer
                 self.viewer.render(mode)
+                assert self.viewer.viewer is not None, "Rendering did not open a viewer window"
                 self.viewer.viewer.cam.fixedcamid = cam_id
                 self.viewer.viewer.cam.type = mujoco.mjtCamera.mjCAMERA_FIXED
 
