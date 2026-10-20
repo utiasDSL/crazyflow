@@ -166,7 +166,7 @@ def dynamics_euler(
     # Note that we are abusing the rotor_vel state as the thrust
     if rotor_vel is None:
         warnings.warn("Rotor velocity not provided, using commanded rotor velocity.")
-        rotor_vel = cmd_f[..., None]
+        rotor_vel = xp.broadcast_to(cmd_f[..., None], (*cmd_f.shape, 4))
     rotor_vel_dot = thrust_dyn_coef * (cmd_f[..., None] - rotor_vel)
     forces_motor = rotor_vel[..., 0:1]  # (..., 1)
     thrust = acc_coef + cmd_f_coef * forces_motor

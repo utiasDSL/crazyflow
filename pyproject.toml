@@ -180,7 +180,7 @@ gpu = { features = ["gpu"], solve-group = "gpu" }
 benchmark = { features = ["benchmark", "gpu"], solve-group = "gpu" }
 gpu-tests = { features = ["tests", "gpu"], solve-group = "gpu" }
 dist = { features = ["dist"], solve-group = "default" }
-typecheck = { features = ["typecheck", "tests"], solve-group = "default" }
+typecheck = { features = ["typecheck"], solve-group = "default" }
 
 [tool.pixi.feature.tests.dependencies]
 pytest = ">=8.4.1"
@@ -197,6 +197,7 @@ test-docs = { cmd = "pytest -v --markdown-docs --markdown-docs-syntax=superfence
 
 [tool.pixi.feature.typecheck.dependencies]
 ty = ">=0.0.89"
+matplotlib = "*"  # Required for crazyflow.dynamics.utils.identification
 
 [tool.pixi.feature.typecheck.pypi-dependencies]
 mujoco-stubs = "==3.10.0.1"  # Community maintained, so keep track if it remains active 

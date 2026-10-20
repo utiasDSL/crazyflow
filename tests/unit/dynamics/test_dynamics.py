@@ -62,11 +62,7 @@ def create_rnd_commands(shape: tuple[int, ...] = (), dim: int = 4) -> Array:
 
 
 def make_inputs(
-    dynamics: Callable,
-    *,
-    batch: tuple[int, ...] = (),
-    rotor_vel: bool = True,
-    ext_wrench: bool = False,
+    dynamics: Callable, *, batch: tuple[int, ...] = (), ext_wrench: bool = False
 ) -> dict[str, Array]:
     """Build random inputs for a parametrized dynamics function, to splat as ``dynamics(**inp)``.
 
@@ -77,14 +73,12 @@ def make_inputs(
     Args:
         dynamics: The (parametrized) dynamics function.
         batch: Batch shape of the inputs.
-        rotor_vel: Whether to provide rotor_vel (ignored for dynamics without rotor dynamics).
-            Set to False to exercise the commanded-rotor-velocity fallback.
         ext_wrench: Whether to provide external force/torque disturbances.
     """
     pos, quat, vel, ang_vel, rv, dist_f, dist_t = create_rnd_states(batch)
     cmd = create_rnd_commands(batch)
     inp = {"pos": pos, "quat": quat, "vel": vel, "ang_vel": ang_vel, "cmd": cmd}
-    if rotor_vel and dynamics_features(dynamics)["rotor_dynamics"]:
+    if dynamics_features(dynamics)["rotor_dynamics"]:
         inp["rotor_vel"] = rv
     if ext_wrench:
         inp["dist_f"], inp["dist_t"] = dist_f, dist_t
@@ -143,7 +137,7 @@ def assert_shapes(dynamics: Callable, inp: dict):
     expected = [inp["pos"], inp["quat"], inp["vel"], inp["ang_vel"]]
     if dynamics_features(dynamics)["rotor_dynamics"]:
         names.append("drotor_vel")
-        expected.append(inp.get("rotor_vel"))
+        expected.append(inp["rotor_vel"])
     for name, dx, x in zip(names, out, expected, strict=True):
         assert_array_meta(dx, x, name=name)
 
@@ -155,9 +149,12 @@ def check_shapes(dynamics: Callable, batch: tuple[int, ...] = ()):
     if not dynamics_features(dynamics)["rotor_dynamics"]:
         return
     for ext_wrench in (False, True):
-        inp = make_inputs(dynamics, batch=batch, rotor_vel=False, ext_wrench=ext_wrench)
+        inp = make_inputs(dynamics, batch=batch, ext_wrench=ext_wrench)
+        rotor_vel = inp.pop("rotor_vel")
         with pytest.warns(UserWarning, match="Rotor velocity not provided"):
-            assert_shapes(dynamics, inp)
+            drotor_vel = dynamics(**inp)[-1]
+        assert_array_meta(drotor_vel, rotor_vel, name="drotor_vel")
+        assert not xp.any(drotor_vel), "Rotors that follow the command do not accelerate"
 
 
 @pytest.mark.unit
