@@ -105,13 +105,13 @@ class ControlData(typing.Protocol):
 class SimControls(PyTreeNode):
     mode: Control = field(pytree_node=False)
     """Control mode of the simulation."""
-    state: ControlData | None
+    state: MellingerStateData | None
     """State control data."""
-    attitude: ControlData | None
+    attitude: MellingerAttitudeData | None
     """Attitude control data."""
-    body_rate: ControlData | None
+    body_rate: MellingerBodyRateData | None
     """Body rate control data."""
-    force_torque: ControlData | None
+    force_torque: MellingerForceTorqueData | None
     """Force and torque control data."""
     rotor_vel: Array = field(metadata={CORE_NDIM_KEY: 1})  # (N, M, 4)
     """Desired motor speed."""

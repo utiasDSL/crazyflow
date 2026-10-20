@@ -634,7 +634,7 @@ class MellingerForceTorqueData(PyTreeNode):
 def control_state2attitude(data: SimData) -> SimData:
     """Compute the updated controls for the state controller."""
     states = data.states
-    state_ctrl: MellingerStateData = data.controls.state
+    state_ctrl = data.controls.state
     assert state_ctrl is not None, "Using state controller without initialized data"
     mask = controllable(data.core.steps, data.core.freq, state_ctrl.steps, state_ctrl.freq)
     state_ctrl = leaf_replace(state_ctrl, mask, cmd=state_ctrl.staged_cmd)
@@ -657,7 +657,7 @@ def control_state2attitude(data: SimData) -> SimData:
 def control_attitude2force_torque(data: SimData) -> SimData:
     """Compute the updated controls for the attitude controller."""
     states = data.states
-    attitude_ctrl: MellingerAttitudeData = data.controls.attitude
+    attitude_ctrl = data.controls.attitude
     assert attitude_ctrl is not None, "Using attitude controller without initialized data"
     mask = controllable(data.core.steps, data.core.freq, attitude_ctrl.steps, attitude_ctrl.freq)
     prev_ang_vel_des = attitude_ctrl.ang_vel_des
@@ -697,7 +697,7 @@ def control_attitude2force_torque(data: SimData) -> SimData:
 def control_body_rate2force_torque(data: SimData) -> SimData:
     """Compute the updated controls for the body rate controller."""
     states = data.states
-    body_rate_ctrl: MellingerBodyRateData = data.controls.body_rate
+    body_rate_ctrl = data.controls.body_rate
     assert body_rate_ctrl is not None, "Using body rate controller without initialized data"
     mask = controllable(data.core.steps, data.core.freq, body_rate_ctrl.steps, body_rate_ctrl.freq)
     prev_cmd = body_rate_ctrl.cmd
@@ -729,7 +729,8 @@ def control_body_rate2force_torque(data: SimData) -> SimData:
 
 def control_commit_attitude(data: SimData) -> SimData:
     """Commit the staged attitude command to the controller setpoint."""
-    attitude_ctrl: MellingerAttitudeData = data.controls.attitude
+    attitude_ctrl = data.controls.attitude
+    assert attitude_ctrl is not None, "Using attitude controller without initialized data"
     mask = controllable(data.core.steps, data.core.freq, attitude_ctrl.steps, attitude_ctrl.freq)
     attitude_ctrl = leaf_replace(attitude_ctrl, mask, cmd=attitude_ctrl.staged_cmd)
     return data.replace(controls=data.controls.replace(attitude=attitude_ctrl))
@@ -737,7 +738,7 @@ def control_commit_attitude(data: SimData) -> SimData:
 
 def control_force_torque2rotor_vel(data: SimData) -> SimData:
     """Compute the updated controls for the thrust controller."""
-    ft_ctrl: MellingerForceTorqueData = data.controls.force_torque
+    ft_ctrl = data.controls.force_torque
     assert ft_ctrl is not None, "Using force torque controller without initialized data"
     mask = controllable(data.core.steps, data.core.freq, ft_ctrl.steps, ft_ctrl.freq)
     ft_ctrl = leaf_replace(ft_ctrl, mask, cmd=ft_ctrl.staged_cmd)

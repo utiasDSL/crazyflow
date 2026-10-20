@@ -553,15 +553,19 @@ class Sim:
 
     @property
     def control_freq(self) -> int:
-        if self.control == Control.state:
-            return self.data.controls.state.freq
-        if self.control == Control.attitude:
-            return self.data.controls.attitude.freq
-        if self.control == Control.body_rate:
-            return self.data.controls.body_rate.freq
-        if self.control == Control.force_torque:
-            return self.data.controls.force_torque.freq
-        raise NotImplementedError(f"Control mode {self.control} not implemented")
+        match self.control:
+            case Control.state:
+                control = self.data.controls.state
+            case Control.attitude:
+                control = self.data.controls.attitude
+            case Control.body_rate:
+                control = self.data.controls.body_rate
+            case Control.force_torque:
+                control = self.data.controls.force_torque
+            case _:
+                raise NotImplementedError(f"Control mode {self.control} not implemented")
+        assert control is not None, f"Control mode {self.control} has no initialized data"
+        return control.freq
 
     @property
     def controllable(self) -> Array:
@@ -753,6 +757,7 @@ def clip_rotor_vel_cmd(
         rotor_vel = jnp.clip(data.controls.rotor_vel, lower, upper)
         return data.replace(controls=data.controls.replace(rotor_vel=rotor_vel))
     attitude = data.controls.attitude
+    assert attitude is not None, "attitude control data not initialized"
     cmd = attitude.cmd.at[..., -1].set(jnp.clip(attitude.cmd[..., -1], lower, upper))
     return data.replace(controls=data.controls.replace(attitude=attitude.replace(cmd=cmd)))
 

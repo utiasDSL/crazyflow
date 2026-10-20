@@ -35,6 +35,7 @@ def first_principles_dynamics(data: SimData) -> SimStateDeriv:
 def so_rpy_dynamics(data: SimData) -> SimStateDeriv:
     """Wrap the so_rpy dynamics."""
     params: so_rpy.Params = data.params
+    assert data.controls.attitude is not None, "attitude control data not initialized"
     vel, _, acc, ang_acc = so_rpy.dynamics(
         pos=data.states.pos,
         quat=data.states.quat,
@@ -54,6 +55,7 @@ def so_rpy_dynamics(data: SimData) -> SimStateDeriv:
 def so_rpy_rotor_dynamics(data: SimData) -> SimStateDeriv:
     """Wrap the so_rpy_rotor dynamics."""
     params: so_rpy_rotor.Params = data.params
+    assert data.controls.attitude is not None, "attitude control data not initialized"
     vel, _, acc, ang_acc, rotor_acc = so_rpy_rotor.dynamics(
         pos=data.states.pos,
         quat=data.states.quat,
@@ -73,6 +75,7 @@ def so_rpy_rotor_dynamics(data: SimData) -> SimStateDeriv:
 def so_rpy_rotor_drag_dynamics(data: SimData) -> SimStateDeriv:
     """Wrap the so_rpy_rotor_drag dynamics."""
     params: so_rpy_rotor_drag.Params = data.params
+    assert data.controls.attitude is not None, "attitude control data not initialized"
     vel, _, acc, ang_acc, rotor_acc = so_rpy_rotor_drag.dynamics(
         pos=data.states.pos,
         quat=data.states.quat,
