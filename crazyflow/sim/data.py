@@ -22,6 +22,9 @@ from crazyflow.dynamics.so_rpy_rotor import Params as SoRpyRotorParams
 from crazyflow.dynamics.so_rpy_rotor_drag import Params as SoRpyRotorDragParams
 from crazyflow.utils import CORE_NDIM_KEY
 
+if typing.TYPE_CHECKING:
+    from crazyflow.drones import Drone
+
 
 class SimState(PyTreeNode):
     pos: Array = field(metadata={CORE_NDIM_KEY: 1})  # (N, M, 3)
@@ -121,7 +124,7 @@ class SimControls(PyTreeNode):
         n_worlds: int,
         n_drones: int,
         control: Control,
-        drone: str,
+        drone: Drone,
         state_freq: int,
         attitude_freq: int,
         body_rate_freq: int,
@@ -213,7 +216,7 @@ class SimParams(typing.Protocol):
     """Inverse of the inertia matrix of the drone."""
 
     @staticmethod
-    def create(dynamics: Dynamics, drone: str, device: Device) -> SimParams:
+    def create(dynamics: Dynamics, drone: Drone, device: Device) -> SimParams:
         """Create the default parameters for the simulation."""
         match dynamics:
             case Dynamics.first_principles:

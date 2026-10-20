@@ -141,7 +141,7 @@ def load_fn_params(
         A flat dict mapping parameter names to arrays in the requested array namespace.
     """
     assert callable(fn), f"Expected a function, got {type(fn)}"
-    dynamics = fn.__module__.split(".")[-2]
+    dynamics = Dynamics(fn.__module__.split(".")[-2])
     return filter_to_signature(load_params(dynamics, drone, xp=xp, device=device), fn)
 
 

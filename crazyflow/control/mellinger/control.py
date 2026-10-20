@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     from jax import Device
 
     from crazyflow._typing import Array  # To be changed to array_api_typing later
+    from crazyflow.drones import Drone
     from crazyflow.sim.data import SimData
 
 
@@ -506,7 +507,7 @@ class MellingerStateData(PyTreeNode):
 
     @staticmethod
     def create(
-        n_worlds: int, n_drones: int, freq: int, drone: str, device: Device
+        n_worlds: int, n_drones: int, freq: int, drone: Drone, device: Device
     ) -> MellingerStateData:
         """Create a default set of state data for the simulation."""
         zeros_3d = jnp.zeros((n_worlds, n_drones, 3), device=device)
@@ -545,7 +546,7 @@ class MellingerAttitudeData(PyTreeNode):
 
     @staticmethod
     def create(
-        n_worlds: int, n_drones: int, freq: int, drone: str, device: Device
+        n_worlds: int, n_drones: int, freq: int, drone: Drone, device: Device
     ) -> MellingerAttitudeData:
         """Create a default set of attitude data for the simulation."""
         zeros_3d = jnp.zeros((n_worlds, n_drones, 3), device=device)
@@ -586,7 +587,7 @@ class MellingerBodyRateData(PyTreeNode):
 
     @staticmethod
     def create(
-        n_worlds: int, n_drones: int, freq: int, drone: str, device: Device
+        n_worlds: int, n_drones: int, freq: int, drone: Drone, device: Device
     ) -> MellingerBodyRateData:
         """Create a default set of body rate data for the simulation."""
         zeros_3d = jnp.zeros((n_worlds, n_drones, 3), device=device)
@@ -621,7 +622,7 @@ class MellingerForceTorqueData(PyTreeNode):
 
     @staticmethod
     def create(
-        n_worlds: int, n_drones: int, freq: int, drone: str, device: Device
+        n_worlds: int, n_drones: int, freq: int, drone: Drone, device: Device
     ) -> MellingerForceTorqueData:
         zeros_4d = jnp.zeros((n_worlds, n_drones, 4), device=device)
         steps = -jnp.ones((n_worlds, 1), dtype=jnp.int32, device=device)

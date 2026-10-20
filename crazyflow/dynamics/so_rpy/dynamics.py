@@ -32,6 +32,7 @@ if TYPE_CHECKING:
     from jax import Device
 
     from crazyflow._typing import Array  # To be changed to array_api_typing later
+    from crazyflow.drones import Drone
 
 
 @supports(rotor_dynamics=False)
@@ -348,7 +349,7 @@ class Params(PyTreeNode):
     """Rotational dynamics coefficients of the commanded roll, pitch, and yaw."""
 
     @staticmethod
-    def create(drone: str, device: Device) -> Params:
+    def create(drone: Drone, device: Device) -> Params:
         """Create the default parameters for the simulation."""
         p = load_fn_params(dynamics, drone)
         J = jnp.asarray(p["J"], device=device)
