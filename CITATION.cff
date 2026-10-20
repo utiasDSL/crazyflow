@@ -1,9 +1,43 @@
-@misc{schuck2026crazyflow,
-      title={Crazyflow: An Accurate, GPU-Accelerated, Differentiable Drone Simulator in JAX}, 
-      author={Martin Schuck and Marcel P. Rath and Yufei Hua and AbhisheK Goudar and SiQi Zhou and Angela P. Schoellig},
-      year={2026},
-      eprint={2606.01478},
-      archivePrefix={arXiv},
-      primaryClass={cs.RO},
-      url={https://arxiv.org/abs/2606.01478}, 
-}
+cff-version: 1.2.0
+message: "If you use this software, please cite the paper below."
+title: Crazyflow
+abstract: An accurate, GPU-accelerated, differentiable drone simulator in JAX.
+type: software
+license: MIT
+repository-code: "https://github.com/learnsyslab/crazyflow"
+authors:
+  - family-names: Schuck
+    given-names: Martin
+  - family-names: Rath
+    given-names: Marcel P.
+  - family-names: Hua
+    given-names: Yufei
+  - family-names: Goudar
+    given-names: Abhishek
+  - family-names: Zhou
+    given-names: SiQi
+  - family-names: Schoellig
+    given-names: Angela P.
+preferred-citation:
+  type: article
+  title: "Crazyflow: An Accurate, GPU-Accelerated, Differentiable Drone Simulator in JAX"
+  authors:
+    - family-names: Schuck
+      given-names: Martin
+    - family-names: Rath
+      given-names: Marcel P.
+    - family-names: Hua
+      given-names: Yufei
+    - family-names: Goudar
+      given-names: Abhishek
+    - family-names: Zhou
+      given-names: SiQi
+    - family-names: Schoellig
+      given-names: Angela P.
+  year: 2026
+  journal: arXiv preprint
+  url: "https://arxiv.org/abs/2606.01478"
+  identifiers:
+    - type: other
+      value: "arXiv:2606.01478"
+      description: arXiv identifier

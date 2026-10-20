@@ -7,7 +7,7 @@ BibTeX:
 ```bibtex
 @misc{schuck2026crazyflow,
       title={Crazyflow: An Accurate, GPU-Accelerated, Differentiable Drone Simulator in JAX}, 
-      author={Martin Schuck and Marcel P. Rath and Yufei Hua and AbhisheK Goudar and SiQi Zhou and Angela P. Schoellig},
+      author={Martin Schuck and Marcel P. Rath and Yufei Hua and Abhishek Goudar and SiQi Zhou and Angela P. Schoellig},
       year={2026},
       eprint={2606.01478},
       archivePrefix={arXiv},
