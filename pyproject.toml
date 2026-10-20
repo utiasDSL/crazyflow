@@ -198,6 +198,9 @@ test-docs = { cmd = "pytest -v --markdown-docs --markdown-docs-syntax=superfence
 [tool.pixi.feature.typecheck.dependencies]
 ty = ">=0.0.89"
 
+[tool.pixi.feature.typecheck.pypi-dependencies]
+mujoco-stubs = "==3.10.0.1"  # Community maintained, so keep track if it remains active 
+
 [tool.pixi.feature.typecheck.tasks]
 typecheck = { cmd = "ty check --python $CONDA_PREFIX", description = "Type check the package" }
 
