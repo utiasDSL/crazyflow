@@ -30,7 +30,7 @@ from crazyflow.drones import Drone
 from crazyflow.dynamics import Dynamics
 from crazyflow.dynamics import load_params as load_dynamics_params
 from crazyflow.exception import ConfigError
-from crazyflow.sim.data import SimControls, SimCore, SimData, SimParams, SimState, SimStateDeriv
+from crazyflow.sim.data import SimControls, SimCore, SimData, SimState, SimStateDeriv, create_params
 from crazyflow.sim.dynamics import (
     first_principles_dynamics,
     so_rpy_dynamics,
@@ -550,7 +550,7 @@ class Sim:
                 force_torque_freq,
                 device,
             ),
-            params=SimParams.create(self.dynamics, self.drone, device),
+            params=create_params(self.dynamics, self.drone, device),
             core=SimCore.create(self.freq, N, D, drone_mocap_ids, rng_key, device),
         )
         if D > 1:  # If multiple drones, arrange them in a grid
