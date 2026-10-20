@@ -70,9 +70,10 @@ def preprocessing(data: dict[str, Array]) -> dict[str, Array]:
     quat_avg /= np.linalg.norm(quat_avg)
     rot_corr = R.from_quat(quat_avg).inv()
     rot = rot_corr * R.from_quat(data["quat"])
-    data["quat"] = rot.as_quat()
-    data["rpy"] = rot.as_euler("xyz")
-    data["z_axis"] = rot.inv().as_matrix()[..., -1, :]
+    # TODO: Drop the ignore once scipy 2.0 is released
+    data["quat"] = rot.as_quat()  # ty: ignore[unresolved-attribute]
+    data["rpy"] = rot.as_euler("xyz")  # ty: ignore[unresolved-attribute]
+    data["z_axis"] = rot.inv().as_matrix()[..., -1, :]  # ty: ignore[unresolved-attribute]
 
     ### Rotational error
     rot = R.from_quat(data["quat"])
@@ -84,7 +85,8 @@ def preprocessing(data: dict[str, Array]) -> dict[str, Array]:
     data["eR"] = np.stack(
         (eRM[..., 2, 1], eRM[..., 0, 2], eRM[..., 1, 0]), axis=-1
     )  # vee operator (SO3 to R3)
-    data["eR_vec"] = (rot.inv() * R.from_euler("xyz", data["cmd_rpy"], degrees=False)).as_rotvec()
+    eR_rot = rot.inv() * R.from_euler("xyz", data["cmd_rpy"], degrees=False)
+    data["eR_vec"] = eR_rot.as_rotvec()  # ty: ignore[unresolved-attribute]
 
     return data
 
@@ -151,7 +153,7 @@ def derivatives_svf(data: dict[str, Array]) -> dict[str, Array]:
     data["SVF_eR"] = np.stack(
         (eRM[..., 2, 1], eRM[..., 0, 2], eRM[..., 1, 0]), axis=-1
     )  # vee operator (SO3 to R3)
-    data["SVF_eR_vec"] = (rot.inv() * rot_cmd).as_rotvec()
+    data["SVF_eR_vec"] = (rot.inv() * rot_cmd).as_rotvec()  # ty: ignore[unresolved-attribute]
 
     return data
 

@@ -383,7 +383,8 @@ def _attitude2force_torque(
     # Equivalent to eRM = R_des.T @ R_act - R_act.T @ R_des
     # Firmware does not multiply by 0.5 here, but the original paper does. We replicate the firmware
     # exactly to avoid sim2real issues with the original controller parameters.
-    R_delta = (rot_des.inv() * rot).as_matrix()
+    # TODO: Drop the ignore once scipy 2.0 is released
+    R_delta = (rot_des.inv() * rot).as_matrix()  # ty: ignore[unresolved-attribute]
     eRM = R_delta - R_delta.mT
     # Vee operator (SO3 to R3)
     eR = xp.stack((eRM[..., 2, 1], eRM[..., 0, 2], eRM[..., 1, 0]), axis=-1)
