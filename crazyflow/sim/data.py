@@ -122,10 +122,10 @@ class SimControls(PyTreeNode):
         n_drones: int,
         control: Control,
         drone: str,
-        state_freq: int | None,
-        attitude_freq: int | None,
-        body_rate_freq: int | None,
-        force_torque_freq: int | None,
+        state_freq: int,
+        attitude_freq: int,
+        body_rate_freq: int,
+        force_torque_freq: int,
         device: Device,
     ) -> SimControls:
         """Create a default set of controls for the simulation."""
