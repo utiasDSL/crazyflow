@@ -120,7 +120,7 @@ def _integrate(
     dang_vel: Array,
     drotor_vel: Array,
     dt: float,
-) -> tuple[Array, Array, Array, Array]:
+) -> tuple[Array, Array, Array, Array, Array]:
     """Integrate the dynamics forward in time.
 
     Args:
@@ -162,7 +162,7 @@ def _integrate_symplectic(
     dang_vel: Array,
     drotor_vel: Array,
     dt: float,
-) -> tuple[Array, Array, Array, Array]:
+) -> tuple[Array, Array, Array, Array, Array]:
     """Integrate the dynamics forward in time using symplectic integration.
 
     See e.g. https://adamsturge.github.io/Engine-Blog/mydoc_symplectic_euler.html for an explanation

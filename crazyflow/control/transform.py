@@ -48,9 +48,7 @@ def force2pwm(thrust: Array | float, thrust_max: Array | float, pwm_max: Array |
     return thrust / thrust_max * pwm_max
 
 
-def pwm2force(
-    pwm: Array | float, thrust_max: Array | float, pwm_max: Array | float
-) -> Array | float:
+def pwm2force(pwm: Array | float, thrust_max: Array | float, pwm_max: Array | float) -> Array:
     """Convert pwm thrust command to actual thrust.
 
     Args:
@@ -59,6 +57,6 @@ def pwm2force(
         pwm_max: Maximum PWM value
 
     Returns:
-        thrust: Array or float thrust in [N]
+        The thrust in [N].
     """
     return pwm / pwm_max * thrust_max

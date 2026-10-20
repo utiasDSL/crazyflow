@@ -14,7 +14,7 @@ any device. Camera sensors rasterize on the GPU only.
 from __future__ import annotations
 
 from functools import wraps
-from typing import TYPE_CHECKING, Any, Callable, ParamSpec, TypeVar
+from typing import TYPE_CHECKING, Callable, Concatenate, ParamSpec, TypeVar
 
 import jax
 import jax.numpy as jnp
@@ -67,11 +67,13 @@ class SplatData(PyTreeNode):
         return self.means, self.log_scales, self.quats, self.sh_colors, self.logit_opacities
 
 
-def requires_splats(fn: Callable[Params, Return]) -> Callable[Params, Return]:
+def requires_splats(
+    fn: Callable[Concatenate[Sim, Params], Return],
+) -> Callable[Concatenate[Sim, Params], Return]:
     """Decorator to ensure that the simulation has splats attached."""
 
     @wraps(fn)
-    def wrapper(sim: Sim, *args: Any, **kwargs: Any) -> Return:
+    def wrapper(sim: Sim, *args: Params.args, **kwargs: Params.kwargs) -> Return:
         if SPLATS_KEY not in sim.data.plugins:
             raise RuntimeError("No splats attached to this simulation, call attach_splats first")
         return fn(sim, *args, **kwargs)
@@ -79,11 +81,13 @@ def requires_splats(fn: Callable[Params, Return]) -> Callable[Params, Return]:
     return wrapper
 
 
-def requires_gpu(fn: Callable[Params, Return]) -> Callable[Params, Return]:
+def requires_gpu(
+    fn: Callable[Concatenate[Sim, Params], Return],
+) -> Callable[Concatenate[Sim, Params], Return]:
     """Decorator to ensure that the simulation is running on the GPU."""
 
     @wraps(fn)
-    def wrapper(sim: Sim, *args: Any, **kwargs: Any) -> Return:
+    def wrapper(sim: Sim, *args: Params.args, **kwargs: Params.kwargs) -> Return:
         if sim.device.platform != "gpu":
             raise RuntimeError("Gaussian splatting requires running on the GPU.")
         return fn(sim, *args, **kwargs)

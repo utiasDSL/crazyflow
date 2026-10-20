@@ -5,6 +5,7 @@ from gymnasium import spaces
 from gymnasium.vector.utils import batch_space
 from jax import Array
 
+from crazyflow.drones import Drone
 from crazyflow.dynamics import Dynamics
 from crazyflow.envs.drone_env import DroneEnv
 from crazyflow.sim.data import SimData
@@ -29,7 +30,7 @@ class FigureEightEnv(DroneEnv):
         num_envs: int = 1,
         max_episode_time: float = 10.0,
         dynamics: Dynamics = Dynamics.so_rpy,
-        drone: str = "cf2x_L250",
+        drone: Drone = Drone.cf2x_L250,
         freq: int = 500,
         device: str = "cpu",
     ):
@@ -64,12 +65,12 @@ class FigureEightEnv(DroneEnv):
         x = radius * np.sin(t)  # Scale amplitude for 1-meter diameter
         y = np.zeros_like(t)  # x is 0 everywhere
         z = radius / 2 * np.sin(2 * t) + 1  # Scale amplitude for 1-meter diameter
-        self.trajectory = np.array([x, y, z]).T
+        self.trajectory = jnp.array([x, y, z]).T
 
         # Define trajectory sampling parameters
         self.n_samples = n_samples
         self.samples_dt = samples_dt
-        self.sample_offsets = np.array(np.arange(n_samples) * self.freq * samples_dt, dtype=int)
+        self.sample_offsets = jnp.array(np.arange(n_samples) * self.freq * samples_dt, dtype=int)
 
         # Update observation space
         spec = {k: v for k, v in self.single_observation_space.items()}
@@ -79,7 +80,7 @@ class FigureEightEnv(DroneEnv):
 
     def render(self):
         idx = (self.steps + self.sample_offsets[None, ...]) % self.trajectory.shape[0]
-        next_trajectory = self.trajectory[idx, ...]
+        next_trajectory = np.asarray(self.trajectory[idx, ...])
         draw_line(self.sim, next_trajectory[0], start_size=3.0, end_size=3.0)
         draw_points(self.sim, next_trajectory[0], rgba=np.array([1.0, 0, 0, 1]), size=0.01)
         self.sim.render()

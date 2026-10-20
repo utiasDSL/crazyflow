@@ -528,7 +528,7 @@ class Sim:
         attitude_freq: int,
         body_rate_freq: int,
         force_torque_freq: int,
-        rng_key: Array,
+        rng_key: int | Array,
     ) -> SimData:
         """Initialize the simulation data."""
         device = self.device if self.mesh is None else None  # Sharded data is placed by the caller

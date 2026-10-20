@@ -12,6 +12,7 @@ Use [parametrize][crazyflow.dynamics.parametrize] to bind a dynamics function to
 configuration, and ``available_dynamics`` to enumerate all registered dynamics.
 """
 
+from functools import partial
 from typing import Callable
 
 from crazyflow.dynamics.core import (
@@ -72,6 +73,6 @@ def dynamics_features(dynamics: Callable) -> dict[str, bool]:
     dynamics_features(dynamics)  # {'rotor_dynamics': True}
     ```
     """
-    if hasattr(dynamics, "func"):  # Is a partial function
+    if isinstance(dynamics, partial):
         return dynamics_features(dynamics.func)
     return getattr(dynamics, "__dynamics_features__")

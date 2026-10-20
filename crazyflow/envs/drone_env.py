@@ -122,7 +122,7 @@ class DroneEnv(VectorEnv):
         )
         self.observation_space = batch_space(self.single_observation_space, self.sim.n_worlds)
 
-    def step(self, actions: Array) -> tuple[Array, Array, Array, Array, dict]:
+    def step(self, actions: Array) -> tuple[dict[str, Array], Array, Array, Array, dict]:
         self._apply_action(actions)
         self.sim.step(self.n_substeps)
         # Reset all environments which terminated or were truncated in the last step

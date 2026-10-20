@@ -252,7 +252,7 @@ class SimCore(PyTreeNode):
         freq: int,
         n_worlds: int,
         n_drones: int,
-        drone_mocap_ids: Array,
+        drone_mocap_ids: list[int],
         rng_key: int | Array,
         device: Device,
     ) -> SimCore:
