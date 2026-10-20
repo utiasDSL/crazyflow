@@ -1,8 +1,8 @@
 """Render depth images by raycasting the scene geometry.
 
-`render_depth` returns per-pixel distances for rays emitted from the camera. This is faster than full
-RGB rendering and useful for obstacle sensing or depth-based controllers. `build_render_depth_fn`
-compiles a renderer for repeated calls.
+`render_depth` returns per-pixel distances for rays emitted from the camera. This is faster than
+full RGB rendering and useful for obstacle sensing or depth-based controllers.
+`build_render_depth_fn` compiles a renderer for repeated calls.
 
 Run with `--plot` to plot the results, which requires matplotlib from the `tests` environment.
 """

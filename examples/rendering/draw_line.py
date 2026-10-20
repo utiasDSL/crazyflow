@@ -1,5 +1,4 @@
-"""Draw a colored trace behind each of 25 drones in the MuJoCo viewer.
-"""
+"""Draw a colored trace behind each of 25 drones in the MuJoCo viewer."""
 
 from collections import deque
 
