@@ -648,8 +648,10 @@ def control_state2attitude(data: SimData) -> SimData:
         **state_ctrl.params,
     )
     state_ctrl = leaf_replace(state_ctrl, mask, steps=data.core.steps, pos_err_i=pos_err_i)
+    attitude_ctrl = data.controls.attitude
+    assert attitude_ctrl is not None, "Using attitude controller without initialized data"
     attitude_ctrl = leaf_replace(
-        data.controls.attitude, mask, staged_cmd=rpyt, staged_ang_vel_des=state_ctrl.cmd[..., 13:16]
+        attitude_ctrl, mask, staged_cmd=rpyt, staged_ang_vel_des=state_ctrl.cmd[..., 13:16]
     )
     return data.replace(controls=data.controls.replace(state=state_ctrl, attitude=attitude_ctrl))
 
@@ -686,9 +688,9 @@ def control_attitude2force_torque(data: SimData) -> SimData:
         prev_ang_vel=states.ang_vel,
         steps=data.core.steps,
     )
-    ft_ctrl = leaf_replace(
-        data.controls.force_torque, mask, staged_cmd=jnp.concat([force, torque], axis=-1)
-    )
+    ft_ctrl = data.controls.force_torque
+    assert ft_ctrl is not None, "Using force torque controller without initialized data"
+    ft_ctrl = leaf_replace(ft_ctrl, mask, staged_cmd=jnp.concat([force, torque], axis=-1))
     return data.replace(
         states=states, controls=data.controls.replace(attitude=attitude_ctrl, force_torque=ft_ctrl)
     )
@@ -719,9 +721,9 @@ def control_body_rate2force_torque(data: SimData) -> SimData:
         prev_ang_vel=states.ang_vel,
         steps=data.core.steps,
     )
-    ft_ctrl = leaf_replace(
-        data.controls.force_torque, mask, staged_cmd=jnp.concat([force, torque], axis=-1)
-    )
+    ft_ctrl = data.controls.force_torque
+    assert ft_ctrl is not None, "Using force torque controller without initialized data"
+    ft_ctrl = leaf_replace(ft_ctrl, mask, staged_cmd=jnp.concat([force, torque], axis=-1))
     return data.replace(
         controls=data.controls.replace(body_rate=body_rate_ctrl, force_torque=ft_ctrl)
     )

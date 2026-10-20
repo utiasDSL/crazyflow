@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any, Callable, ParamSpec, TypeVar
 import jax
 import jax.numpy as jnp
 import numpy as np
+from flax.struct import PyTreeNode
 from jax import Array
 
 if TYPE_CHECKING:
@@ -33,7 +34,8 @@ def grid_2d(n: int, spacing: float = 1.0, center: Array | None = None) -> Array:
     return grid[order[:n]]
 
 
-T = TypeVar("T")  # PyTree type
+T = TypeVar("T")
+TNode = TypeVar("TNode", bound=PyTreeNode)
 P = ParamSpec("P")
 R = TypeVar("R")
 
@@ -98,7 +100,7 @@ def pytree_replace(tree: T, new_tree: T, batched: T, mask: Array | None = None) 
     return jax.tree.map(_replace, tree, new_tree, batched)
 
 
-def leaf_replace(tree: T, mask: Array | None = None, **kwargs: dict[str, Array]) -> T:
+def leaf_replace(tree: TNode, mask: Array | None = None, **kwargs: Array) -> TNode:
     """Replace elements of a PyTree with the given keyword arguments.
 
     If a mask is provided, the replacement is applied only to the elements indicated by the mask.
