@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any, Callable, Concatenate, ParamSpec, TypeVar
 import jax
 import jax.numpy as jnp
 import mujoco
-import mujoco.mjx as mjx
+import mujoco.mjx as mjx  # ty: ignore[unresolved-import]
 import numpy as np
 from gymnasium.envs.mujoco.mujoco_rendering import MujocoRenderer
 from jax import Array, Device
@@ -44,7 +44,7 @@ from crazyflow.utils import grid_2d, pytree_replace, world_mask
 
 if TYPE_CHECKING:
     from jax.sharding import Mesh
-    from mujoco.mjx import Data, Model
+    from mujoco.mjx import Data, Model  # ty: ignore[unresolved-import]
     from numpy.typing import NDArray
 
 Params = ParamSpec("Params")  # Represents arbitrary parameters

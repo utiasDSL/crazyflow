@@ -3,7 +3,7 @@ from typing import Callable
 
 import jax
 import jax.numpy as jnp
-import mujoco.mjx as mjx
+import mujoco.mjx as mjx  # ty: ignore[unresolved-import]
 from jax import Array
 
 from crazyflow.sim.sim import Sim, requires_mujoco_sync

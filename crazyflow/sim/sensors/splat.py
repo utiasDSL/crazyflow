@@ -25,7 +25,7 @@ if TYPE_CHECKING:
     from typing import Callable, Sequence
 
     from jax import Array
-    from mujoco.mjx import Data, Model
+    from mujoco.mjx import Data, Model  # ty: ignore[unresolved-import]
 
     from crazyflow.sim.data import SimData
     from crazyflow.sim.sim import Sim

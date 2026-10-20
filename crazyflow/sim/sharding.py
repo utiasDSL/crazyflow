@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 
     from jax import Array, Device
     from jax.sharding import Mesh
-    from mujoco.mjx import Data
+    from mujoco.mjx import Data  # ty: ignore[unresolved-import]
 
     from crazyflow.sim.data import SimData
 
