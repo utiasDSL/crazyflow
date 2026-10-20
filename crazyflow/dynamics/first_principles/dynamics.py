@@ -57,7 +57,7 @@ def dynamics(
     mixing_matrix: Array,
     drag_matrix: Array,
     rotor_dyn_coef: Array,
-) -> tuple[Array, Array, Array, Array, Array | None]:
+) -> tuple[Array, Array, Array, Array, Array]:
     r"""First principles dynamics for a quatrotor.
 
     The command is four motor angular velocities in RPM. Forces and torques are
@@ -116,15 +116,14 @@ def dynamics(
     # Rotor dynamics
     if rotor_vel is None:
         warnings.warn("Rotor velocity not provided, using commanded rotor velocity.")
-        rotor_vel, rotor_vel_dot = cmd, None
-    else:
-        acc1, acc2 = rotor_dyn_coef[..., 0], rotor_dyn_coef[..., 1]
-        dec1, dec2 = rotor_dyn_coef[..., 2], rotor_dyn_coef[..., 3]
-        rotor_vel_dot = xp.where(
-            cmd > rotor_vel,
-            acc1 * (cmd - rotor_vel) + acc2 * (cmd**2 - rotor_vel**2),
-            dec1 * (cmd - rotor_vel) + dec2 * (cmd**2 - rotor_vel**2),
-        )
+        rotor_vel = cmd
+    acc1, acc2 = rotor_dyn_coef[..., 0], rotor_dyn_coef[..., 1]
+    dec1, dec2 = rotor_dyn_coef[..., 2], rotor_dyn_coef[..., 3]
+    rotor_vel_dot = xp.where(
+        cmd > rotor_vel,
+        acc1 * (cmd - rotor_vel) + acc2 * (cmd**2 - rotor_vel**2),
+        dec1 * (cmd - rotor_vel) + dec2 * (cmd**2 - rotor_vel**2),
+    )
     # Creating force and torque vector
     k0, k1, k2 = rpm2thrust[..., 0], rpm2thrust[..., 1], rpm2thrust[..., 2]
     forces_motor = k0 + k1 * rotor_vel + k2 * rotor_vel**2

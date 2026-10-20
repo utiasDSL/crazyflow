@@ -58,7 +58,7 @@ def dynamics(
     rpy_coef: Array,
     rpy_rates_coef: Array,
     cmd_rpy_coef: Array,
-) -> tuple[Array, Array, Array, Array, Array | None]:
+) -> tuple[Array, Array, Array, Array, Array]:
     """Fitted linear, second order rpy dynamics with thrust dynamics.
 
     Converts the state to Euler angles, evaluates ``dynamics_euler``, maps the derivatives back, and
@@ -153,7 +153,7 @@ def dynamics_euler(
     rpy_coef: Array,
     rpy_rates_coef: Array,
     cmd_rpy_coef: Array,
-) -> tuple[Array, Array, Array, Array, Array | None]:
+) -> tuple[Array, Array, Array, Array, Array]:
     """Core fitted second-order rpy and thrust dynamics in Euler-angle coordinates."""
     xp = array_namespace(pos)
     device = xp_device(pos)
@@ -166,9 +166,8 @@ def dynamics_euler(
     # Note that we are abusing the rotor_vel state as the thrust
     if rotor_vel is None:
         warnings.warn("Rotor velocity not provided, using commanded rotor velocity.")
-        rotor_vel, rotor_vel_dot = cmd_f[..., None], None
-    else:
-        rotor_vel_dot = thrust_dyn_coef * (cmd_f[..., None] - rotor_vel)
+        rotor_vel = cmd_f[..., None]
+    rotor_vel_dot = thrust_dyn_coef * (cmd_f[..., None] - rotor_vel)
     forces_motor = rotor_vel[..., 0:1]  # (..., 1)
     thrust = acc_coef + cmd_f_coef * forces_motor
     drone_z_axis = R.from_euler("xyz", rpy).as_matrix()[..., -1]
