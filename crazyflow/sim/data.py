@@ -5,7 +5,7 @@ from typing import Any
 
 import jax
 import jax.numpy as jnp
-from flax.struct import dataclass, field
+from flax.struct import PyTreeNode, field
 from jax import Array, Device
 
 from crazyflow.control import Control
@@ -23,8 +23,7 @@ from crazyflow.dynamics.so_rpy_rotor_drag import Params as SoRpyRotorDragParams
 from crazyflow.utils import CORE_NDIM_KEY
 
 
-@dataclass
-class SimState:
+class SimState(PyTreeNode):
     pos: Array = field(metadata={CORE_NDIM_KEY: 1})  # (N, M, 3)
     """Position of the drone's center of mass."""
     quat: Array = field(metadata={CORE_NDIM_KEY: 1})  # (N, M, 4)
@@ -57,8 +56,7 @@ class SimState:
         )
 
 
-@dataclass
-class SimStateDeriv:
+class SimStateDeriv(PyTreeNode):
     vel: Array = field(metadata={CORE_NDIM_KEY: 1})  # (N, M, 3)
     """Derivative of the position of the drone's center of mass."""
     ang_vel: Array = field(metadata={CORE_NDIM_KEY: 1})  # (N, M, 3)
@@ -104,8 +102,7 @@ class ControlData(typing.Protocol):
     params: dict[str, Array]
 
 
-@dataclass
-class SimControls:
+class SimControls(PyTreeNode):
     mode: Control = field(pytree_node=False)
     """Control mode of the simulation."""
     state: ControlData | None
@@ -231,8 +228,7 @@ class SimParams(typing.Protocol):
                 raise ValueError(f"Dynamics mode {dynamics} not implemented")
 
 
-@dataclass
-class SimCore:
+class SimCore(PyTreeNode):
     freq: int = field(pytree_node=False)
     """Frequency of the simulation."""
     steps: Array = field(metadata={CORE_NDIM_KEY: 1})  # (N, 1)
@@ -273,8 +269,7 @@ class SimCore:
         )
 
 
-@dataclass
-class SimData:
+class SimData(PyTreeNode):
     states: SimState
     """State of the simulation."""
     controls: SimControls

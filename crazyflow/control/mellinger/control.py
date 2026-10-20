@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 import array_api_extra as xpx
 import jax.numpy as jnp
 from array_api_compat import array_namespace
-from flax.struct import dataclass, field
+from flax.struct import PyTreeNode, field
 from scipy.spatial.transform import Rotation as R
 
 from crazyflow.control.core import controllable, load_fn_params
@@ -487,8 +487,7 @@ def force_torque2rotor_vel(
     return motor_force2rotor_vel(motor_forces, rpm2thrust)
 
 
-@dataclass
-class MellingerStateData:
+class MellingerStateData(PyTreeNode):
     cmd: Array = field(metadata={CORE_NDIM_KEY: 1})  # (N, M, 16)
     """Full state control command for the drone.
 
@@ -524,8 +523,7 @@ class MellingerStateData:
         )
 
 
-@dataclass
-class MellingerAttitudeData:
+class MellingerAttitudeData(PyTreeNode):
     cmd: Array = field(metadata={CORE_NDIM_KEY: 1})  # (N, M, 4)
     """Attitude control setpoint consisting of [roll, pitch, yaw, collective thrust]."""
     staged_cmd: Array = field(metadata={CORE_NDIM_KEY: 1})  # (N, M, 4)
@@ -567,8 +565,7 @@ class MellingerAttitudeData:
         )
 
 
-@dataclass
-class MellingerBodyRateData:
+class MellingerBodyRateData(PyTreeNode):
     cmd: Array = field(metadata={CORE_NDIM_KEY: 1})  # (N, M, 4)
     """Body rate control command for the drone.
 
@@ -607,8 +604,7 @@ class MellingerBodyRateData:
         )
 
 
-@dataclass
-class MellingerForceTorqueData:
+class MellingerForceTorqueData(PyTreeNode):
     cmd: Array = field(metadata={CORE_NDIM_KEY: 1})  # (N, M, 4)
     """Force-torque command for the drone.
 

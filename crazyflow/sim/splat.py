@@ -20,7 +20,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import splax
-from flax.struct import dataclass, field
+from flax.struct import PyTreeNode, field
 from splax.viewer import Viewer
 
 from crazyflow.sim.sim import requires_mujoco_sync
@@ -41,8 +41,7 @@ SPLATS_KEY = "splats"
 """Key of the [SplatData][crazyflow.sim.splat.SplatData] in ``sim.data.plugins``."""
 
 
-@dataclass
-class SplatData:
+class SplatData(PyTreeNode):
     """Gaussian splat plugin data.
 
     Gaussians are stored in a single array as ``[scene | drone:0 | ... | drone:n-1]``. Scene

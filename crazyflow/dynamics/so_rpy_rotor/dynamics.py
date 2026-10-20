@@ -22,7 +22,7 @@ import casadi as cs
 import jax.numpy as jnp
 from array_api_compat import array_namespace
 from array_api_compat import device as xp_device
-from flax.struct import dataclass, field
+from flax.struct import PyTreeNode, field
 from scipy.spatial.transform import Rotation as R
 
 import crazyflow.dynamics.symbols as symbols
@@ -378,8 +378,7 @@ def symbolic_dynamics_euler(
     return X_dot, X, U, Y
 
 
-@dataclass
-class Params:
+class Params(PyTreeNode):
     mass: Array = field(metadata={CORE_NDIM_KEY: 1})  # (1,)
     """Mass of the drone."""
     gravity_vec: Array = field(metadata={CORE_NDIM_KEY: 1})  # (3,)

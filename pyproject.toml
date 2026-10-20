@@ -144,6 +144,9 @@ line-ending = "auto"
 docstring-code-format = true
 docstring-code-line-length = "dynamic"
 
+[tool.ty.src]
+include = ["crazyflow"]
+
 [tool.pixi]
 [tool.pixi.workspace]
 channels = ["conda-forge"]
@@ -177,6 +180,7 @@ gpu = { features = ["gpu"], solve-group = "gpu" }
 benchmark = { features = ["benchmark", "gpu"], solve-group = "gpu" }
 gpu-tests = { features = ["tests", "gpu"], solve-group = "gpu" }
 dist = { features = ["dist"], solve-group = "default" }
+typecheck = { features = ["typecheck", "tests"], solve-group = "default" }
 
 [tool.pixi.feature.tests.dependencies]
 pytest = ">=8.4.1"
@@ -190,6 +194,12 @@ pytest-markdown-docs = "*"
 [tool.pixi.feature.tests.tasks]
 tests = { cmd = "pytest -v tests", description = "Run tests" }
 test-docs = { cmd = "pytest -v --markdown-docs --markdown-docs-syntax=superfences --doctest-glob='*.md' crazyflow/ docs/", description = "Run doctests in docs and docstrings" }
+
+[tool.pixi.feature.typecheck.dependencies]
+ty = ">=0.0.89"
+
+[tool.pixi.feature.typecheck.tasks]
+typecheck = { cmd = "ty check --python $CONDA_PREFIX", description = "Type check the package" }
 
 [tool.pixi.feature.docs.dependencies]
 python = ">=3.10"
