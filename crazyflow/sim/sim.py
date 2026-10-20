@@ -315,7 +315,7 @@ class Sim:
         dummy = spec.worldbody.add_body()
         dummy.name = "_dummy"
         dummy.mass = 1e-6
-        dummy.inertia = jnp.full(3, 1e-9)
+        dummy.inertia = np.full(3, 1e-9)
         dummy_joint = dummy.add_joint()
         dummy_joint.name = "_dummy_joint"
         dummy_joint.type = mujoco.mjtJoint.mjJNT_SLIDE
