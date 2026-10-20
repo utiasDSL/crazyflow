@@ -1,6 +1,6 @@
 """Inject a random external force and torque into the step pipeline.
 
-The disturbance fires on every dynamics tick, so the drone fights wind-like perturbations.
+The disturbance is applied on every dynamics tick, so the drone fights wind-like perturbations.
 
 Run with `--plot` to plot the results, which requires matplotlib from the `tests` environment.
 """

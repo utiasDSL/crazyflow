@@ -1,6 +1,6 @@
 """Render depth images by raycasting the scene geometry.
 
-`render_depth` fires rays from a camera and returns per-pixel distances. This is faster than full
+`render_depth` returns per-pixel distances for rays emitted from the camera. This is faster than full
 RGB rendering and useful for obstacle sensing or depth-based controllers. `build_render_depth_fn`
 compiles a renderer for repeated calls.
 

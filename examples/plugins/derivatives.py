@@ -1,12 +1,12 @@
-"""Add the state derivatives, which are not stored by default, to the step pipeline.
+"""Add the state derivatives to the step pipeline.
 
 We compare two methods for the state derivatives: evaluating the dynamics and finite differences.
 The dynamics need the current state and input, so we evaluate them before integration. At the end
 of the step, they are the derivative at the previous state. Finite differences are taken after
 integration and give the derivative from the previous to the current state. For Euler integration,
 both methods are identical up to numerical noise. Other integrators differ, as shown here for RK4.
-Both plugins store a `SimStateDeriv` in the plugins dict, and the plot compares them while the
-drone flies a figure-eight.
+Both plugins store a `SimStateDeriv` in the plugins dict. The plot compares them while the drone
+flies a figure-eight.
 
 Run with `--plot` to plot the results, which requires matplotlib from the `tests` environment.
 """

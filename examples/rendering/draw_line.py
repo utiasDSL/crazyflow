@@ -1,6 +1,4 @@
 """Draw a colored trace behind each of 25 drones in the MuJoCo viewer.
-
-`draw_line` adds a line through the recent positions of a drone to the next rendered frame.
 """
 
 from collections import deque

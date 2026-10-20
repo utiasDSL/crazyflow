@@ -2,7 +2,7 @@
 
 Because the simulator is built entirely from JAX operations, `jax.grad` can differentiate through
 it. Starting the drone in the air keeps it away from the floor, so the floor-clipping stage never
-fires and gradients flow freely through the entire trajectory.
+applies and gradients flow freely through the entire trajectory.
 """
 
 import time

@@ -2,7 +2,7 @@
 
 The body rate controller keeps the attitude terms of the Mellinger controller, which level the
 drone at its current yaw and counteract the commanded rates. The example sets their `kR` and `ki_m`
-gains to zero to track the body rates.
+gains to zero to freely track the body rates.
 """
 
 import os

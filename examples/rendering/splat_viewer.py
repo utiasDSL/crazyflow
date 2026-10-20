@@ -1,8 +1,8 @@
 """Render the simulation as gaussian splats in a web-based viewer.
 
 `SplatViewer` serves a web viewer at `http://localhost:8080`. The splats are streamed to the
-browser once, after which `update` only pushes the drone poses, so the viewer runs in real time on
-any device. Requires splax (`pip install "crazyflow[splats]"`).
+browser once, after which `update` only pushes the drone poses, so the viewer runs in real time.
+Requires splax (`pip install "crazyflow[splats]"`).
 """
 
 from __future__ import annotations

@@ -1,8 +1,8 @@
 """Delay the attitude commands by 0.03 s with a plugin.
 
 The plugin queues the staged attitude commands in the plugins dict and is prepended to the step
-pipeline. The drone flies the same trajectory with and without the delay, and the undelayed path
-is drawn for comparison.
+pipeline. To demonstrate the effect, we fly the same trajectory with and without action delay and
+plot the difference between the two.
 """
 
 from __future__ import annotations

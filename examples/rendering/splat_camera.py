@@ -1,8 +1,7 @@
 """Render the FPV cameras of two drones looking at each other with gaussian splats.
 
 `render_splat_rgb` renders the FPV camera of every drone in every world in a single batched call.
-Two drones circle the hall center while facing each other. Requires splax
-(`pip install "crazyflow[splats]"`) and a CUDA GPU.
+Requires splax (`pip install "crazyflow[splats]"`) and a CUDA GPU.
 
 Run with `--plot` to plot the results, which requires matplotlib from the `tests` environment.
 """

@@ -1,7 +1,7 @@
 """Fly straight up with rotor velocity control and compare the integrators.
 
-All rotors get the same constant command above hover, so the drone accelerates straight up. The
-plot shows the height difference of every integrator to the default one.
+All rotors get the same constant command above hover. The plot shows the height difference of every
+integrator to the default one.
 
 Run with `--plot` to plot the results, which requires matplotlib from the `tests` environment.
 """
@@ -26,10 +26,10 @@ def main(plot: bool = False):
         thrust = 1.2 * sim.data.params.mass * -sim.data.params.gravity_vec[-1]
         rpm = motor_force2rotor_vel(thrust / 4, sim.data.params.rpm2thrust)
         sim.rotor_vel_control(np.broadcast_to(rpm, (sim.n_worlds, sim.n_drones, 4)))
-        z = [float(sim.data.states.pos[0, 0, 2])]
+        z = [sim.data.states.pos[0, 0, 2]]
         for _ in range(int(DURATION * sim.freq)):
             sim.step(1)
-            z.append(float(sim.data.states.pos[0, 0, 2]))
+            z.append(sim.data.states.pos[0, 0, 2])
         sim.close()
         heights[integrator] = np.array(z)
         print(f"{integrator.value}: z = {z[-1]:.4f} m after {DURATION} s")

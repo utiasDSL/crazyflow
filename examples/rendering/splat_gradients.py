@@ -1,9 +1,8 @@
 """Compare splat-rendered FPV gradients with known z-position and yaw gradients.
 
 Splat rendering is differentiable w.r.t. the camera pose. A reference FPV image is rendered at a
-baseline pose, and its photometric error is differentiated over small z and yaw offsets. The
-resulting gradients match the gradient of the squared pose error in sign and shape. Requires splax
-(`pip install "crazyflow[splats]"`) and a CUDA GPU.
+baseline pose, and its photometric error is differentiated over small z and yaw offsets. 
+Requires splax (`pip install "crazyflow[splats]"`) and a CUDA GPU.
 
 Run with `--plot` to plot the results, which requires matplotlib from the `tests` environment.
 """

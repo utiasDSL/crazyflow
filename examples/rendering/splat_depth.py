@@ -1,8 +1,7 @@
-"""Example where a drone flies a lap through a hall and renders gaussian splat depth images.
+"""Fly a lap through a hall and renders gaussian splat depth images.
 
-`build_render_splat_rgbd_fn` compiles an RGB-D renderer that is a pure function of `sim.data`. The
-depth is measured along the optical axis and clipped to `max_range`. Requires splax
-(`pip install "crazyflow[splats]"`) and a CUDA GPU.
+`build_render_splat_rgbd_fn` compiles an RGB-D renderer that is a pure function of `sim.data`.
+Requires splax (`pip install "crazyflow[splats]"`) and a CUDA GPU.
 
 Run with `--plot` to plot the results, which requires matplotlib from the `tests` environment.
 """
