@@ -193,23 +193,51 @@ class Sim:
         self.data = self._step(self.data, n_steps=n_steps)
 
     def state_control(self, controls: Array):
-        """Set the desired state for all drones in all worlds."""
+        """Set the desired state for all drones in all worlds.
+
+        Args:
+            controls: Full state command in SI units with shape (n_worlds, n_drones, 16). The
+                entries are [x, y, z, vx, vy, vz, ax, ay, az, qx, qy, qz, qw, wx, wy, wz]. Only the
+                yaw of the quaternion is tracked.
+        """
         self.data = F.state_control(self.data, controls)
 
     def attitude_control(self, controls: Array):
-        """Set the desired attitude for all drones in all worlds."""
+        """Set the desired attitude and collective thrust for all drones in all worlds.
+
+        Args:
+            controls: Attitude command with shape (n_worlds, n_drones, 4). The entries are
+                [roll, pitch, yaw, thrust] with extrinsic xyz Euler angles in rad and the
+                collective thrust in N.
+        """
         self.data = F.attitude_control(self.data, controls)
 
     def body_rate_control(self, controls: Array):
-        """Set the desired body rates and collective thrust for all drones in all worlds."""
+        """Set the desired body rates and collective thrust for all drones in all worlds.
+
+        Args:
+            controls: Body rate command with shape (n_worlds, n_drones, 4). The entries are
+                [wx, wy, wz, thrust] with the body frame angular velocity in rad/s and the
+                collective thrust in N.
+        """
         self.data = F.body_rate_control(self.data, controls)
 
     def force_torque_control(self, controls: Array):
-        """Set the desired force and torque for all drones in all worlds."""
+        """Set the desired collective thrust and torque for all drones in all worlds.
+
+        Args:
+            controls: Force-torque command with shape (n_worlds, n_drones, 4). The entries are
+                [thrust, tx, ty, tz] with the collective thrust in N and the body frame torque in
+                Nm.
+        """
         self.data = F.force_torque_control(self.data, controls)
 
     def rotor_vel_control(self, controls: Array):
-        """Set the desired rotor velocities for all drones in all worlds."""
+        """Set the desired rotor velocities for all drones in all worlds.
+
+        Args:
+            controls: Rotor velocity command in RPM with shape (n_worlds, n_drones, 4).
+        """
         self.data = F.rotor_vel_control(self.data, controls)
 
     @requires_mujoco_sync
