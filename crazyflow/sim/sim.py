@@ -638,6 +638,19 @@ class Sim:
         self._contacts = contact_fn
         return contact_fn
 
+    @requires_mujoco_sync
+    def contact_bodies(self) -> tuple[Array, Array, Array]:
+        """Return the bodies on both sides of each contact.
+
+        Bodies are MuJoCo body ids, e.g. from ``sim.mj_model.body(name).id``. Child bodies count as
+        their root body.
+
+        Returns:
+            The two body id arrays and the contact flag, each of shape (n_worlds, n_contacts).
+        """
+        geom2body = self.mj_model.body_rootid[self.mj_model.geom_bodyid]
+        return contact_bodies(self.mjx_data, geom2body)
+
     @staticmethod
     def _reset(data: SimData, default_data: SimData, mask: Array | None = None) -> SimData:
         raise NotInitializedError("_reset call before building the simulation pipeline.")
@@ -743,6 +756,13 @@ def contacts(data: Data, *, geom2drone: Array, geom2body: Array, ignored: Array)
     touching = jnp.tile(contact.dist < 0, 2) & ~ignored[drone_ids, geom2body[other_geom]]
     any_per_drone = partial(jax.ops.segment_max, num_segments=n_drones)
     return jax.vmap(any_per_drone)(touching, drone_ids)
+
+
+@jax.jit
+def contact_bodies(data: Data, geom2body: Array) -> tuple[Array, Array, Array]:
+    """Map both geoms of each contact to their bodies."""
+    contact = data._impl.contact
+    return geom2body[contact.geom1], geom2body[contact.geom2], contact.dist < 0
 
 
 @jax.jit

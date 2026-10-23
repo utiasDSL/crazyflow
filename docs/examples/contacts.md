@@ -22,3 +22,9 @@ Querying contacts between drones and the scene, and choosing the collision geome
 ## Crash detection
 
 --8<-- example "examples/contacts/crash.py"
+
+---
+
+## Collision pairs
+
+--8<-- example "examples/contacts/collision_pairs.py"
