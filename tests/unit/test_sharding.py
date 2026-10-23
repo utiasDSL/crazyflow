@@ -114,5 +114,5 @@ def test_sharded_contacts(platform: str):
     sim.data = sim.data.replace(
         states=sim.data.states.replace(pos=pos), core=sim.data.core.replace(mjx_synced=False)
     )
-    assert jnp.array_equal(sim.contacts("drone:0").any(axis=-1), grounded), "wrong worlds collide"
+    assert jnp.array_equal(sim.contacts()[:, 0], grounded), "wrong worlds collide"
     sim.close()

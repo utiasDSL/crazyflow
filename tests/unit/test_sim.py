@@ -503,12 +503,11 @@ def test_thrust_clip(dynamics: Dynamics, integrator: Integrator):
 @pytest.mark.unit
 @pytest.mark.parametrize("dynamics", Dynamics)
 def test_contacts(dynamics: Dynamics):
-    sim = Sim(dynamics=dynamics, control=Control.attitude, freq=500, device="cpu")
+    sim = Sim(n_worlds=2, n_drones=2, dynamics=dynamics, freq=500, device="cpu")
     sim.reset()
     sim.step(10)  # Make sure the drone is on the ground
     contacts = sim.contacts()
-    # The contact buffer must contain the drone-floor contact
-    assert contacts.shape[-1] > 0, "Contact buffer should not be empty"
+    assert contacts.shape == (2, 2), "Contacts should be flagged per world and drone"
     assert jnp.all(contacts), "Drone should be in contact with the floor"
     sim.close()
 
@@ -531,8 +530,41 @@ def test_contacts_between_drones(box_collision: bool):
     pos = states.pos.at[:, 1, :].set(states.pos[:, 0, :]).at[..., 2].set(1.0)
     sim.data = sim.data.replace(states=states.replace(pos=pos))
     sim.data = sim.data.replace(core=sim.data.core.replace(mjx_synced=False))
-    assert jnp.any(sim.contacts("drone:0")), "Overlapping drones should be in contact"
-    assert jnp.any(sim.contacts("drone:1")), "Overlapping drones should be in contact"
+    assert jnp.all(sim.contacts()), "Overlapping drones should be in contact"
+    sim.close()
+
+
+@pytest.mark.unit
+def test_contacts_ignore():
+    sim = Sim(n_worlds=2, n_drones=3)
+    sim.reset()
+    pos = sim.data.states.pos.at[..., 2].set(1.0)
+    pos = pos.at[0, 1].set(pos[0, 0])  # World 0: drones 0 and 1 overlap
+    pos = pos.at[1, 2, 2].set(-0.05)  # World 1: drone 2 is in the floor
+    sim.data = sim.data.replace(states=sim.data.states.replace(pos=pos))
+    sim.data = sim.data.replace(core=sim.data.core.replace(mjx_synced=False))
+    expected = jnp.array([[True, True, False], [False, False, True]])
+    assert jnp.array_equal(sim.contacts(), expected)
+
+    # Drone pairs are correctly ignored
+    sim.build_contact_fn(ignore=[("drone:1", "drone:0")])
+    expected = jnp.array([[False, False, False], [False, False, True]])
+    assert jnp.array_equal(sim.contacts(), expected), "Pairs apply in both directions"
+
+    # Single pairs are correctly ignored. Using the body ID also works
+    sim.build_contact_fn(ignore=[(sim.mj_model.body("drone:2").id, "world")])
+    expected = jnp.array([[True, True, False], [False, False, False]])
+    assert jnp.array_equal(sim.contacts(), expected), "Floor contact not ignored"
+
+    # Single bodies are ignored by all drones
+    sim.build_contact_fn(ignore=["world"])
+    expected = jnp.array([[True, True, False], [False, False, False]])
+    assert jnp.array_equal(sim.contacts(), expected), "Floor contact not ignored"
+
+    # Single drones are also ignored by all other drones
+    sim.build_contact_fn(ignore=["drone:0"])
+    expected = jnp.array([[False, False, False], [False, False, True]])
+    assert jnp.array_equal(sim.contacts(), expected), "Drone 0 not ignored"
     sim.close()
 
 
@@ -572,7 +604,9 @@ def test_contacts_with_obstacle(mocap: bool):
     pos = states.pos.at[..., :].set(jnp.array(obstacle_pos))
     sim.data = sim.data.replace(states=states.replace(pos=pos))
     sim.data = sim.data.replace(core=sim.data.core.replace(mjx_synced=False))
-    assert jnp.any(sim.contacts("drone:0")), "Drone should collide with the obstacle"
+    assert jnp.all(sim.contacts()), "Drone should collide with the obstacle"
+    sim.build_contact_fn(ignore=["obstacle:0"])
+    assert not jnp.any(sim.contacts()), "Obstacle contact should be ignored"
     sim.close()
 
 
@@ -798,7 +832,6 @@ def test_capped_contacts_identify_colliding_drones():
     pos[0, 4] = pos[0, 3]  # overlap drones 3 and 4, leave the rest far apart
     sim.data = sim.data.replace(states=sim.data.states.replace(pos=jnp.array(pos)))
     sim.step()
-    assert jnp.any(sim.contacts("drone:3")), "Overlapping drones should be in contact"
-    assert jnp.any(sim.contacts("drone:4")), "Overlapping drones should be in contact"
-    assert not jnp.any(sim.contacts("drone:5")), "Distant drones should not be in contact"
+    expected = (jnp.arange(n_drones) == 3) | (jnp.arange(n_drones) == 4)
+    assert jnp.array_equal(sim.contacts()[0], expected), "Only drones 3 and 4 should collide"
     sim.close()
