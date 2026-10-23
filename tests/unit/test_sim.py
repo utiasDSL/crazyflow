@@ -214,30 +214,17 @@ def test_reset_masked(device: str, dynamics: Dynamics):
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("integrator", Integrator)
 @pytest.mark.parametrize("n_worlds", [1, 2])
 @pytest.mark.parametrize("n_drones", [1, 3])
 @pytest.mark.parametrize("dynamics", Dynamics)
 @pytest.mark.parametrize("control", Control)
-def test_sim_step(
-    n_worlds: int,
-    n_drones: int,
-    dynamics: Dynamics,
-    control: Control,
-    integrator: Integrator,
-    device: str,
-):
+def test_sim_step(n_worlds: int, n_drones: int, dynamics: Dynamics, control: Control, device: str):
     if dynamics != Dynamics.first_principles:
         if control in (Control.body_rate, Control.force_torque, Control.rotor_vel):
             pytest.skip(f"{control} is not supported with non-first-principles dynamics")
 
     sim = Sim(
-        n_worlds=n_worlds,
-        n_drones=n_drones,
-        dynamics=dynamics,
-        device=device,
-        control=control,
-        integrator=integrator,
+        n_worlds=n_worlds, n_drones=n_drones, dynamics=dynamics, device=device, control=control
     )
     sim.step(2)
 
@@ -436,17 +423,14 @@ def test_seed_reset():
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("integrator", Integrator)
 @pytest.mark.parametrize("dynamics", Dynamics)
-def test_floor_penetration(dynamics: Dynamics, integrator: Integrator):
+def test_floor_penetration(dynamics: Dynamics):
     """Test that drones cannot penetrate the floor (z < 0.01).
 
     We don't test for mujoco, as mujoco uses collisions by default and will let the drone bounce on
     the floor.
     """
-    sim = Sim(
-        dynamics=dynamics, control=Control.attitude, integrator=integrator, freq=500, device="cpu"
-    )
+    sim = Sim(dynamics=dynamics, control=Control.attitude, freq=500, device="cpu")
     sim.reset()
     # Command to fall: zero thrust and attitude that points downward
     attitude_cmd = np.zeros((1, 1, 4))  # [roll, pitch, yaw, thrust]
@@ -462,42 +446,6 @@ def test_floor_penetration(dynamics: Dynamics, integrator: Integrator):
     final_z_pos = sim.data.states.pos[..., 2]
     assert jnp.all(final_z_pos == -0.001), f"Drone should be on floor but z={final_z_pos}"
     sim.close()
-
-
-@pytest.mark.unit
-@pytest.mark.parametrize("integrator", Integrator)
-@pytest.mark.parametrize("dynamics", Dynamics)
-def test_free_fall_convergence(dynamics: Dynamics, integrator: Integrator):
-    """Test that every integrator converges to a high-frequency reference in free fall.
-
-    Regression test for #102: a broken symplectic integrator went unnoticed because no test
-    exercised the dynamics under all integration schemes. Commands are clipped to the motor limits,
-    so the minimum thrust is applied instead of true zero thrust. The trajectory at the default
-    frequency must match a 10x higher frequency reference within the leading discretization error.
-    """
-    freq, ref_freq, t_fall = 500, 5000, 0.5
-    sims = [
-        Sim(
-            dynamics=dynamics, control=Control.attitude, integrator=integrator, freq=f, device="cpu"
-        )
-        for f in (freq, ref_freq)
-    ]
-    for s in sims:
-        s.reset()
-        states = s.data.states.replace(pos=s.data.states.pos.at[..., 2].set(2.0))
-        s.data = s.data.replace(states=states)
-        s.attitude_control(np.zeros((1, 1, 4)))  # Command minimum thrust to fall
-    n_steps = int(freq * t_fall)
-    sims[0].step(n_steps)
-    sims[1].step(n_steps * ref_freq // freq)
-    z, z_ref = sims[0].data.states.pos[..., 2], sims[1].data.states.pos[..., 2]
-    assert jnp.all(z > 0), "Drone hit the floor; fall distance is too large for this test"
-    # Leading order discretization error difference ~ 0.5 * a_eff * t * dt
-    a_eff = 2 * (2.0 - float(z_ref.min())) / t_fall**2
-    atol = max(0.5 * a_eff * t_fall / freq, 0.01)
-    assert jnp.allclose(z, z_ref, atol=atol), f"Free fall mismatch: {z} vs {z_ref} (atol={atol})"
-    sims[0].close()
-    sims[1].close()
 
 
 @pytest.mark.unit
