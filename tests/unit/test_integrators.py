@@ -16,6 +16,10 @@ def test_integrators_close_to_default(dynamics: Dynamics, integrator: Integrator
     """Every integrator stays close to the default integrator after two simulation steps."""
     sim = Sim(dynamics=dynamics, integrator=integrator, device=device)
     default_sim = Sim(dynamics=dynamics, device=device)
+    for s in (sim, default_sim):
+        # Spawn in the air; at the default spawn on the floor, clipping would mask differences
+        states = s.data.states.replace(pos=s.data.states.pos.at[..., 2].set(2.0))
+        s.data = s.data.replace(states=states)
     sim.step(2)
     default_sim.step(2)
 
