@@ -29,3 +29,4 @@ site/
 # Temporary files
 .DS_Store
 Thumbs.db
+.claude

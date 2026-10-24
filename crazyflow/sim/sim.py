@@ -43,6 +43,8 @@ from crazyflow.sim.sharding import WORLD_AXIS, build_sharded_data, build_sharded
 from crazyflow.utils import grid_2d, pytree_replace, world_mask
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from jax.sharding import Mesh
     from mujoco.mjx import Data, Model
     from numpy.typing import NDArray
@@ -142,6 +144,7 @@ class Sim:
         self.drone_path = Path(__file__).parents[1] / f"drones/{drone}.xml"
         self.spec = self.build_mjx_spec()
         self.mj_model, self.mj_data, self.mjx_model, self.mjx_data = self.build_mjx_model(self.spec)
+        self._contacts = self.build_contact_fn()
         self.viewer: MujocoRenderer | None = None
 
         freqs = (state_freq, attitude_freq, body_rate_freq, force_torque_freq)
@@ -537,6 +540,7 @@ class Sim:
             self.viewer = None
         self.spec.numeric("max_geom_pairs").data = [self.max_geom_pairs]
         self.mj_model, self.mj_data, self.mjx_model, self.mjx_data = self.build_mjx_model(self.spec)
+        self._contacts = self.build_contact_fn()
 
     def init_data(
         self,
@@ -603,8 +607,11 @@ class Sim:
         return F.controllable(self.data)
 
     @requires_mujoco_sync
-    def contacts(self, body: str | None = None) -> Array:
-        """Get contact information from the simulation.
+    def contacts(self) -> Array:
+        """Flag each drone that is in contact with any other body.
+
+        Use [build_contact_fn][crazyflow.sim.Sim.build_contact_fn] to ignore bodies or to check
+        contacts on your own MJX data.
 
         Note:
             ``sim.max_geom_pairs`` limits the maximum detectable collision contacts per collision
@@ -615,20 +622,62 @@ class Sim:
             you need to truly detect all contacts, set ``sim.max_geom_pairs`` to -1 and rebuild the
             simulation.
 
+        Returns:
+            A boolean array of shape (n_worlds, n_drones).
+        """
+        return self._contacts(self.mjx_data)
+
+    def build_contact_fn(
+        self, ignore: Sequence[str | int | tuple[str | int, str | int]] = ()
+    ) -> Callable[[Data], Array]:
+        """Build a function that flags each drone in contact with any other body.
+
         Args:
-            body: Optional body name to filter contacts for. If None, returns flags for all bodies.
+            ignore: Bodies, given by name or id, whose contacts are not counted. A single body is
+                ignored for all drones, a pair of bodies only for that pair.
 
         Returns:
-            A boolean array of shape (n_worlds, n_contacts), one flag per slot in the contact
-            buffer. Which geoms a slot holds is given by the matching entries of
-            ``sim.mjx_data._impl.contact.geom1`` and ``geom2``.
+            A contact function from MJX data to a boolean contact array (n_worlds, n_drones).
         """
-        if body is None:
-            return self.mjx_data._impl.contact.dist < 0
-        body_id = self.mj_model.body(body).id
-        geom_start = self.mj_model.body_geomadr[body_id]
-        geom_count = self.mj_model.body_geomnum[body_id]
-        return contacts(geom_start, geom_count, self.mjx_data)
+        mj_model = self.mj_model
+        base = "drone_fused" if self.fused_mjx_model else "drone"
+        drone_ids = [mj_model.body(f"{base}:{i}").id for i in range(self.n_drones)]
+        no_drone = self.n_drones  # One past the last drone, gets ignored later
+        body2drone = np.full(mj_model.nbody, no_drone)
+        body2drone[drone_ids] = np.arange(self.n_drones)
+        # We add one row that absorbes all ignored contacts for non-drone bodies
+        ignored = np.zeros((self.n_drones + 1, mj_model.nbody), dtype=bool)
+        for entry in ignore:
+            if isinstance(entry, str | int):  # Single bodies are paired with all drones
+                b = mj_model.body_rootid[mj_model.body(entry).id]
+                ignored[:, b] = ignored[body2drone[b], drone_ids] = True
+            else:
+                a, b = mj_model.body_rootid[[mj_model.body(body).id for body in entry]]
+                ignored[body2drone[a], b] = ignored[body2drone[b], a] = True
+        geom2body = mj_model.body_rootid[mj_model.geom_bodyid]
+        contact_fn = jax.jit(
+            partial(
+                contacts,
+                geom2drone=jnp.asarray(body2drone[geom2body]),
+                geom2body=jnp.asarray(geom2body),
+                ignored=jnp.asarray(ignored[:-1]),
+            )
+        )
+        self._contacts = contact_fn
+        return contact_fn
+
+    @requires_mujoco_sync
+    def contact_bodies(self) -> tuple[Array, Array, Array]:
+        """Return the bodies on both sides of each contact.
+
+        Bodies are MuJoCo body ids, e.g. from ``sim.mj_model.body(name).id``. Child bodies count as
+        their root body.
+
+        Returns:
+            The two body id arrays and the contact flag, each of shape (n_worlds, n_contacts).
+        """
+        geom2body = self.mj_model.body_rootid[self.mj_model.geom_bodyid]
+        return contact_bodies(self.mjx_data, geom2body)
 
     @staticmethod
     def _reset(data: SimData, default_data: SimData, mask: Array | None = None) -> SimData:
@@ -725,15 +774,23 @@ def increment_steps(data: SimData) -> SimData:
     return data.replace(core=data.core.replace(steps=data.core.steps + 1))
 
 
-@jax.jit
-def contacts(geom_start: int, geom_count: int, data: Data) -> Array:
-    """Filter contacts from MuJoCo data."""
+def contacts(data: Data, *, geom2drone: Array, geom2body: Array, ignored: Array) -> Array:
+    """Detect contacts for each drone in each world with all pairs that are not ignored."""
     contact = data._impl.contact
-    geom1_valid = contact.geom1 >= geom_start
-    geom1_valid &= contact.geom1 < geom_start + geom_count
-    geom2_valid = contact.geom2 >= geom_start
-    geom2_valid &= contact.geom2 < geom_start + geom_count
-    return (contact.dist < 0) & (geom1_valid | geom2_valid)
+    own_geom = jnp.concat((contact.geom1, contact.geom2), axis=-1)  # Each contact from both sides
+    other_geom = jnp.concat((contact.geom2, contact.geom1), axis=-1)
+    drone_ids = geom2drone[own_geom]
+    n_drones = ignored.shape[0]
+    touching = jnp.tile(contact.dist < 0, 2) & ~ignored[drone_ids, geom2body[other_geom]]
+    any_per_drone = partial(jax.ops.segment_max, num_segments=n_drones)
+    return jax.vmap(any_per_drone)(touching, drone_ids)
+
+
+@jax.jit
+def contact_bodies(data: Data, geom2body: Array) -> tuple[Array, Array, Array]:
+    """Map both geoms of each contact to their bodies."""
+    contact = data._impl.contact
+    return geom2body[contact.geom1], geom2body[contact.geom2], contact.dist < 0
 
 
 @jax.jit
